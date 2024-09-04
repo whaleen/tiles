@@ -2,6 +2,7 @@
 trimmed_output/
 concatenated_output/
 output/
+scenes_output/
 
 # Settings file (optional - remove this line if you want to commit settings)
 tile_videos_settings.json
@@ -10,6 +11,10 @@ tile_videos_settings.json
 __pycache__/
 *.pyc
 *.pyo
+
+# Virtual environment
+venv/
+env/
 
 # macOS
 .DS_Store

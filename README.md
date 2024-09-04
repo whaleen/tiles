@@ -1,11 +1,12 @@
 # Video Processing Scripts
 
-A collection of Python command-line tools for video processing: trimming, concatenating, and creating tiled video layouts.
+A collection of Python command-line tools for video processing: scene detection, trimming, concatenating, and creating tiled video layouts.
 
 ## Requirements
 
 - **Python 3.7+**
 - **ffmpeg** and **ffprobe**
+- **PySceneDetect** (only for detect_scenes.py)
 
 ### Installing ffmpeg
 
@@ -22,6 +23,23 @@ sudo apt-get install ffmpeg
 On Windows:
 Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
+### Installing PySceneDetect (for scene detection)
+
+PySceneDetect requires a virtual environment:
+
+```bash
+# Create virtual environment (one-time setup)
+python3 -m venv venv
+
+# Activate virtual environment (do this each time)
+source venv/bin/activate
+
+# Install PySceneDetect
+pip install 'scenedetect[opencv]'
+```
+
+**Note:** You only need this for `detect_scenes.py`. The other scripts work without it.
+
 ## Project Structure
 
 Organize your videos in a `src/` folder for convenience:
@@ -32,10 +50,13 @@ your-project/
 │   ├── scene1/
 │   ├── scene2/
 │   └── camera1/
+├── scenes_output/          # Auto-created by detect script
 ├── trimmed_output/         # Auto-created by trim script
 ├── concatenated_output/    # Auto-created by concat script
 ├── output/                 # Auto-created by tile script
+├── venv/                   # Virtual environment (for detect_scenes.py)
 ├── tile_videos_settings.json  # Auto-saved settings
+├── detect_scenes.py
 ├── trim_videos.py
 ├── concat_videos.py
 └── tile_videos.py
@@ -48,7 +69,77 @@ your-project/
 
 ## Scripts Overview
 
-### 1. trim_videos.py - Trim Videos
+### 1. detect_scenes.py - Scene Detection
+
+Automatically detect scene changes in videos and split them into separate clips.
+
+**Features:**
+- Two detection algorithms: Content-aware and Adaptive
+- Adjustable sensitivity thresholds
+- List-only mode to preview scenes without splitting
+- Fast splitting using ffmpeg stream copy
+- Detailed scene statistics and timecodes
+- Auto-resolves folders from `src/`
+
+**Requirements:**
+```bash
+# Activate virtual environment first
+source venv/bin/activate
+```
+
+**Usage:**
+```bash
+# Detect and split a single video
+./detect_scenes.py my_film.mp4
+
+# Process videos from src/ folder
+./detect_scenes.py my_footage
+
+# List scenes without splitting
+./detect_scenes.py my_film.mp4 --list-only
+
+# Skip interactive prompts
+./detect_scenes.py my_film.mp4 -m content -t 27.0
+```
+
+**Example:**
+```bash
+source venv/bin/activate
+./detect_scenes.py src/my_film/video.mp4
+```
+
+You'll be prompted:
+```
+Detection method:
+  1. Content-aware (default) - Best for most videos
+  2. Adaptive - Better for videos with gradual lighting changes
+
+Select detection method (1-2, default 1): 1
+
+Content detection threshold (default: 27.0)
+  Lower values (15-25): More sensitive, detects subtle changes
+  Higher values (30-40): Only detects clear scene changes
+
+Threshold (default 27.0): 25
+```
+
+**Output:**
+- Scene list with timecodes and statistics
+- Individual scene files: `scenes_output/video/video-Scene-001.mp4`, `video-Scene-002.mp4`, etc.
+
+**Custom output directory:**
+```bash
+./detect_scenes.py my_film.mp4 -o my_scenes
+```
+
+**Threshold Guidelines:**
+- **Films/Movies**: 27-30 (default works well)
+- **Fast-cut content** (music videos, sports): 20-25
+- **Slow content** (documentaries, talks): 30-40
+
+---
+
+### 2. trim_videos.py - Trim Videos
 
 Trim videos from multiple folders with custom start/end trim values per folder.
 
@@ -94,7 +185,7 @@ Trim from end (seconds, 0 for none): 1.5
 
 ---
 
-### 2. concat_videos.py - Concatenate Videos
+### 3. concat_videos.py - Concatenate Videos
 
 Concatenate all videos in folders with optional transitions between clips.
 
@@ -146,7 +237,7 @@ Transition duration in seconds (e.g., 1.0): 1.5
 
 ---
 
-### 3. tile_videos.py - Create Tiled Video Layouts
+### 4. tile_videos.py - Create Tiled Video Layouts
 
 Create professional tiled video compositions with multiple videos playing simultaneously.
 
@@ -282,7 +373,25 @@ Use these settings? (y/n): y
 
 ## Workflow Examples
 
-### Example 1: Complete Video Processing Pipeline
+### Example 1: Auto-Split and Process a Film
+
+```bash
+# Activate venv for scene detection
+source venv/bin/activate
+
+# Step 1: Automatically detect and split scenes
+./detect_scenes.py src/my_film/full_movie.mp4 -t 27
+
+# Step 2: Trim unwanted parts from specific scenes
+./trim_videos.py scenes_output/full_movie
+
+# Step 3: Create a montage of selected scenes
+./tile_videos.py
+# Layout: 2x2
+# Folders: scenes_output/full_movie (select specific scene files)
+```
+
+### Example 2: Complete Video Processing Pipeline
 
 ```bash
 # Organize your raw footage in src/
@@ -301,7 +410,7 @@ Use these settings? (y/n): y
 # - Folders: concatenated_output/scene1_concatenated, concatenated_output/scene2_concatenated, concatenated_output/scene3_concatenated
 ```
 
-### Example 2: Quick Preview Workflow
+### Example 3: Quick Preview Workflow
 
 ```bash
 # Create tiled video with preview mode
@@ -316,7 +425,7 @@ Use these settings? (y/n): y
 # Gets full render with same configuration
 ```
 
-### Example 3: Multi-Angle Video
+### Example 4: Multi-Angle Video
 
 ```bash
 # Organize camera footage in src/
@@ -386,12 +495,31 @@ Make sure you're using the correct path. Use absolute paths if relative paths ar
 ### Settings file issues
 Settings are saved to `tile_videos_settings.json` in your project directory. Delete this file to start fresh.
 
+### "PySceneDetect is not installed"
+Make sure you've activated the virtual environment:
+```bash
+source venv/bin/activate
+```
+
+If you see "A virtual environment exists but may not be activated", the venv is set up but not active.
+
+### Scene detection is too sensitive / not sensitive enough
+Adjust the threshold:
+- **Too many scenes detected**: Increase threshold (try 30-35)
+- **Missing scene changes**: Decrease threshold (try 20-25)
+- Try the Adaptive method for videos with gradual lighting changes
+
 ---
 
 ## Output Directory Structure
 
 ```
 your-project/
+├── scenes_output/
+│   └── my_film/
+│       ├── my_film-Scene-001.mp4
+│       ├── my_film-Scene-002.mp4
+│       └── my_film-Scene-003.mp4
 ├── trimmed_output/
 │   ├── folder1/
 │   │   ├── video1.mp4
