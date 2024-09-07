@@ -325,6 +325,7 @@ Create professional tiled video compositions with multiple videos playing simult
 
 **Features:**
 - 10 layout options (grids, PiP, custom layouts)
+- **Distribution mode** - automatically split clips from one folder across tiles
 - Per-tile transitions
 - Crop position control (top, bottom, left, right, center, corners)
 - Settings memory - reuse your last configuration
@@ -433,6 +434,35 @@ Use these settings? (y/n): y
 ./tile_videos.py -w 3840 --height 2160  # 4K
 ```
 
+**Distribution Mode (Single Folder):**
+
+When you use the **same folder for all tiles**, the script automatically detects this and offers distribution modes:
+
+```
+Distribution mode:
+  1. Round-Robin (cycling) - Each tile gets every Nth clip
+  2. Sequential Blocks - Divide clips into continuous chunks
+  3. Random Distribution - Shuffle and distribute randomly
+```
+
+**Distribution Examples (71 clips in 2x2 layout):**
+
+*Round-Robin:* Creates a cycling/staggered effect
+- Tile 1: clips 1, 5, 9, 13, 17, 21... (scenes cycle across tiles)
+- Tile 2: clips 2, 6, 10, 14, 18, 22...
+- Tile 3: clips 3, 7, 11, 15, 19, 23...
+- Tile 4: clips 4, 8, 12, 16, 20, 24...
+
+*Sequential Blocks:* Each tile shows a different time period
+- Tile 1: clips 1-18 (beginning)
+- Tile 2: clips 19-36 (early middle)
+- Tile 3: clips 37-54 (late middle)
+- Tile 4: clips 55-71 (end)
+
+*Random:* Shuffles clips for unexpected juxtapositions
+
+**Use Case:** Perfect for splitting auto-detected scenes from a film across multiple tiles. Each clip plays only once across all tiles - no duplicates!
+
 ---
 
 ## Available Layouts
@@ -468,25 +498,27 @@ Use these settings? (y/n): y
 # etc.
 ```
 
-### Example 2: Auto-Split and Process a Film
+### Example 2: Auto-Split Film and Create Multi-Tile View
 
 ```bash
 # Activate venv for scene detection
 source venv/bin/activate
 
-# Step 1: Clean and organize the raw film file
-./clean_folder.py src/my_film -m 3
+# Step 1: Automatically detect and split scenes
+./detect_scenes.py src/my_film/skateboard_video.mp4 -t 27
+# Creates 71 scene clips in scenes_output/skateboard_video/
 
-# Step 2: Automatically detect and split scenes
-./detect_scenes.py src/my_film/2024-01-15_10-00-00.mp4 -t 27
-
-# Step 3: Trim unwanted parts from specific scenes
-./trim_videos.py scenes_output/2024-01-15_10-00-00
-
-# Step 4: Create a montage of selected scenes
+# Step 2: Create a 2x2 tiled video with distribution mode
 ./tile_videos.py
-# Layout: 2x2
-# Folders: scenes_output/2024-01-15_10-00-00 (select specific scene files)
+# Select layout: 2x2
+# Select crop mode: Crop to fill
+# Folder for tile 1: scenes_output/skateboard_video
+# Folder for tile 2: scenes_output/skateboard_video  (same folder)
+# Folder for tile 3: scenes_output/skateboard_video  (same folder)
+# Folder for tile 4: scenes_output/skateboard_video  (same folder)
+#
+# Distribution mode: 1 (Round-Robin)
+# Result: All 71 clips distributed across 4 tiles, cycling chronologically
 ```
 
 ### Example 3: Complete Video Processing Pipeline
@@ -549,6 +581,13 @@ source venv/bin/activate
 - **Check freed space** with `-m 1` to see how many duplicates you have
 - Files are compared by content hash, so different filenames won't fool it
 
+### Distribution Modes for Tiling
+- **Round-Robin**: Best for showing film progression across all tiles simultaneously
+- **Sequential Blocks**: Good for comparing different sections/acts of a video side-by-side
+- **Random**: Creates artistic/unexpected combinations
+- Distribution mode only appears when you use the same folder for all tiles
+- Each clip plays exactly once - no duplicates across tiles
+
 ### Video Alignment
 - Videos in the same tile play sequentially
 - Shorter tiles automatically loop to match the longest tile
@@ -599,6 +638,8 @@ Make sure you're using the correct path. Use absolute paths if relative paths ar
 
 ### Settings file issues
 Settings are saved to `tile_videos_settings.json` in your project directory. Delete this file to start fresh.
+
+**Note:** Distribution mode settings are also saved, so re-running with saved settings will use the same distribution.
 
 ### "PySceneDetect is not installed"
 Make sure you've activated the virtual environment:

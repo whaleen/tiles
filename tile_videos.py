@@ -160,6 +160,18 @@ CROP_POSITION_NAMES = {
     'bottom-right': 'Bottom-Right corner'
 }
 
+DISTRIBUTION_MODES = {
+    '1': 'round-robin',
+    '2': 'sequential',
+    '3': 'random'
+}
+
+DISTRIBUTION_MODE_NAMES = {
+    'round-robin': 'Round-Robin (cycling) - Each tile gets every Nth clip',
+    'sequential': 'Sequential Blocks - Divide clips into continuous chunks',
+    'random': 'Random Distribution - Shuffle and distribute randomly'
+}
+
 def save_settings(settings):
     """Save settings to file."""
     try:
@@ -184,7 +196,12 @@ def display_saved_settings(settings):
     print(f"  Layout: {settings['layout_code']}")
     print(f"  Crop mode: {CROP_MODE_NAMES[settings['crop_mode']]}")
 
-    display_layout(settings['layout_code'], tile_folders=settings['tile_folders'])
+    # Check if distribution mode was used
+    if settings.get('distribution_mode'):
+        print(f"  Distribution: {DISTRIBUTION_MODE_NAMES[settings['distribution_mode']]} (single folder)")
+        display_layout(settings['layout_code'], tile_folders=[settings['tile_folders'][0]] * len(settings['tile_folders']))
+    else:
+        display_layout(settings['layout_code'], tile_folders=settings['tile_folders'])
 
     print("  Tile configurations:")
     for i, tile_cfg in enumerate(settings['tile_settings']):
@@ -280,6 +297,60 @@ def get_video_files(folder_path):
     video_files = [f for f in folder.iterdir()
                    if f.is_file() and f.suffix.lower() in VIDEO_EXTENSIONS]
     return sorted(video_files, key=lambda x: x.name.lower())
+
+def distribute_videos(video_files, num_tiles, mode='round-robin'):
+    """Distribute videos across tiles using specified mode."""
+    import random
+
+    total_videos = len(video_files)
+
+    if mode == 'round-robin':
+        # Each tile gets every Nth video
+        distributed = [[] for _ in range(num_tiles)]
+        for i, video in enumerate(video_files):
+            tile_idx = i % num_tiles
+            distributed[tile_idx].append(video)
+        return distributed
+
+    elif mode == 'sequential':
+        # Divide into continuous chunks
+        videos_per_tile = total_videos // num_tiles
+        remainder = total_videos % num_tiles
+
+        distributed = []
+        start_idx = 0
+
+        for i in range(num_tiles):
+            # Give extra videos to first tiles if there's a remainder
+            chunk_size = videos_per_tile + (1 if i < remainder else 0)
+            end_idx = start_idx + chunk_size
+            distributed.append(video_files[start_idx:end_idx])
+            start_idx = end_idx
+
+        return distributed
+
+    elif mode == 'random':
+        # Shuffle and distribute
+        shuffled = video_files.copy()
+        random.shuffle(shuffled)
+
+        videos_per_tile = total_videos // num_tiles
+        remainder = total_videos % num_tiles
+
+        distributed = []
+        start_idx = 0
+
+        for i in range(num_tiles):
+            chunk_size = videos_per_tile + (1 if i < remainder else 0)
+            end_idx = start_idx + chunk_size
+            distributed.append(shuffled[start_idx:end_idx])
+            start_idx = end_idx
+
+        return distributed
+
+    else:
+        # Default to round-robin
+        return distribute_videos(video_files, num_tiles, 'round-robin')
 
 def get_video_info(video_path):
     """Get video duration and properties using ffprobe."""
@@ -727,15 +798,27 @@ Note: Requires ffmpeg to be installed.
         crop_mode = saved_settings['crop_mode']
         tile_folders = saved_settings['tile_folders']
         audio_tile = saved_settings['audio_tile']
-
-        # Reconstruct tile_settings - need to get fresh video lists
-        tile_settings = []
-        for i, tile_cfg in enumerate(saved_settings['tile_settings']):
-            videos = get_video_files(tile_folders[i])
-            tile_settings.append((videos, tile_cfg['trans_type'], tile_cfg['trans_duration'], tile_cfg['crop_position']))
+        distribution_mode = saved_settings.get('distribution_mode')
 
         layout_info = get_layout_info(layout_code)
         num_tiles = layout_info['count']
+
+        # Reconstruct tile_settings - need to get fresh video lists
+        tile_settings = []
+
+        if distribution_mode:
+            # Distribute videos from single folder
+            all_videos = get_video_files(tile_folders[0])
+            distributed_videos = distribute_videos(all_videos, num_tiles, distribution_mode)
+
+            for i, tile_cfg in enumerate(saved_settings['tile_settings']):
+                videos = distributed_videos[i]
+                tile_settings.append((videos, tile_cfg['trans_type'], tile_cfg['trans_duration'], tile_cfg['crop_position']))
+        else:
+            # Get videos from each folder separately
+            for i, tile_cfg in enumerate(saved_settings['tile_settings']):
+                videos = get_video_files(tile_folders[i])
+                tile_settings.append((videos, tile_cfg['trans_type'], tile_cfg['trans_duration'], tile_cfg['crop_position']))
 
         print("\nUsing saved settings!")
 
@@ -793,11 +876,58 @@ Note: Requires ffmpeg to be installed.
                     break
                 print(f"Folder '{resolved_folder}' does not exist. Please try again.")
 
+        # Check if all folders are the same - offer distribution mode
+        unique_folders = list(set(tile_folders))
+        distribution_mode = None
+
+        if len(unique_folders) == 1:
+            # All tiles use the same folder
+            all_videos = get_video_files(unique_folders[0])
+
+            print(f"\n{'='*60}")
+            print(f"All tiles use the same folder: {unique_folders[0]}")
+            print(f"Found {len(all_videos)} total video(s)")
+            print('='*60)
+
+            print("\nDistribution mode:")
+            print("  1. Round-Robin (cycling) - Each tile gets every Nth clip")
+            print("     Example: Tile1=[1,5,9...] Tile2=[2,6,10...] Tile3=[3,7,11...]")
+            print("  2. Sequential Blocks - Divide clips into continuous chunks")
+            print("     Example: Tile1=[1-24] Tile2=[25-48] Tile3=[49-71]")
+            print("  3. Random Distribution - Shuffle and distribute randomly")
+
+            while True:
+                choice = input("\nSelect distribution mode (1-3): ").strip()
+                if choice in DISTRIBUTION_MODES:
+                    distribution_mode = DISTRIBUTION_MODES[choice]
+                    break
+                print("Invalid choice. Please enter 1, 2, or 3.")
+
+            print(f"\nUsing: {DISTRIBUTION_MODE_NAMES[distribution_mode]}")
+
+            # Distribute videos across tiles
+            distributed_videos = distribute_videos(all_videos, num_tiles, distribution_mode)
+
+            # Show distribution
+            print("\nDistribution:")
+            for i, videos in enumerate(distributed_videos, 1):
+                print(f"  Tile {i}: {len(videos)} video(s)")
+                if len(videos) > 0:
+                    print(f"    First: {videos[0].name}")
+                    if len(videos) > 1:
+                        print(f"    Last:  {videos[-1].name}")
+        else:
+            distributed_videos = None
+
         # Get transition settings for each tile
         tile_settings = []
         for i, folder in enumerate(tile_folders):
-            videos = get_video_files(folder)
-            print(f"\nTile {i + 1}: {len(videos)} video(s) from '{folder}'")
+            if distributed_videos:
+                videos = distributed_videos[i]
+                print(f"\nTile {i + 1}: {len(videos)} video(s) (distributed from '{folder}')")
+            else:
+                videos = get_video_files(folder)
+                print(f"\nTile {i + 1}: {len(videos)} video(s) from '{folder}'")
 
             if len(videos) > 1:
                 print("  1. Simple Cut")
@@ -873,6 +1003,11 @@ Note: Requires ffmpeg to be installed.
                 for ts in tile_settings
             ]
         }
+
+        # Add distribution mode if used
+        if distribution_mode:
+            settings_to_save['distribution_mode'] = distribution_mode
+
         save_settings(settings_to_save)
         print("\n✓ Settings saved for next time!")
 
