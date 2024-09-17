@@ -4,6 +4,8 @@ A collection of Python command-line tools for video processing: cleaning/organiz
 
 ## Quick Start
 
+Prereq: install ffmpeg/ffprobe (see Requirements below).
+
 ```bash
 # From repo root
 python -m video_tiling.tile_videos
