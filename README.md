@@ -2,9 +2,22 @@
 
 A collection of Python command-line tools for video processing: cleaning/organizing footage, scene detection, trimming, concatenating, and creating tiled video layouts.
 
+## Quick Start
+
+```bash
+# From repo root
+python -m video_tiling.tile_videos
+```
+
+TUI (full-screen wizard + settings editor + run panel):
+
+```bash
+python3 tui/app.py
+```
+
 ## Requirements
 
-- **Python 3.7+**
+- **Python 3.8+**
 - **ffmpeg** and **ffprobe**
 - **PySceneDetect** (only for video_tiling.detect_scenes)
 
@@ -23,9 +36,9 @@ sudo apt-get install ffmpeg
 On Windows:
 Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
-### Installing PySceneDetect (for scene detection)
+### Installing Python dependencies (optional)
 
-PySceneDetect requires a virtual environment. Activate it before running **Detect scenes** in the TUI:
+Only required for `video_tiling.detect_scenes`.
 
 ```bash
 # Create virtual environment (one-time setup)
@@ -34,11 +47,11 @@ python3 -m venv venv
 # Activate virtual environment (do this each time)
 source venv/bin/activate
 
-# Install PySceneDetect
-pip install 'scenedetect[opencv]'
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-**Note:** You only need this for `video_tiling.detect_scenes`. The other tools work without it.
+**Note:** The other tools work without Python dependencies beyond the standard library.
 
 ## Project Structure
 
