@@ -1,11 +1,12 @@
 # Output directories
+outputs/
 trimmed_output/
 concatenated_output/
 output/
 scenes_output/
 
 # Settings file (optional - remove this line if you want to commit settings)
-tile_videos_settings.json
+configs/tile_videos_settings.json
 
 # Python cache
 __pycache__/

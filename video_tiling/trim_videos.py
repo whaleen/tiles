@@ -10,8 +10,10 @@ import argparse
 import subprocess
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+
 # Default source folder for videos
-SRC_FOLDER = Path('src')
+SRC_FOLDER = ROOT / "src"
 
 # Common video file extensions
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.webm'}
@@ -167,8 +169,8 @@ Examples:
     )
 
     parser.add_argument('folders', nargs='+', help='One or more folders containing videos to trim')
-    parser.add_argument('-o', '--output', default='trimmed_output',
-                        help='Output directory for trimmed videos (default: trimmed_output)')
+    parser.add_argument('-o', '--output', default='outputs/trimmed',
+                        help='Output directory for trimmed videos (default: outputs/trimmed)')
 
     args = parser.parse_args()
 
@@ -182,6 +184,8 @@ Examples:
         sys.exit(1)
 
     output_dir = Path(args.output)
+    if not output_dir.is_absolute():
+        output_dir = ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Video Trimming Tool")

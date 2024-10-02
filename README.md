@@ -6,7 +6,7 @@ A collection of Python command-line tools for video processing: cleaning/organiz
 
 - **Python 3.7+**
 - **ffmpeg** and **ffprobe**
-- **PySceneDetect** (only for detect_scenes.py)
+- **PySceneDetect** (only for video_tiling.detect_scenes)
 
 ### Installing ffmpeg
 
@@ -25,7 +25,7 @@ Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
 ### Installing PySceneDetect (for scene detection)
 
-PySceneDetect requires a virtual environment:
+PySceneDetect requires a virtual environment. Activate it before running **Detect scenes** in the TUI:
 
 ```bash
 # Create virtual environment (one-time setup)
@@ -38,7 +38,7 @@ source venv/bin/activate
 pip install 'scenedetect[opencv]'
 ```
 
-**Note:** You only need this for `detect_scenes.py`. The other scripts work without it.
+**Note:** You only need this for `video_tiling.detect_scenes`. The other tools work without it.
 
 ## Project Structure
 
@@ -46,21 +46,27 @@ Organize your videos in a `src/` folder for convenience:
 
 ```
 your-project/
-├── src/                    # Put your video folders here
+├── configs/
+│   └── tile_videos_settings.json  # Auto-saved settings
+├── outputs/
+│   ├── scenes/               # Auto-created by detect script
+│   ├── trimmed/              # Auto-created by trim script
+│   ├── concatenated/         # Auto-created by concat script
+│   ├── tiled/                # Auto-created by tile script
+│   └── tui-logs/             # TUI logs
+├── src/                      # Put your video folders here
 │   ├── scene1/
 │   ├── scene2/
 │   └── camera1/
-├── scenes_output/          # Auto-created by detect script
-├── trimmed_output/         # Auto-created by trim script
-├── concatenated_output/    # Auto-created by concat script
-├── output/                 # Auto-created by tile script
-├── venv/                   # Virtual environment (for detect_scenes.py)
-├── tile_videos_settings.json  # Auto-saved settings
-├── clean_folder.py
-├── detect_scenes.py
-├── trim_videos.py
-├── concat_videos.py
-└── tile_videos.py
+├── tui/
+│   └── app.py                # Main TUI entrypoint
+├── video_tiling/             # Core tools package
+│   ├── clean_folder.py
+│   ├── detect_scenes.py
+│   ├── trim_videos.py
+│   ├── concat_videos.py
+│   └── tile_videos.py
+└── venv/                     # Virtual environment (for video_tiling.detect_scenes)
 ```
 
 **Folder Path Resolution:**
@@ -70,7 +76,7 @@ your-project/
 
 ## Scripts Overview
 
-### 1. clean_folder.py - Clean and Organize Folders
+### 1. clean_folder - Clean and Organize Folders
 
 Remove duplicate videos and/or rename files by modification date. Great for organizing raw footage.
 
@@ -85,27 +91,27 @@ Remove duplicate videos and/or rename files by modification date. Great for orga
 **Usage:**
 ```bash
 # Interactive mode
-./clean_folder.py my_footage
+python -m video_tiling.clean_folder my_footage
 
 # Process multiple folders
-./clean_folder.py folder1 folder2
+python -m video_tiling.clean_folder folder1 folder2
 
 # Skip prompt - remove duplicates only
-./clean_folder.py my_footage -m 1
+python -m video_tiling.clean_folder my_footage -m 1
 
 # Rename by date only
-./clean_folder.py my_footage -m 2
+python -m video_tiling.clean_folder my_footage -m 2
 
 # Both operations
-./clean_folder.py my_footage -m 3
+python -m video_tiling.clean_folder my_footage -m 3
 
 # Add sequential numbers when renaming
-./clean_folder.py my_footage -m 2 -n
+python -m video_tiling.clean_folder my_footage -m 2 -n
 ```
 
 **Example:**
 ```bash
-./clean_folder.py src/raw_footage
+python -m video_tiling.clean_folder src/raw_footage
 ```
 
 You'll be prompted:
@@ -151,7 +157,7 @@ Freed 90.46 MB
 
 ---
 
-### 2. detect_scenes.py - Scene Detection
+### 2. detect_scenes - Scene Detection
 
 Automatically detect scene changes in videos and split them into separate clips.
 
@@ -172,22 +178,22 @@ source venv/bin/activate
 **Usage:**
 ```bash
 # Detect and split a single video
-./detect_scenes.py my_film.mp4
+python -m video_tiling.detect_scenes my_film.mp4
 
 # Process videos from src/ folder
-./detect_scenes.py my_footage
+python -m video_tiling.detect_scenes my_footage
 
 # List scenes without splitting
-./detect_scenes.py my_film.mp4 --list-only
+python -m video_tiling.detect_scenes my_film.mp4 --list-only
 
 # Skip interactive prompts
-./detect_scenes.py my_film.mp4 -m content -t 27.0
+python -m video_tiling.detect_scenes my_film.mp4 -m content -t 27.0
 ```
 
 **Example:**
 ```bash
 source venv/bin/activate
-./detect_scenes.py src/my_film/video.mp4
+python -m video_tiling.detect_scenes src/my_film/video.mp4
 ```
 
 You'll be prompted:
@@ -207,11 +213,11 @@ Threshold (default 27.0): 25
 
 **Output:**
 - Scene list with timecodes and statistics
-- Individual scene files: `scenes_output/video/video-Scene-001.mp4`, `video-Scene-002.mp4`, etc.
+- Individual scene files: `outputs/scenes/video/video-Scene-001.mp4`, `video-Scene-002.mp4`, etc.
 
 **Custom output directory:**
 ```bash
-./detect_scenes.py my_film.mp4 -o my_scenes
+python -m video_tiling.detect_scenes my_film.mp4 -o my_scenes
 ```
 
 **Threshold Guidelines:**
@@ -221,7 +227,7 @@ Threshold (default 27.0): 25
 
 ---
 
-### 3. trim_videos.py - Trim Videos
+### 3. trim_videos - Trim Videos
 
 Trim videos from multiple folders with custom start/end trim values per folder.
 
@@ -234,19 +240,19 @@ Trim videos from multiple folders with custom start/end trim values per folder.
 **Usage:**
 ```bash
 # Using src/ folders (recommended)
-./trim_videos.py scene1 scene2
+python -m video_tiling.trim_videos scene1 scene2
 
 # Or with full paths
-./trim_videos.py src/scene1 src/scene2
+python -m video_tiling.trim_videos src/scene1 src/scene2
 
 # Or absolute paths
-./trim_videos.py /path/to/raw_footage/scene1 /path/to/raw_footage/scene2
+python -m video_tiling.trim_videos /path/to/raw_footage/scene1 /path/to/raw_footage/scene2
 ```
 
 **Example:**
 ```bash
 # If you have src/scene1/ and src/scene2/
-./trim_videos.py scene1 scene2
+python -m video_tiling.trim_videos scene1 scene2
 ```
 
 You'll be prompted:
@@ -257,17 +263,17 @@ Trim from end (seconds, 0 for none): 1.5
 ```
 
 **Output:**
-- `trimmed_output/scene1/video1.mp4`
-- `trimmed_output/scene2/video1.mp4`
+- `outputs/trimmed/scene1/video1.mp4`
+- `outputs/trimmed/scene2/video1.mp4`
 
 **Custom output directory:**
 ```bash
-./trim_videos.py folder1 -o my_trimmed_videos
+python -m video_tiling.trim_videos folder1 -o my_trimmed_videos
 ```
 
 ---
 
-### 4. concat_videos.py - Concatenate Videos
+### 4. concat_videos - Concatenate Videos
 
 Concatenate all videos in folders with optional transitions between clips.
 
@@ -281,16 +287,16 @@ Concatenate all videos in folders with optional transitions between clips.
 **Usage:**
 ```bash
 # Using src/ folders (recommended)
-./concat_videos.py intro main outro
+python -m video_tiling.concat_videos intro main outro
 
 # Or with full paths
-./concat_videos.py src/intro src/main src/outro
+python -m video_tiling.concat_videos src/intro src/main src/outro
 ```
 
 **Example:**
 ```bash
 # If you have src/intro/, src/main/, src/outro/
-./concat_videos.py intro main outro
+python -m video_tiling.concat_videos intro main outro
 ```
 
 You'll be prompted for each folder:
@@ -308,18 +314,18 @@ Transition duration in seconds (e.g., 1.0): 1.5
 ```
 
 **Output:**
-- `concatenated_output/intro_concatenated.mp4`
-- `concatenated_output/main_concatenated.mp4`
-- `concatenated_output/outro_concatenated.mp4`
+- `outputs/concatenated/intro_concatenated.mp4`
+- `outputs/concatenated/main_concatenated.mp4`
+- `outputs/concatenated/outro_concatenated.mp4`
 
 **Custom output directory:**
 ```bash
-./concat_videos.py folder1 -o my_concatenated_videos
+python -m video_tiling.concat_videos folder1 -o my_concatenated_videos
 ```
 
 ---
 
-### 5. tile_videos.py - Create Tiled Video Layouts
+### 5. tile_videos - Create Tiled Video Layouts
 
 Create professional tiled video compositions with multiple videos playing simultaneously.
 
@@ -327,14 +333,28 @@ Create professional tiled video compositions with multiple videos playing simult
 - 10 layout options (grids, PiP, custom layouts)
 - **Distribution mode** - automatically split clips from one folder across tiles
 - Per-tile transitions
+- Per-tile playback speed (slow/normal/fast)
+- Per-tile mode: video or image slideshow
 - Crop position control (top, bottom, left, right, center, corners)
 - Settings memory - reuse your last configuration
 - Preview mode - test with 2-3 videos before full render
+- Optional audio disable
+- Max duration per folder and max total output duration
 
 **Usage:**
 ```bash
-./tile_videos.py
+python -m video_tiling.tile_videos
 ```
+
+**TUI (full-screen wizard + settings editor + run panel):**
+```bash
+python3 tui/app.py
+```
+
+**TUI Tools / Doctor:**
+- Re-encode CFR (fix freeze frames / timestamp issues)
+- Split landscape videos into `landscape/`
+- Launch existing scripts (clean/trim/concat/detect) in terminal mode
 
 **Example Workflow:**
 
@@ -411,7 +431,7 @@ Select mode (1-2, default 1): 2
 ```
 
 **Output:**
-- Filename: `output/2x2_top-left_top-right_bottom-left_bottom-right.mp4`
+- Filename: `outputs/tiled/2x2_top-left_top-right_bottom-left_bottom-right.mp4`
 
 **Settings Memory:**
 Next time you run the script, you'll see:
@@ -426,12 +446,26 @@ Use these settings? (y/n): y
 
 **Custom output file:**
 ```bash
-./tile_videos.py -o my_custom_name.mp4
+python -m video_tiling.tile_videos -o my_custom_name.mp4
 ```
 
 **Custom resolution:**
 ```bash
-./tile_videos.py -w 3840 --height 2160  # 4K
+python -m video_tiling.tile_videos -w 3840 --height 2160  # 4K
+```
+
+**Disable audio:**
+```bash
+python -m video_tiling.tile_videos --no-audio
+```
+
+**Limit video durations:**
+```bash
+# Skip clips longer than 15 seconds
+python -m video_tiling.tile_videos --max-duration 15
+
+# Cap final output length to 120 seconds
+python -m video_tiling.tile_videos --max-total-duration 120
 ```
 
 **Distribution Mode (Single Folder):**
@@ -443,6 +477,7 @@ Distribution mode:
   1. Round-Robin (cycling) - Each tile gets every Nth clip
   2. Sequential Blocks - Divide clips into continuous chunks
   3. Random Distribution - Shuffle and distribute randomly
+  4. Shuffle then Round-Robin - Random order, evenly cycled
 ```
 
 **Distribution Examples (71 clips in 2x2 layout):**
@@ -489,7 +524,7 @@ Distribution mode:
 
 ```bash
 # Step 1: Clean up messy raw footage folder
-./clean_folder.py src/raw_footage -m 3 -n
+python -m video_tiling.clean_folder src/raw_footage -m 3 -n
 # Removes duplicates, renames chronologically with numbers
 
 # Step 2: Now you have organized files ready to process
@@ -505,17 +540,17 @@ Distribution mode:
 source venv/bin/activate
 
 # Step 1: Automatically detect and split scenes
-./detect_scenes.py src/my_film/skateboard_video.mp4 -t 27
-# Creates 71 scene clips in scenes_output/skateboard_video/
+python -m video_tiling.detect_scenes src/my_film/skateboard_video.mp4 -t 27
+# Creates 71 scene clips in outputs/scenes/skateboard_video/
 
 # Step 2: Create a 2x2 tiled video with distribution mode
-./tile_videos.py
+python -m video_tiling.tile_videos
 # Select layout: 2x2
 # Select crop mode: Crop to fill
-# Folder for tile 1: scenes_output/skateboard_video
-# Folder for tile 2: scenes_output/skateboard_video  (same folder)
-# Folder for tile 3: scenes_output/skateboard_video  (same folder)
-# Folder for tile 4: scenes_output/skateboard_video  (same folder)
+# Folder for tile 1: outputs/scenes/skateboard_video
+# Folder for tile 2: outputs/scenes/skateboard_video  (same folder)
+# Folder for tile 3: outputs/scenes/skateboard_video  (same folder)
+# Folder for tile 4: outputs/scenes/skateboard_video  (same folder)
 #
 # Distribution mode: 1 (Round-Robin)
 # Result: All 71 clips distributed across 4 tiles, cycling chronologically
@@ -528,28 +563,28 @@ source venv/bin/activate
 # src/scene1/, src/scene2/, src/scene3/
 
 # Step 1: Trim unwanted parts from raw footage
-./trim_videos.py scene1 scene2 scene3
+python -m video_tiling.trim_videos scene1 scene2 scene3
 
 # Step 2: Concatenate trimmed clips per scene
-./concat_videos.py trimmed_output/scene1 trimmed_output/scene2 trimmed_output/scene3
+python -m video_tiling.concat_videos outputs/trimmed/scene1 outputs/trimmed/scene2 outputs/trimmed/scene3
 
 # Step 3: Create a tiled comparison video
-./tile_videos.py
+python -m video_tiling.tile_videos
 # Then enter folder names:
 # - Layout: 1x3 (three stacked)
-# - Folders: concatenated_output/scene1_concatenated, concatenated_output/scene2_concatenated, concatenated_output/scene3_concatenated
+# - Folders: outputs/concatenated/scene1_concatenated, outputs/concatenated/scene2_concatenated, outputs/concatenated/scene3_concatenated
 ```
 
 ### Example 4: Quick Preview Workflow
 
 ```bash
 # Create tiled video with preview mode
-./tile_videos.py
+python -m video_tiling.tile_videos
 # Select preview mode (option 2)
 # Review the output quickly
 
 # If happy, run again with saved settings in full mode
-./tile_videos.py
+python -m video_tiling.tile_videos
 # Use saved settings? (y/n): y
 # Select full mode (option 1)
 # Gets full render with same configuration
@@ -562,12 +597,12 @@ source venv/bin/activate
 # src/camera1/, src/camera2/, src/camera3/
 
 # Concatenate each camera angle
-./concat_videos.py camera1 camera2 camera3
+python -m video_tiling.concat_videos camera1 camera2 camera3
 
 # Create side-by-side comparison
-./tile_videos.py
+python -m video_tiling.tile_videos
 # Layout: 3x1
-# Folders: concatenated_output/camera1_concatenated, concatenated_output/camera2_concatenated, concatenated_output/camera3_concatenated
+# Folders: outputs/concatenated/camera1_concatenated, outputs/concatenated/camera2_concatenated, outputs/concatenated/camera3_concatenated
 # Audio: Select main camera
 ```
 
@@ -603,16 +638,17 @@ source venv/bin/activate
 - **Preview mode** renders 2-3 videos per tile - use this to test quickly
 - **Simple Cut** transitions are fastest (no re-encoding)
 - **Cross-Dissolve** and **Fade to Black** require re-encoding
+- **Max total duration** trims clip selection early to reduce processing time
 
 ### File Naming
 - Videos are processed alphabetically by filename
 - Use numbered prefixes for specific order: `01_intro.mp4`, `02_main.mp4`, etc.
-- `clean_folder.py -n` automatically adds numbered prefixes in chronological order
+- `video_tiling.clean_folder -n` automatically adds numbered prefixes in chronological order
 
 ### Resolution Tips
 - Default is 1920x1080 (Full HD)
-- For 4K: `./tile_videos.py -w 3840 --height 2160`
-- For Instagram: `./tile_videos.py -w 1080 --height 1920`
+- For 4K: `python -m video_tiling.tile_videos -w 3840 --height 2160`
+- For Instagram: `python -m video_tiling.tile_videos -w 1080 --height 1920`
 
 ---
 
@@ -630,14 +666,17 @@ This can happen with certain video codecs. Try re-encoding problematic videos fi
 ffmpeg -i input.mp4 -c:v libx264 -c:a aac output.mp4
 ```
 
+### Output too long or takes too long to render
+Use `--max-total-duration` to cap the final output length and reduce processing time.
+
 ### "Folder does not exist" error
 Make sure you're using the correct path. Use absolute paths if relative paths aren't working:
 ```bash
-./trim_videos.py /full/path/to/folder
+python -m video_tiling.trim_videos /full/path/to/folder
 ```
 
 ### Settings file issues
-Settings are saved to `tile_videos_settings.json` in your project directory. Delete this file to start fresh.
+Settings are saved to `configs/tile_videos_settings.json`. Delete this file to start fresh.
 
 **Note:** Distribution mode settings are also saved, so re-running with saved settings will use the same distribution.
 
@@ -668,23 +707,24 @@ If you need to compare by duration/resolution instead, that's a different featur
 
 ```
 your-project/
-├── scenes_output/
-│   └── my_film/
-│       ├── my_film-Scene-001.mp4
-│       ├── my_film-Scene-002.mp4
-│       └── my_film-Scene-003.mp4
-├── trimmed_output/
-│   ├── folder1/
-│   │   ├── video1.mp4
-│   │   └── video2.mp4
-│   └── folder2/
-│       └── video1.mp4
-├── concatenated_output/
-│   ├── folder1_concatenated.mp4
-│   └── folder2_concatenated.mp4
-└── output/
-    ├── 2x2_folder1_folder2_folder3.mp4
-    └── 3x1_cam1_cam2_cam3.mp4
+└── outputs/
+    ├── scenes/
+    │   └── my_film/
+    │       ├── my_film-Scene-001.mp4
+    │       ├── my_film-Scene-002.mp4
+    │       └── my_film-Scene-003.mp4
+    ├── trimmed/
+    │   ├── folder1/
+    │   │   ├── video1.mp4
+    │   │   └── video2.mp4
+    │   └── folder2/
+    │       └── video1.mp4
+    ├── concatenated/
+    │   ├── folder1_concatenated.mp4
+    │   └── folder2_concatenated.mp4
+    └── tiled/
+        ├── 2x2_folder1_folder2_folder3.mp4
+        └── 3x1_cam1_cam2_cam3.mp4
 ```
 
 ---
@@ -698,8 +738,8 @@ You can provide output directories via command-line arguments for scripting:
 #!/bin/bash
 # Process multiple batches from src/
 for batch in batch1 batch2 batch3; do
-    ./trim_videos.py "$batch" -o "trimmed_$batch"
-    ./concat_videos.py "trimmed_$batch" -o "concat_$batch"
+    python -m video_tiling.trim_videos "$batch" -o "trimmed_$batch"
+    python -m video_tiling.concat_videos "trimmed_$batch" -o "concat_$batch"
 done
 ```
 
@@ -716,7 +756,7 @@ If you prefer not to use `src/`, you can still use:
 ### Custom Naming
 Override auto-generated names:
 ```bash
-./tile_videos.py -o final_video.mp4
+python -m video_tiling.tile_videos -o final_video.mp4
 ```
 
 ---

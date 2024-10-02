@@ -12,8 +12,10 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 
+ROOT = Path(__file__).resolve().parents[1]
+
 # Default source folder for videos
-SRC_FOLDER = Path('src')
+SRC_FOLDER = ROOT / "src"
 
 # Common video file extensions
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.webm'}

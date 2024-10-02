@@ -10,8 +10,10 @@ import argparse
 import subprocess
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+
 # Default source folder for videos
-SRC_FOLDER = Path('src')
+SRC_FOLDER = ROOT / "src"
 
 # Common video file extensions
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.webm'}
@@ -26,8 +28,7 @@ def check_scenedetect():
 
 def check_venv():
     """Check if a venv exists in the project directory."""
-    script_dir = Path(__file__).parent
-    venv_path = script_dir / 'venv'
+    venv_path = ROOT / 'venv'
     return venv_path.exists() and (venv_path / 'bin' / 'activate').exists()
 
 def resolve_folder_path(folder_input):
@@ -285,8 +286,8 @@ Note: Requires PySceneDetect to be installed.
 
     parser.add_argument('inputs', nargs='+',
                         help='Video file(s) or folder(s) to process')
-    parser.add_argument('-o', '--output', default='scenes_output',
-                        help='Output directory for scene clips (default: scenes_output)')
+    parser.add_argument('-o', '--output', default='outputs/scenes',
+                        help='Output directory for scene clips (default: outputs/scenes)')
     parser.add_argument('--list-only', action='store_true',
                         help='Only list detected scenes, do not split videos')
     parser.add_argument('-t', '--threshold', type=float,
@@ -323,6 +324,8 @@ Note: Requires PySceneDetect to be installed.
         sys.exit(1)
 
     output_dir = Path(args.output)
+    if not output_dir.is_absolute():
+        output_dir = ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)

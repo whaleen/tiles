@@ -11,8 +11,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+
 # Default source folder for videos
-SRC_FOLDER = Path('src')
+SRC_FOLDER = ROOT / "src"
 
 # Common video file extensions
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v', '.webm'}
@@ -367,8 +369,8 @@ Note: Requires ffmpeg to be installed.
     )
 
     parser.add_argument('folders', nargs='+', help='One or more folders containing videos to concatenate')
-    parser.add_argument('-o', '--output', default='concatenated_output',
-                        help='Output directory for concatenated videos (default: concatenated_output)')
+    parser.add_argument('-o', '--output', default='outputs/concatenated',
+                        help='Output directory for concatenated videos (default: outputs/concatenated)')
 
     args = parser.parse_args()
 
@@ -382,6 +384,8 @@ Note: Requires ffmpeg to be installed.
         sys.exit(1)
 
     output_dir = Path(args.output)
+    if not output_dir.is_absolute():
+        output_dir = ROOT / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Video Concatenation Tool")
