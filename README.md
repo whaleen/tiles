@@ -1,6 +1,6 @@
 # Video Processing Scripts
 
-A collection of Python command-line tools for video processing: scene detection, trimming, concatenating, and creating tiled video layouts.
+A collection of Python command-line tools for video processing: cleaning/organizing footage, scene detection, trimming, concatenating, and creating tiled video layouts.
 
 ## Requirements
 
@@ -56,6 +56,7 @@ your-project/
 ├── output/                 # Auto-created by tile script
 ├── venv/                   # Virtual environment (for detect_scenes.py)
 ├── tile_videos_settings.json  # Auto-saved settings
+├── clean_folder.py
 ├── detect_scenes.py
 ├── trim_videos.py
 ├── concat_videos.py
@@ -69,7 +70,88 @@ your-project/
 
 ## Scripts Overview
 
-### 1. detect_scenes.py - Scene Detection
+### 1. clean_folder.py - Clean and Organize Folders
+
+Remove duplicate videos and/or rename files by modification date. Great for organizing raw footage.
+
+**Features:**
+- Find and remove duplicate videos by content (not just filename)
+- Rename files by last modified date with consistent formatting
+- Optional sequential numbering (01_, 02_, etc.)
+- Keeps first file alphabetically when duplicates found
+- Shows space freed after removing duplicates
+- Auto-resolves folders from `src/`
+
+**Usage:**
+```bash
+# Interactive mode
+./clean_folder.py my_footage
+
+# Process multiple folders
+./clean_folder.py folder1 folder2
+
+# Skip prompt - remove duplicates only
+./clean_folder.py my_footage -m 1
+
+# Rename by date only
+./clean_folder.py my_footage -m 2
+
+# Both operations
+./clean_folder.py my_footage -m 3
+
+# Add sequential numbers when renaming
+./clean_folder.py my_footage -m 2 -n
+```
+
+**Example:**
+```bash
+./clean_folder.py src/raw_footage
+```
+
+You'll be prompted:
+```
+Clean Folder Options:
+  1. Remove duplicates only
+  2. Rename by date only
+  3. Both - remove duplicates, then rename remaining files
+
+Select operation (1-3): 3
+```
+
+**Duplicate Removal Output:**
+```
+Found 2 group(s) of duplicates:
+
+Group 1:
+  Keeping: clip_001.mp4
+  Removing:
+    ✓ COPY_clip_001.mp4 (45.23 MB)
+    ✓ duplicate_clip.mp4 (45.23 MB)
+
+Removed 2 duplicate file(s)
+Freed 90.46 MB
+```
+
+**Rename Output (without `-n`):**
+```
+✓ clip_001.mp4 → 2024-01-15_14-30-45.mp4
+✓ clip_002.mp4 → 2024-01-15_14-32-10.mp4
+```
+
+**Rename Output (with `-n`):**
+```
+✓ clip_001.mp4 → 01_2024-01-15_14-30-45.mp4
+✓ clip_002.mp4 → 02_2024-01-15_14-32-10.mp4
+```
+
+**Common Workflows:**
+- **Organize raw footage**: `-m 3` (remove duplicates + rename)
+- **Find storage hogs**: `-m 1` (duplicates only, see how much space you free)
+- **Chronological naming**: `-m 2 -n` (numbered by date for easy sorting)
+
+---
+
+### 2. detect_scenes.py - Scene Detection
 
 Automatically detect scene changes in videos and split them into separate clips.
 
@@ -139,7 +221,7 @@ Threshold (default 27.0): 25
 
 ---
 
-### 2. trim_videos.py - Trim Videos
+### 3. trim_videos.py - Trim Videos
 
 Trim videos from multiple folders with custom start/end trim values per folder.
 
@@ -185,7 +267,7 @@ Trim from end (seconds, 0 for none): 1.5
 
 ---
 
-### 3. concat_videos.py - Concatenate Videos
+### 4. concat_videos.py - Concatenate Videos
 
 Concatenate all videos in folders with optional transitions between clips.
 
@@ -237,7 +319,7 @@ Transition duration in seconds (e.g., 1.0): 1.5
 
 ---
 
-### 4. tile_videos.py - Create Tiled Video Layouts
+### 5. tile_videos.py - Create Tiled Video Layouts
 
 Create professional tiled video compositions with multiple videos playing simultaneously.
 
@@ -373,25 +455,41 @@ Use these settings? (y/n): y
 
 ## Workflow Examples
 
-### Example 1: Auto-Split and Process a Film
+### Example 1: Organize and Clean Raw Footage
+
+```bash
+# Step 1: Clean up messy raw footage folder
+./clean_folder.py src/raw_footage -m 3 -n
+# Removes duplicates, renames chronologically with numbers
+
+# Step 2: Now you have organized files ready to process
+# 01_2024-01-15_14-30-45.mp4
+# 02_2024-01-15_14-32-10.mp4
+# etc.
+```
+
+### Example 2: Auto-Split and Process a Film
 
 ```bash
 # Activate venv for scene detection
 source venv/bin/activate
 
-# Step 1: Automatically detect and split scenes
-./detect_scenes.py src/my_film/full_movie.mp4 -t 27
+# Step 1: Clean and organize the raw film file
+./clean_folder.py src/my_film -m 3
 
-# Step 2: Trim unwanted parts from specific scenes
-./trim_videos.py scenes_output/full_movie
+# Step 2: Automatically detect and split scenes
+./detect_scenes.py src/my_film/2024-01-15_10-00-00.mp4 -t 27
 
-# Step 3: Create a montage of selected scenes
+# Step 3: Trim unwanted parts from specific scenes
+./trim_videos.py scenes_output/2024-01-15_10-00-00
+
+# Step 4: Create a montage of selected scenes
 ./tile_videos.py
 # Layout: 2x2
-# Folders: scenes_output/full_movie (select specific scene files)
+# Folders: scenes_output/2024-01-15_10-00-00 (select specific scene files)
 ```
 
-### Example 2: Complete Video Processing Pipeline
+### Example 3: Complete Video Processing Pipeline
 
 ```bash
 # Organize your raw footage in src/
@@ -410,7 +508,7 @@ source venv/bin/activate
 # - Folders: concatenated_output/scene1_concatenated, concatenated_output/scene2_concatenated, concatenated_output/scene3_concatenated
 ```
 
-### Example 3: Quick Preview Workflow
+### Example 4: Quick Preview Workflow
 
 ```bash
 # Create tiled video with preview mode
@@ -425,7 +523,7 @@ source venv/bin/activate
 # Gets full render with same configuration
 ```
 
-### Example 4: Multi-Angle Video
+### Example 5: Multi-Angle Video
 
 ```bash
 # Organize camera footage in src/
@@ -444,6 +542,12 @@ source venv/bin/activate
 ---
 
 ## Tips and Tricks
+
+### Organizing Raw Footage
+- **Run clean_folder first** on new footage to remove duplicates and get consistent naming
+- **Use `-n` flag** for numbered files if you want guaranteed chronological order
+- **Check freed space** with `-m 1` to see how many duplicates you have
+- Files are compared by content hash, so different filenames won't fool it
 
 ### Video Alignment
 - Videos in the same tile play sequentially
@@ -464,6 +568,7 @@ source venv/bin/activate
 ### File Naming
 - Videos are processed alphabetically by filename
 - Use numbered prefixes for specific order: `01_intro.mp4`, `02_main.mp4`, etc.
+- `clean_folder.py -n` automatically adds numbered prefixes in chronological order
 
 ### Resolution Tips
 - Default is 1920x1080 (Full HD)
@@ -508,6 +613,13 @@ Adjust the threshold:
 - **Too many scenes detected**: Increase threshold (try 30-35)
 - **Missing scene changes**: Decrease threshold (try 20-25)
 - Try the Adaptive method for videos with gradual lighting changes
+
+### "No duplicates found" but I know there are duplicates
+The script compares file *content*, not filenames. If files have different content (even slightly), they're not duplicates. This includes:
+- Different encoding settings
+- Different trim points
+- Different metadata
+If you need to compare by duration/resolution instead, that's a different feature.
 
 ---
 
