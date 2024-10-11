@@ -1,20 +1,20 @@
-# Video Processing Scripts
+# tiles
 
-A collection of Python command-line tools for video processing: cleaning/organizing footage, scene detection, trimming, concatenating, and creating tiled video layouts.
+A TUI-first toolkit for video processing: cleaning/organizing footage, scene detection, trimming, concatenating, and creating tiled video layouts. So, it is not just about tiles, but that is a nice short name that surely nobody else has ever used for a project.
 
 ## Quick Start
 
 Prereq: install ffmpeg/ffprobe (see Requirements below).
 
 ```bash
-# From repo root
-python -m video_tiling.tile_videos
+python3 tui/app.py
 ```
 
-TUI (full-screen wizard + settings editor + run panel):
+CLI (direct script):
 
 ```bash
-python3 tui/app.py
+# From repo root
+python -m video_tiling.tile_videos
 ```
 
 ## Requirements
