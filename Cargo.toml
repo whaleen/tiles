@@ -1,0 +1,3 @@
+[workspace]
+members = ["apps/tiles-tui", "apps/tiles-api"]
+resolver = "2"

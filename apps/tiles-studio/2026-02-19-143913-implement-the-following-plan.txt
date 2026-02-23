@@ -1,0 +1,2434 @@
+
+╭─── Claude Code v2.1.47 ──────────────────────────────────────────────────────╮
+│                                                 │ Tips for getting started   │
+│                  Welcome back!                  │ Run /init to create a CLA… │
+│                                                 │ ────────────────────────── │
+│                                                 │ Recent activity            │
+│                        ·                        │ 1d ago  Implement the fol… │
+│                        |                        │ 1d ago  Implement the fol… │
+│                       ▟█▙                       │ 2d ago  sup dog            │
+│                     ▐▛███▜▌                     │ /resume for more           │
+│                    ▝▜█████▛▘                    │                            │
+│                      ▘▘ ▝▝                      │                            │
+│                                                 │                            │
+│              Opus 4.6 · Claude API              │                            │
+│   ~/Projects/_whaleen/tiles/apps/tiles-studio   │                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Plan to implement                                                            │
+│                                                                              │
+│ Plan: Project Context Bar + Extract YouTube Import                           │
+│                                                                              │
+│ Context                                                                      │
+│                                                                              │
+│ The tiles-studio UI suffers from two issues: (1) project context is unclear  │
+│ — it's buried in a small sidebar dropdown, some pages don't show it at all,  │
+│ and Library internally duplicates the state; (2) the Tile Builder page is    │
+│ cluttered because it embeds a full YouTube import workflow (11 state         │
+│ variables, ~185 lines of JSX) that has zero shared state with tile building. │
+│                                                                              │
+│ Change A: Persistent Project Context Bar                                     │
+│                                                                              │
+│ What changes                                                                 │
+│                                                                              │
+│ New file: src/components/layout/project-bar.tsx                              │
+│ - Sticky bar at top of main content area                                     │
+│ - Shows current project prominently via a Select dropdown (or "All Projects" │
+│  when none selected)                                                         │
+│ - Shows current page title with icon (derived from activeTab)                │
+│ - Includes "+ New Project" button (moved from sidebar)                       │
+│ - Uses useProjects() hook for project list                                   │
+│                                                                              │
+│ Layout:                                                                      │
+│ ┌────────────────────────────────────────────────────────────┐               │
+│ │  PageIcon  Page Title     ProjectIcon  ProjectName ▾   +   │               │
+│ └────────────────────────────────────────────────────────────┘               │
+│                                                                              │
+│ Modify: src/components/layout/sidebar.tsx                                    │
+│ - Remove: project Select dropdown, "New Project" button, useProjects hook,   │
+│ useVideos hook, buildProjectThumbs/renderThumbGrid helpers,                  │
+│ apiPost/thumbUrl/toast imports                                               │
+│ - Remove: selectedProject and onProjectChange props                          │
+│ - Keep: "Tiles Studio" branding + nav tab buttons                            │
+│ - Result: ~40 lines, nav-only                                                │
+│                                                                              │
+│ Modify: src/components/layout/app-shell.tsx                                  │
+│ - Render <ProjectBar> as first child of <main>                               │
+│ - Remove project-related props from <Sidebar>                                │
+│ - Rename Library prop from initialProject to project                         │
+│                                                                              │
+│ Modify: src/pages/library.tsx                                                │
+│ - Rename prop initialProject → project                                       │
+│ - Remove internal selectedProject state (it never diverges from prop —       │
+│ setSelectedProject is only called in the useEffect sync)                     │
+│ - Remove the useEffect that syncs initialProject → selectedProject           │
+│ - Replace all selectedProject references with project                        │
+│ - Remove h2 page header                                                      │
+│ - Keep folder breadcrumb as inline text near search/badges                   │
+│                                                                              │
+│ Modify: src/pages/tile-builder.tsx                                           │
+│ - Remove h2 page header + LayoutGrid icon import                             │
+│                                                                              │
+│ Modify: src/pages/outputs.tsx                                                │
+│ - Remove h2 page header + FolderOutput icon import                           │
+│ - Remove rootPath badge (project bar now provides context)                   │
+│ - Keep top-level Refresh button                                              │
+│                                                                              │
+│ Modify: src/pages/logs.tsx                                                   │
+│ - Remove h2 page header + ScrollText icon import                             │
+│ - Keep Refresh button                                                        │
+│                                                                              │
+│ Change C: Extract YouTube Import                                             │
+│                                                                              │
+│ What changes                                                                 │
+│                                                                              │
+│ New file: src/pages/import.tsx                                               │
+│ - Receives project prop                                                      │
+│ - Contains all 11 YouTube state variables from tile-builder.tsx              │
+│ - Contains YouTube URL input + settings + import runs browser + transcript   │
+│ viewer                                                                       │
+│ - Contains moved helper functions: parseJson3Transcript, formatTimestamp,    │
+│ outFilePath                                                                  │
+│ - Uses hooks: useActionRunner(), useOutputTree() (x2)                        │
+│ - Two-section layout: import form on top, transcript/history below           │
+│                                                                              │
+│ Modify: src/pages/tile-builder.tsx                                           │
+│ - Remove: 11 yt-/transcript- state variables                                 │
+│ - Remove: ytProject, ytImportRoot derivations                                │
+│ - Remove: 2 useOutputTree calls for yt imports                               │
+│ - Remove: importRuns, selectedImportRun, transcriptCandidates,               │
+│ transcriptFile memos                                                         │
+│ - Remove: 2 useEffect hooks (import run sync, transcript loading)            │
+│ - Remove: YouTube JSX block (~185 lines)                                     │
+│ - Remove: parseJson3Transcript, formatTimestamp, outFilePath helpers         │
+│ - Clean up imports: remove apiGetText, useOutputTree, RefreshCw              │
+│ - Result: ~690 lines (down from ~985)                                        │
+│                                                                              │
+│ Modify: src/components/layout/sidebar.tsx                                    │
+│ - Add { id: "import", label: "Import", icon: Download } tab between          │
+│ tile-builder and outputs                                                     │
+│                                                                              │
+│ Modify: src/components/layout/app-shell.tsx                                  │
+│ - Add ImportPage import and routing: {activeTab === "import" && <ImportPage  │
+│ project={project} />}                                                        │
+│                                                                              │
+│ Implementation Order                                                         │
+│                                                                              │
+│ 1. Create project-bar.tsx                                                    │
+│ 2. Modify app-shell.tsx (wire ProjectBar, rename Library prop, add Import    │
+│ routing)                                                                     │
+│ 3. Modify sidebar.tsx (strip project selector, add Import tab)               │
+│ 4. Modify library.tsx (use prop directly, remove h2)                         │
+│ 5. Modify tile-builder.tsx (remove h2, then remove YouTube section)          │
+│ 6. Modify outputs.tsx (remove h2 + badge)                                    │
+│ 7. Modify logs.tsx (remove h2)                                               │
+│ 8. Create import.tsx                                                         │
+│                                                                              │
+│ Key Files                                                                    │
+│                                                                              │
+│ - src/components/layout/app-shell.tsx — central routing                      │
+│ - src/components/layout/sidebar.tsx — nav strip-down + Import tab            │
+│ - src/components/layout/project-bar.tsx — NEW                                │
+│ - src/pages/library.tsx — prop rename + state cleanup                        │
+│ - src/pages/tile-builder.tsx — biggest change: h2 removal + YouTube          │
+│ extraction                                                                   │
+│ - src/pages/outputs.tsx — h2 + badge removal                                 │
+│ - src/pages/logs.tsx — h2 removal                                            │
+│ - src/pages/import.tsx — NEW                                                 │
+│ - src/hooks/use-projects.ts — used by new ProjectBar                         │
+│                                                                              │
+│ Gotchas                                                                      │
+│                                                                              │
+│ - Library's LibraryActionPanel receives currentProject={selectedProject} —   │
+│ must change to currentProject={project}                                      │
+│ - The existing yt-import-form.tsx in actions/ is a separate minimal          │
+│ component used by the library action panel — leave it as-is                  │
+│ - Each page gets its own useActionRunner() instance so running state is      │
+│ independent between pages                                                    │
+│ - The "outputs/__none__" sentinel path pattern must be preserved in          │
+│ import.tsx                                                                   │
+│ - Sidebar useVideos() call (only used for project thumbnails) should be      │
+│ removed to avoid unnecessary API calls                                       │
+│                                                                              │
+│ Verification                                                                 │
+│                                                                              │
+│ - npx tsc --noEmit passes                                                    │
+│ - App loads, ProjectBar visible on all pages with project selector           │
+│ - Sidebar is nav-only (no project dropdown)                                  │
+│ - Switching projects updates Library, Tile Builder, Outputs correctly        │
+│ - "New Project" works from ProjectBar                                        │
+│ - Import tab appears in sidebar, page loads correctly                        │
+│ - YouTube import + transcript viewer works on Import page                    │
+│ - Tile Builder no longer shows YouTube section                               │
+│ - Tile Builder render still works                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+⏺ I'll start by reading all the key files in parallel to understand the current
+  state.
+
+⏺ Read 7 files (ctrl+o to expand)
+
+⏺ Let me find the actual file structure first.
+
+⏺ Searched for 2 patterns, read 2 files (ctrl+o to expand)
+
+⏺ The files are under apps/tiles-studio/. Let me read them all now.
+
+⏺ Read 7 files (ctrl+o to expand)
+
+⏺ Now I have a clear picture. Let me create the tasks and start implementing.
+
+⏺ Now let me start implementing. First, let me check what icon imports are
+  available.
+
+⏺ Write(src/components/layout/project-bar.tsx)
+  ⎿  Wrote 96 lines to src/components/layout/project-bar.tsx
+       1 import { useProjects } from "@/hooks/use-projects";
+       2 import { apiPost } from "@/api/client";
+       3 import { Button } from "@/components/ui/button";
+       4 import { toast } from "sonner";
+       5 import {
+       6   Select,
+       7   SelectContent,
+       8   SelectItem,
+       9   SelectTrigger,
+      10   SelectValue,
+     … +86 lines (ctrl+o to expand)
+
+⏺ Now modify app-shell.tsx.
+
+⏺ Write(src/components/layout/app-shell.tsx)
+  ⎿  Added 16 lines, removed 11 lines
+       1  import { useState } from "react";
+       2  import { Sidebar } from "./sidebar";
+       3 +import { ProjectBar } from "./project-bar";                    
+       4  import { LibraryPage } from "@/pages/library";
+       5  import { OutputsPage } from "@/pages/outputs";
+       6  import { TileBuilderPage } from "@/pages/tile-builder";
+       7 +import { ImportPage } from "@/pages/import";                   
+       8  import { LogsPage } from "@/pages/logs";
+       9  
+      10  export function AppShell() {
+     ...
+      13  
+      14    return (
+      15      <div className="flex h-screen overflow-hidden">
+      14 -      <Sidebar                                                 
+      15 -        activeTab={activeTab}                                  
+      16 -        onTabChange={setActiveTab}                             
+      17 -        selectedProject={project}                              
+      18 -        onProjectChange={setProject}                           
+      19 -      />                                                       
+      20 -      <main className="flex-1 overflow-auto p-6">              
+      21 -        {activeTab === "library" && <LibraryPage initialProject
+         -={project} />}                                                 
+      22 -        {activeTab === "tile-builder" && <TileBuilderPage proje
+         -ct={project} />}                                               
+      23 -        {activeTab === "outputs" && <OutputsPage project={proje
+         -ct} />}                                                        
+      24 -        {activeTab === "logs" && <LogsPage />}                 
+      16 +      <Sidebar activeTab={activeTab} onTabChange={setActiveTab}
+         + />                                                            
+      17 +      <main className="flex-1 overflow-auto">                  
+      18 +        <ProjectBar                                            
+      19 +          activeTab={activeTab}                                
+      20 +          selectedProject={project}                            
+      21 +          onProjectChange={setProject}                         
+      22 +        />                                                     
+      23 +        <div className="p-6">                                  
+      24 +          {activeTab === "library" && <LibraryPage project={pro
+         +ject} />}                                                      
+      25 +          {activeTab === "tile-builder" && <TileBuilderPage pro
+         +ject={project} />}                                             
+      26 +          {activeTab === "import" && <ImportPage project={proje
+         +ct} />}                                                        
+      27 +          {activeTab === "outputs" && <OutputsPage project={pro
+         +ject} />}                                                      
+      28 +          {activeTab === "logs" && <LogsPage />}               
+      29 +        </div>                                                 
+      30        </main>
+      31      </div>
+      32    );
+
+⏺ Now modify sidebar.tsx — strip it down to nav-only with Import tab added.
+
+⏺ Write(src/components/layout/sidebar.tsx)
+  ⎿  Added 3 lines, removed 106 lines
+        1 -import { useProjects } from "@/hooks/use-projects";           
+        2 -import { useVideos } from "@/hooks/use-videos";               
+        3 -import { apiPost, thumbUrl } from "@/api/client";             
+        1  import { cn } from "@/lib/utils";
+        5 -import { Button } from "@/components/ui/button";              
+        6 -import { toast } from "sonner";                               
+        2  import {
+        8 -  Select,                                                     
+        9 -  SelectContent,                                              
+       10 -  SelectItem,                                                 
+       11 -  SelectTrigger,                                              
+       12 -  SelectValue,                                                
+       13 -} from "@/components/ui/select";                              
+       14 -import {                                                      
+        3    Library,
+        4    LayoutGrid,
+        5 +  Download,                                                   
+        6    FolderOutput,
+        7    ScrollText,
+       19 -  Plus,                                                       
+        8  } from "lucide-react";
+        9  
+       10  interface SidebarProps {
+       11    activeTab: string;
+       12    onTabChange: (tab: string) => void;
+       25 -  selectedProject?: string;                                   
+       26 -  onProjectChange: (project?: string) => void;                
+       13  }
+       14  
+       15  const tabs = [
+       16    { id: "library", label: "Library", icon: Library },
+       17    { id: "tile-builder", label: "Tile Builder", icon: LayoutGri
+           d },
+       18 +  { id: "import", label: "Import", icon: Download },          
+       19    { id: "outputs", label: "Outputs", icon: FolderOutput },
+       20    { id: "logs", label: "Logs", icon: ScrollText },
+       21  ];
+       22  
+       36 -export function Sidebar({                                     
+       37 -  activeTab,                                                  
+       38 -  onTabChange,                                                
+       39 -  selectedProject,                                            
+       40 -  onProjectChange,                                            
+       41 -}: SidebarProps) {                                            
+       42 -  const { projects, refresh } = useProjects();                
+       43 -  const { videos } = useVideos();                             
+       44 -  const projectThumbs = buildProjectThumbs(videos);           
+       23 +export function Sidebar({ activeTab, onTabChange }: SidebarPro
+          +ps) {                                                         
+       24    return (
+       25      <nav className="w-48 border-r bg-muted/30 p-3 flex flex-co
+           l gap-1">
+       26        <div className="text-sm font-semibold text-muted-foregro
+           und mb-2 px-2">
+       27          Tiles Studio
+       28        </div>
+       50 -      <div className="px-2 pb-2">                             
+       51 -        <Select                                               
+       52 -          value={selectedProject || "all"}                    
+       53 -          onValueChange={(v) => onProjectChange(v === "all" ? 
+          -undefined : v)}                                               
+       54 -        >                                                     
+       55 -          <SelectTrigger className="h-8">                     
+       56 -            <SelectValue placeholder="Project" />             
+       57 -          </SelectTrigger>                                    
+       58 -          <SelectContent>                                     
+       59 -            <SelectItem value="all">All projects / Global outp
+          -uts</SelectItem>                                              
+       60 -            {projects.map((p) => (                            
+       61 -              <SelectItem key={p.name} value={p.name}>        
+       62 -                <div className="flex items-center gap-2">     
+       63 -                  <div className="w-5 h-5 rounded border bg-mu
+          -ted overflow-hidden grid grid-cols-2 gap-0.5">                
+       64 -                    {renderThumbGrid(projectThumbs[p.name] || 
+          -[])}                                                          
+       65 -                  </div>                                      
+       66 -                  <span>{p.name}</span>                       
+       67 -                </div>                                        
+       68 -              </SelectItem>                                   
+       69 -            ))}                                               
+       70 -          </SelectContent>                                    
+       71 -        </Select>                                             
+       72 -        <Button                                               
+       73 -          variant="outline"                                   
+       74 -          size="sm"                                           
+       75 -          className="mt-2 w-full"                             
+       76 -          onClick={async () => {                              
+       77 -            const name = window.prompt("New project name");   
+       78 -            if (!name) return;                                
+       79 -            const trimmed = name.trim();                      
+       80 -            if (!trimmed) return;                             
+       81 -            try {                                             
+       82 -              const res = await apiPost<{ name: string }>("/ap
+          -i/projects", {                                                
+       83 -                name: trimmed,                                
+       84 -              });                                             
+       85 -              await refresh();                                
+       86 -              onProjectChange(res.name);                      
+       87 -              toast.success("Project created", { description: 
+          -res.name });                                                  
+       88 -            } catch (err) {                                   
+       89 -              const message = err instanceof Error ? err.messa
+          -ge : "Failed to create project";                              
+       90 -              toast.error(message);                           
+       91 -            }                                                 
+       92 -          }}                                                  
+       93 -        >                                                     
+       94 -          <Plus className="h-4 w-4" />                        
+       95 -          New Project                                         
+       96 -        </Button>                                             
+       97 -      </div>                                                  
+       29        {tabs.map((tab) => {
+       30          const Icon = tab.icon;
+       31          return (
+     ...
+       47      </nav>
+       48    );
+       49  }
+      119 -                                                              
+      120 -function buildProjectThumbs(videos: { folder: string; rel_path
+          -: string }[]) {                                               
+      121 -  const map: Record<string, string[]> = {};                   
+      122 -  for (const video of videos) {                               
+      123 -    const project = video.folder.split("/")[0];               
+      124 -    if (!project) continue;                                   
+      125 -    if (!map[project]) map[project] = [];                     
+      126 -    if (map[project].length < 4) {                            
+      127 -      map[project].push(thumbUrl(video.rel_path));            
+      128 -    }                                                         
+      129 -  }                                                           
+      130 -  return map;                                                 
+      131 -}                                                             
+      132 -                                                              
+      133 -function renderThumbGrid(thumbs: string[]) {                  
+      134 -  const items = thumbs.slice(0, 4);                           
+      135 -  const emptyCount = Math.max(0, 4 - items.length);           
+      136 -  return (                                                    
+      137 -    <>                                                        
+      138 -      {items.map((src, i) => (                                
+      139 -        <img                                                  
+      140 -          key={`proj-thumb-${src}-${i}`}                      
+      141 -          src={src}                                           
+      142 -          alt=""                                              
+      143 -          className="w-full h-full object-cover"              
+      144 -          loading="lazy"                                      
+      145 -        />                                                    
+      146 -      ))}                                                     
+      147 -      {Array.from({ length: emptyCount }, (_, i) => (         
+      148 -        <div key={`proj-empty-${i}`} className="bg-muted" />  
+      149 -      ))}                                                     
+      150 -    </>                                                       
+      151 -  );                                                          
+      152 -}                                                             
+
+⏺ Now modify library.tsx — rename prop, remove internal state, remove h2.
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 5 lines, removed 12 lines
+       8  import { Input } from "@/components/ui/input";
+       9  import { thumbUrl } from "@/api/client";
+      10  import type { VideoEntry } from "@/types";
+      11 -import { Library, Search, ChevronUp, Folder } from "lucide-reac
+         -t";                                                            
+      11 +import { Search, ChevronUp, Folder } from "lucide-react";      
+      12  
+      13 -export function LibraryPage({ initialProject }: { initialProjec
+         -t?: string }) {                                                
+      14 -  const [selectedProject, setSelectedProject] = useState<string
+         - | undefined>(                                                 
+      15 -    initialProject                                             
+      16 -  );                                                           
+      13 +export function LibraryPage({ project }: { project?: string }) 
+         +{                                                              
+      14    const [selectedFolder, setSelectedFolder] = useState<string |
+           undefined>();
+      15    const [search, setSearch] = useState("");
+      16    const { detail, loading: detailLoading, error: detailError } 
+          =
+      20 -    useProjectDetail(selectedProject);                         
+      17 +    useProjectDetail(project);                                 
+      18    const { videos, loading: videosLoading, refresh } = useVideos
+          (
+      22 -    selectedProject,                                           
+      19 +    project,                                                   
+      20      search
+      21    );
+      22    const [selectedPaths, setSelectedPaths] = useState<Set<string
+          >>(new Set());
+     ...
+      36      setSelectedFolder(undefined);
+      37      setSelectedPaths(new Set());
+      38      setActiveVideo(null);
+      42 -  }, [selectedProject]);                                       
+      39 +  }, [project]);                                               
+      40  
+      44 -  useEffect(() => {                                            
+      45 -    setSelectedProject(initialProject);                        
+      46 -  }, [initialProject]);                                        
+      41  
+      48 -                                                               
+      42    useEffect(() => {
+      43      setSelectedPaths(new Set());
+      44      setActiveVideo(null);
+
+⏺ Now replace all selectedProject references with project in library.tsx.
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 14 lines, removed 14 lines
+      45    }, [selectedFolder]);
+      46  
+      47    const filteredVideos = useMemo(() => {
+      48 -    if (!selectedProject || !selectedFolder) return videos;    
+      49 -    const prefix = `${selectedProject}/${selectedFolder}`;     
+      48 +    if (!project || !selectedFolder) return videos;            
+      49 +    const prefix = `${project}/${selectedFolder}`;             
+      50      return videos.filter(
+      51        (v) => v.folder === prefix || v.folder.startsWith(`${pref
+          ix}/`)
+      52      );
+      53 -  }, [videos, selectedProject, selectedFolder]);               
+      53 +  }, [videos, project, selectedFolder]);                       
+      54  
+      55    const folderCards = useMemo(() => {
+      56      return buildFolderCards(selectedFolder || "");
+      57 -  }, [detail?.subfolders, selectedProject, selectedFolder, vide
+         -os]);                                                          
+      57 +  }, [detail?.subfolders, project, selectedFolder, videos]);   
+      58  
+      59    const parentFolderCards = useMemo(() => {
+      60      if (!selectedFolder) return [];
+      61      const parent = selectedFolder.split("/").slice(0, -1).join(
+          "/");
+      62      return buildFolderCards(parent);
+      63 -  }, [detail?.subfolders, selectedProject, selectedFolder, vide
+         -os]);                                                          
+      63 +  }, [detail?.subfolders, project, selectedFolder, videos]);   
+      64  
+      65    const selectedVideos = useMemo(
+      66      () => filteredVideos.filter((v) => selectedPaths.has(v.rel_
+          path)),
+     ...
+      68    );
+      69  
+      70    function buildFolderCards(basePath: string) {
+      71 -    if (!selectedProject) return [] as {                       
+      71 +    if (!project) return [] as {                               
+      72        key: string;
+      73        label: string;
+      74        path: string;
+     ...
+       94  
+       95      const videoIndex = new Map<string, VideoEntry[]>();
+       96      for (const v of videos) {
+       97 -      if (!v.folder.startsWith(`${selectedProject}/`)) continu
+          -e;                                                            
+       98 -      const rel = v.folder.slice(selectedProject.length + 1); 
+       97 +      if (!v.folder.startsWith(`${project}/`)) continue;      
+       98 +      const rel = v.folder.slice(project.length + 1);         
+       99        if (!videoIndex.has(rel)) videoIndex.set(rel, []);
+      100        videoIndex.get(rel)!.push(v);
+      101      }
+      102  
+      103      return Array.from(unique.values()).map((entry) => {
+      104 -      const fullFolder = `${selectedProject}/${entry.path}`;  
+      104 +      const fullFolder = `${project}/${entry.path}`;          
+      105        const direct = videoIndex.get(entry.path) || [];
+      106        let candidates = direct;
+      107        if (candidates.length === 0) {
+      108          const childPrefix = `${entry.path}/`;
+      109          candidates = videos.filter((v) => {
+      110 -          if (!v.folder.startsWith(`${selectedProject}/`)) ret
+          -urn false;                                                    
+      111 -          const rel = v.folder.slice(selectedProject.length + 
+          -1);                                                           
+      110 +          if (!v.folder.startsWith(`${project}/`)) return fals
+          +e;                                                            
+      111 +          const rel = v.folder.slice(project.length + 1);     
+      112            return rel.startsWith(childPrefix);
+      113          });
+      114        }
+     ...
+      129          <div className="flex items-center gap-3 mb-4">
+      130            <h2 className="text-lg font-semibold flex items-cent
+           er gap-2">
+      131              <Library className="h-5 w-5" />
+      132 -            {selectedProject || "All Videos"}                 
+      132 +            {project || "All Videos"}                         
+      133            </h2>
+      134            {selectedFolder && (
+      135              <span className="text-sm text-muted-foreground">
+     ...
+      165            <div className="text-muted-foreground text-sm">Loadi
+           ng...</div>
+      166          ) : (
+      167            <div className="space-y-4">
+      168 -            {selectedProject && (                             
+      168 +            {project && (                                     
+      169                <div className="space-y-2">
+      170                  <div className="flex items-center justify-betw
+           een">
+      171                    <div className="flex items-center gap-2">
+     ...
+      287                    )
+      288                  }
+      289                  onDeselectAll={() => setSelectedPaths(new Set(
+           ))}
+      290 -                currentProject={selectedProject}              
+      290 +                currentProject={project}                      
+      291                />
+      292              </div>
+      293              <VideoGrid
+
+⏺ Now remove the h2 header from library.tsx. Let me re-read the current state.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Removed 4 lines
+      127      <div className="h-full -m-6">
+      128        <div className="p-4 overflow-auto">
+      129          <div className="flex items-center gap-3 mb-4">
+      130 -          <h2 className="text-lg font-semibold flex items-cent
+          -er gap-2">                                                    
+      131 -            <Library className="h-5 w-5" />                   
+      132 -            {project || "All Videos"}                         
+      133 -          </h2>                                               
+      130            {selectedFolder && (
+      131              <span className="text-sm text-muted-foreground">
+      132                / {selectedFolder}
+
+⏺ Now I notice the Library icon import is no longer needed and selectedPaths got
+   renamed. Let me check — wait, the replace-all already changed selectedPaths
+  to... no, selectedPaths doesn't contain selectedProject. Let me verify the
+  file is correct.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Good — Library icon import is already removed. Let me check the currentProject
+   prop reference.
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Good — currentProject={project} is correct (was
+  currentProject={selectedProject} which became currentProject={project}).
+
+⏺ Now the big one — modify tile-builder.tsx. Remove h2 header and extract the
+  entire YouTube section.
+
+⏺ First, remove the h2 header block (lines 306-310).
+
+⏺ Update(src/pages/tile-builder.tsx)
+  ⎿  Removed 4 lines
+      304    return (
+      305      <div className="space-y-6">
+      306          <div className="flex items-center justify-between">
+      307 -          <h2 className="text-lg font-semibold flex items-cent
+          -er gap-2">                                                    
+      308 -            <LayoutGrid className="h-5 w-5" />                
+      309 -            Tile Builder                                      
+      310 -          </h2>                                               
+      307            <div className="flex gap-2 items-center">
+      308              <Select value={renderMode} onValueChange={setRende
+           rMode}>
+      309                <SelectTrigger className="w-[160px]">
+
+⏺ Now remove the 11 YouTube state variables (lines 48-58).
+
+⏺ Update(src/pages/tile-builder.tsx)
+  ⎿  Removed 11 lines
+      45    const [pendingOutputRel, setPendingOutputRel] = useState<stri
+          ng | null>(null);
+      46    const [savingSettings, setSavingSettings] = useState(false);
+      47    const [pickerTileIndex, setPickerTileIndex] = useState<number
+           | null>(null);
+      48 -  const [ytUrl, setYtUrl] = useState("");                      
+      49 -  const [ytForceTwoPanel, setYtForceTwoPanel] = useState(true);
+      50 -  const [ytQuality, setYtQuality] = useState("medium");        
+      51 -  const [ytClipSeconds, setYtClipSeconds] = useState("");      
+      52 -  const [ytUseCookies, setYtUseCookies] = useState(true);      
+      53 -  const [ytBrowserChoice, setYtBrowserChoice] = useState("chrom
+         -e");                                                           
+      54 -  const [ytFastPreview, setYtFastPreview] = useState(true);    
+      55 -  const [selectedImport, setSelectedImport] = useState<string |
+         - null>(null);                                                  
+      56 -  const [transcriptText, setTranscriptText] = useState<string>(
+         -"");                                                           
+      57 -  const [transcriptLoading, setTranscriptLoading] = useState(fa
+         -lse);                                                          
+      58 -  const [transcriptError, setTranscriptError] = useState<string
+         - | null>(null);                                                
+      48  
+      49    const safeSettings: TileSettings = settings ?? {
+      50      layout_code: null,
+
+⏺ Now remove the ytProject, ytImportRoot, and the two useOutputTree calls.
+
+⏺ Update(src/pages/tile-builder.tsx)
+  ⎿  Removed 13 lines
+      180      loading: outputsLoading,
+      181      refresh: refreshOutputs,
+      182    } = useOutputs(outputProject ?? undefined, "tile");
+      183 -  const ytProject = project || null;                          
+      184 -  const ytImportRoot = ytProject                              
+      185 -    ? `src/${ytProject}/outputs/yt-import`                    
+      186 -    : "outputs/__none__";                                     
+      187 -  const {                                                     
+      188 -    entries: ytImports,                                       
+      189 -    loading: ytImportsLoading,                                
+      190 -    refresh: refreshYtImports,                                
+      191 -  } = useOutputTree(ytImportRoot);                            
+      192 -  const {                                                     
+      193 -    entries: ytImportFiles,                                   
+      194 -    loading: ytImportFilesLoading,                            
+      195 -  } = useOutputTree(selectedImport || "outputs/__none__");    
+      183    const normalizedMaxDurations = [...safeSettings.max_duration
+           s];
+      184    while (normalizedMaxDurations.length < tileCount) normalized
+           MaxDurations.push(null);
+      185    const audioTileValue =
+
+⏺ Now remove the importRuns, selectedImportRun, transcriptCandidates,
+  transcriptFile memos.
+
+⏺ Update(src/pages/tile-builder.tsx)
+  ⎿  Removed 55 lines
+      217      ? formatEpoch(latestOutput.modified_epoch)
+      218      : null;
+      219  
+      220 -  const importRuns = useMemo(                                 
+      221 -    () => ytImports.filter((entry) => entry.is_dir),          
+      222 -    [ytImports]                                               
+      223 -  );                                                          
+      224 -  const selectedImportRun = useMemo(() => {                   
+      225 -    if (selectedImport) {                                     
+      226 -      return (                                                
+      227 -        importRuns.find((run) => run.rel_path === selectedImpo
+          -rt) ||                                                        
+      228 -        importRuns[0] ||                                      
+      229 -        null                                                  
+      230 -      );                                                      
+      231 -    }                                                         
+      232 -    return importRuns[0] || null;                             
+      233 -  }, [importRuns, selectedImport]);                           
+      234 -  const transcriptCandidates = useMemo(                       
+      235 -    () =>                                                     
+      236 -      ytImportFiles.filter(                                   
+      237 -        (file) =>                                             
+      238 -          !file.is_dir &&                                     
+      239 -          (file.name.endsWith(".json3") ||                    
+      240 -            file.name.endsWith(".vtt") ||                     
+      241 -            file.name.endsWith(".srt"))                       
+      242 -      ),                                                      
+      243 -    [ytImportFiles]                                           
+      244 -  );                                                          
+      245 -  const transcriptFile = transcriptCandidates[0] || null;     
+      220  
+      247 -  useEffect(() => {                                           
+      248 -    if (!selectedImportRun) {                                 
+      249 -      setTranscriptText("");                                  
+      250 -      setTranscriptError(null);                               
+      251 -      return;                                                 
+      252 -    }                                                         
+      253 -    setSelectedImport(selectedImportRun.rel_path);            
+      254 -  }, [selectedImportRun]);                                    
+      255 -                                                              
+      256 -  useEffect(() => {                                           
+      257 -    if (!transcriptFile) {                                    
+      258 -      setTranscriptText("");                                  
+      259 -      setTranscriptError(null);                               
+      260 -      return;                                                 
+      261 -    }                                                         
+      262 -    setTranscriptLoading(true);                               
+      263 -    setTranscriptError(null);                                 
+      264 -    apiGetText(outFilePath(transcriptFile.rel_path))          
+      265 -      .then((raw) => {                                        
+      266 -        if (transcriptFile.name.endsWith(".json3")) {         
+      267 -          setTranscriptText(parseJson3Transcript(raw));       
+      268 -        } else {                                              
+      269 -          setTranscriptText(raw);                             
+      270 -        }                                                     
+      271 -      })                                                      
+      272 -      .catch((err) => setTranscriptError(err.message || "Faile
+          -d to load transcript"))                                       
+      273 -      .finally(() => setTranscriptLoading(false));            
+      274 -  }, [transcriptFile]);                                       
+      275 -                                                              
+      221    if (loading || !settings) {
+      222      return <div className="text-muted-foreground text-sm">Load
+           ing...</div>;
+      223    }
+
+⏺ Now remove the entire "Transcript Clips" JSX block. Let me read the current
+  state around that area.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/pages/tile-builder.tsx)
+  ⎿  Removed 186 lines
+      386                </div>
+      387              )}
+      388            </div>
+      389 -          <div className="border rounded-lg p-3 bg-muted/20 sp
+          -ace-y-3">                                                     
+      390 -            <div className="flex items-center justify-between"
+          ->                                                             
+      391 -              <div>                                           
+      392 -                <div className="text-sm font-semibold">Transcr
+          -ipt Clips</div>                                               
+      393 -                <div className="text-xs text-muted-foreground"
+          ->                                                             
+      394 -                  {ytProject                                  
+      395 -                    ? `Project: ${ytProject}`                 
+      396 -                    : "Select a project in the sidebar"}      
+      397 -                </div>                                        
+      398 -              </div>                                          
+      399 -              <Button                                         
+      400 -                size="sm"                                     
+      401 -                variant="outline"                             
+      402 -                onClick={refreshYtImports}                    
+      403 -                disabled={!ytProject}                         
+      404 -              >                                               
+      405 -                <RefreshCw className="h-3.5 w-3.5" />         
+      406 -                Refresh                                       
+      407 -              </Button>                                       
+      408 -            </div>                                            
+      409 -            <div className="space-y-2">                       
+      410 -              <Label className="text-xs">YouTube URL</Label>  
+      411 -              <div className="flex gap-2">                    
+      412 -                <Input                                        
+      413 -                  value={ytUrl}                               
+      414 -                  onChange={(e) => setYtUrl(e.target.value)}  
+      415 -                  placeholder="https://www.youtube.com/watch?v
+          -=..."                                                         
+      416 -                  disabled={!ytProject || running}            
+      417 -                />                                            
+      418 -                <Button                                       
+      419 -                  onClick={async () => {                      
+      420 -                    const trimmed = ytUrl.trim();             
+      421 -                    if (!trimmed) {                           
+      422 -                      toast.error("Enter a YouTube URL");     
+      423 -                      return;                                 
+      424 -                    }                                         
+      425 -                    if (!ytProject) {                         
+      426 -                      toast.error("Select a project in the sid
+          -ebar");                                                       
+      427 -                      return;                                 
+      428 -                    }                                         
+      429 -                    const res = await runAction({             
+      430 -                      action: "yt-import",                    
+      431 -                      targets: [trimmed],                     
+      432 -                      target_type: "url",                     
+      433 -                      output_mode: "project",                 
+      434 -                      params: {                               
+      435 -                        output: `src/${ytProject}/outputs/yt-i
+          -mport`,                                                       
+      436 -                        force_two_panel: ytForceTwoPanel,     
+      437 -                        quality: ytQuality,                   
+      438 -                        clip_seconds: ytClipSeconds           
+      439 -                          ? parseFloat(ytClipSeconds)         
+      440 -                          : undefined,                        
+      441 -                        cookies_from_browser: ytUseCookies ? y
+          -tBrowserChoice : undefined,                                   
+      442 -                        fast_preview: ytFastPreview,          
+      443 -                      },                                      
+      444 -                    });                                       
+      445 -                    if (res) {                                
+      446 -                      if (res.exit_code === 0) {              
+      447 -                        toast.success("Import complete");     
+      448 -                        setYtUrl("");                         
+      449 -                        refreshYtImports();                   
+      450 -                      } else {                                
+      451 -                        toast.error("Import failed", {        
+      452 -                          description: res.output.slice(0, 200
+          -),                                                            
+      453 -                        });                                   
+      454 -                      }                                       
+      455 -                    }                                         
+      456 -                  }}                                          
+      457 -                  disabled={!ytProject || running}            
+      458 -                >                                             
+      459 -                  {running ? "Running..." : "Import"}         
+      460 -                </Button>                                     
+      461 -              </div>                                          
+      462 -            <div className="flex items-center gap-2">         
+      463 -              <Switch                                         
+      464 -                checked={ytForceTwoPanel}                     
+      465 -                onCheckedChange={setYtForceTwoPanel}          
+      466 -                disabled={!ytProject}                         
+      467 -              />                                              
+      468 -              <Label className="text-xs">Force two-panel split
+          - (left/right)</Label>                                         
+      469 -            </div>                                            
+      470 -            <div>                                             
+      471 -              <Label className="text-xs">Quality</Label>      
+      472 -              <Select value={ytQuality} onValueChange={setYtQu
+          -ality}>                                                       
+      473 -                <SelectTrigger>                               
+      474 -                  <SelectValue />                             
+      475 -                </SelectTrigger>                              
+      476 -                <SelectContent>                               
+      477 -                  <SelectItem value="low">Low (fastest / small
+          -est)</SelectItem>                                             
+      478 -                  <SelectItem value="medium">Medium</SelectIte
+          -m>                                                            
+      479 -                  <SelectItem value="high">High</SelectItem>  
+      480 -                  <SelectItem value="ultra">Ultra</SelectItem>
+      481 -                </SelectContent>                              
+      482 -              </Select>                                       
+      483 -            </div>                                            
+      484 -            <div>                                             
+      485 -              <Label className="text-xs">Clip seconds (for fas
+          -t tests)</Label>                                              
+      486 -              <Input                                          
+      487 -                type="number"                                 
+      488 -                min={1}                                       
+      489 -                step="1"                                      
+      490 -                value={ytClipSeconds}                         
+      491 -                onChange={(e) => setYtClipSeconds(e.target.val
+          -ue)}                                                          
+      492 -                placeholder="Full length"                     
+      493 -              />                                              
+      494 -            </div>                                            
+      495 -            <div className="flex items-center gap-2">         
+      496 -              <Switch                                         
+      497 -                checked={ytUseCookies}                        
+      498 -                onCheckedChange={setYtUseCookies}             
+      499 -                disabled={!ytProject}                         
+      500 -              />                                              
+      501 -              <Label className="text-xs">Use browser cookies</
+          -Label>                                                        
+      502 -            </div>                                            
+      503 -            {ytUseCookies && (                                
+      504 -              <div>                                           
+      505 -                <Label className="text-xs">Browser</Label>    
+      506 -                <Select value={ytBrowserChoice} onValueChange=
+          -{setYtBrowserChoice}>                                         
+      507 -                  <SelectTrigger>                             
+      508 -                    <SelectValue />                           
+      509 -                  </SelectTrigger>                            
+      510 -                  <SelectContent>                             
+      511 -                    <SelectItem value="chrome">Chrome</SelectI
+          -tem>                                                          
+      512 -                    <SelectItem value="brave">Brave</SelectIte
+          -m>                                                            
+      513 -                    <SelectItem value="edge">Edge</SelectItem>
+      514 -                    <SelectItem value="firefox">Firefox</Selec
+          -tItem>                                                        
+      515 -                    <SelectItem value="safari">Safari</SelectI
+          -tem>                                                          
+      516 -                  </SelectContent>                            
+      517 -                </Select>                                     
+      518 -              </div>                                          
+      519 -            )}                                                
+      520 -            <div className="flex items-center gap-2">         
+      521 -              <Switch                                         
+      522 -                checked={ytFastPreview}                       
+      523 -                onCheckedChange={setYtFastPreview}            
+      524 -                disabled={!ytProject}                         
+      525 -              />                                              
+      526 -              <Label className="text-xs">Fast preview (downsca
+          -le + low fps)</Label>                                         
+      527 -            </div>                                            
+      528 -            </div>                                            
+      529 -            <div className="space-y-2">                       
+      530 -              <Label className="text-xs">Imports</Label>      
+      531 -              {ytImportsLoading && (                          
+      532 -                <div className="text-xs text-muted-foreground"
+          ->Loading imports...</div>                                     
+      533 -              )}                                              
+      534 -              {!ytImportsLoading && importRuns.length === 0 &&
+          - (                                                            
+      535 -                <div className="text-xs text-muted-foreground"
+          ->No imports yet.</div>                                        
+      536 -              )}                                              
+      537 -              {importRuns.length > 0 && (                     
+      538 -                <Select                                       
+      539 -                  value={selectedImportRun?.rel_path || ""}   
+      540 -                  onValueChange={setSelectedImport}           
+      541 -                >                                             
+      542 -                  <SelectTrigger>                             
+      543 -                    <SelectValue placeholder="Select import" /
+          ->                                                             
+      544 -                  </SelectTrigger>                            
+      545 -                  <SelectContent>                             
+      546 -                    {importRuns.map((run) => (                
+      547 -                      <SelectItem key={run.rel_path} value={ru
+          -n.rel_path}>                                                  
+      548 -                        {run.name}                            
+      549 -                      </SelectItem>                           
+      550 -                    ))}                                       
+      551 -                  </SelectContent>                            
+      552 -                </Select>                                     
+      553 -              )}                                              
+      554 -            </div>                                            
+      555 -            <div className="space-y-2">                       
+      556 -              <Label className="text-xs">Transcript</Label>   
+      557 -              {ytImportFilesLoading && (                      
+      558 -                <div className="text-xs text-muted-foreground"
+          ->Loading transcript...</div>                                  
+      559 -              )}                                              
+      560 -              {transcriptError && (                           
+      561 -                <div className="text-xs text-destructive">{tra
+          -nscriptError}</div>                                           
+      562 -              )}                                              
+      563 -              {!transcriptLoading && !transcriptError && trans
+          -criptFile && (                                                
+      564 -                <pre className="text-[11px] leading-4 bg-muted
+          -/40 border rounded p-2 max-h-64 overflow-auto whitespace-pre-w
+          -rap">                                                         
+      565 -                  {transcriptText || "Transcript is empty."}  
+      566 -                </pre>                                        
+      567 -              )}                                              
+      568 -              {!transcriptLoading && !transcriptError && !tran
+          -scriptFile && (                                               
+      569 -                <div className="text-xs text-muted-foreground"
+          ->                                                             
+      570 -                  No transcript file found yet.               
+      571 -                </div>                                        
+      572 -              )}                                              
+      573 -            </div>                                            
+      574 -          </div>                                              
+      389          </div>
+      390  
+      391          {/* Right: Settings */}
+
+⏺ Now remove the helper functions that were only used by the YouTube section,
+  and clean up imports.
+
+⏺ Update(src/pages/tile-builder.tsx)
+  ⎿  Removed 44 lines
+      641    return outVideoUrl(relPath);
+      642  }
+      643  
+      644 -function outFilePath(relPath: string) {                       
+      645 -  return `/api/media/outfiles/${encodeURIComponent(relPath).re
+          -place(/%2F/g, "/")}`;                                         
+      646 -}                                                             
+      647 -                                                              
+      648 -function parseJson3Transcript(raw: string) {                  
+      649 -  try {                                                       
+      650 -    const parsed = JSON.parse(raw) as {                       
+      651 -      events?: Array<{                                        
+      652 -        tStartMs?: number;                                    
+      653 -        dDurationMs?: number;                                 
+      654 -        segs?: Array<{ utf8?: string }>;                      
+      655 -      }>;                                                     
+      656 -    };                                                        
+      657 -    if (!parsed.events) return raw;                           
+      658 -    const lines: string[] = [];                               
+      659 -    for (const event of parsed.events) {                      
+      660 -      if (!event.segs) continue;                              
+      661 -      const text = event.segs                                 
+      662 -        .map((seg) => (seg.utf8 || "").replace(/\n/g, " "))   
+      663 -        .join("")                                             
+      664 -        .trim();                                              
+      665 -      if (!text) continue;                                    
+      666 -      const ts = formatTimestamp(event.tStartMs ?? 0);        
+      667 -      lines.push(`[${ts}] ${text}`);                          
+      668 -    }                                                         
+      669 -    return lines.join("\n");                                  
+      670 -  } catch {                                                   
+      671 -    return raw;                                               
+      672 -  }                                                           
+      673 -}                                                             
+      674 -                                                              
+      675 -function formatTimestamp(ms: number) {                        
+      676 -  const totalSeconds = Math.max(0, Math.floor(ms / 1000));    
+      677 -  const hours = Math.floor(totalSeconds / 3600);              
+      678 -  const minutes = Math.floor((totalSeconds % 3600) / 60);     
+      679 -  const seconds = totalSeconds % 60;                          
+      680 -  if (hours > 0) {                                            
+      681 -    return `${String(hours).padStart(2, "0")}:${String(minutes
+          -).padStart(2, "0")}:${String(                                 
+      682 -      seconds                                                 
+      683 -    ).padStart(2, "0")}`;                                     
+      684 -  }                                                           
+      685 -  return `${String(minutes).padStart(2, "0")}:${String(seconds
+          -).padStart(2, "0")}`;                                         
+      686 -}                                                             
+      687 -                                                              
+      644  function formatEpoch(epochSeconds: number) {
+      645    if (!epochSeconds) return "";
+      646    return new Date(epochSeconds * 1000).toLocaleString();
+
+⏺ Now clean up imports — remove apiGetText, useOutputTree, RefreshCw,
+  LayoutGrid.
+
+⏺ Update(src/pages/tile-builder.tsx)
+  ⎿  Added 2 lines, removed 3 lines
+       1  import { useState, useEffect, useMemo } from "react";
+       2  import { useSettings } from "@/hooks/use-settings";
+       3  import { useVideos } from "@/hooks/use-videos";
+       4 -import { apiGetText, outVideoUrl, thumbUrl, videoUrl } from "@/
+         -api/client";                                                   
+       4 +import { outVideoUrl, thumbUrl, videoUrl } from "@/api/client";
+       5  import { useActionRunner } from "@/hooks/use-action-runner";
+       6  import { useOutputs } from "@/hooks/use-outputs";
+       7 -import { useOutputTree } from "@/hooks/use-output-tree";       
+       7  import { LayoutPicker } from "@/components/tile-builder/layout-
+          picker";
+       8  import { TileGridPreview } from "@/components/tile-builder/tile
+          -grid-preview";
+       9  import { TileSettingsPanel } from "@/components/tile-builder/ti
+          le-settings-panel";
+     ...
+      13  import { Input } from "@/components/ui/input";
+      14  import { Switch } from "@/components/ui/switch";
+      15  import { InfoHover } from "@/components/ui/info-hover";
+      17 -import { LayoutGrid, Play, Save, RefreshCw } from "lucide-react
+         -";                                                             
+      16 +import { Play, Save } from "lucide-react";                     
+      17  import {
+      18    Accordion,
+      19    AccordionContent,
+
+⏺ Now modify outputs.tsx and logs.tsx.
+
+⏺ Update(src/pages/outputs.tsx)
+  ⎿  Removed 1 line
+       7  import { Badge } from "@/components/ui/badge";
+       8  import { useRunningActions } from "@/hooks/use-running-actions"
+          ;
+       9  import {
+      10 -  FolderOutput,                                                
+      10    RefreshCw,
+      11    Trash2,
+      12    Search,
+
+⏺ Update(src/pages/outputs.tsx)
+  ⎿  Removed 10 lines
+      181    return (
+      182      <div className="space-y-6">
+      183        <div className="flex items-center justify-between">
+      184 -        <h2 className="text-lg font-semibold flex items-center
+          - gap-2">                                                      
+      185 -          <FolderOutput className="h-5 w-5" />                
+      186 -          Outputs                                             
+      187 -        </h2>                                                 
+      184          <Button variant="outline" size="sm" onClick={refresh}>
+      185            <RefreshCw className="h-3.5 w-3.5" />
+      186            Refresh
+      187          </Button>
+      188        </div>
+      189  
+      194 -      <div className="flex flex-wrap items-center gap-3">     
+      195 -        <Badge variant="secondary" className="text-[10px]">   
+      196 -          {rootPath || "no path"}                             
+      197 -        </Badge>                                              
+      198 -      </div>                                                  
+      199 -                                                              
+      190        {visibleRunning.length > 0 && (
+      191          <div className="border rounded-lg p-4 bg-muted/20 spac
+           e-y-2">
+      192            <div className="text-sm font-semibold flex items-cen
+           ter gap-2">
+
+⏺ Now logs.tsx — remove h2 header.
+
+⏺ Update(src/pages/logs.tsx)
+  ⎿  Added 1 line, removed 1 line
+      3  import { apiGetText } from "@/api/client";
+      4  import { Button } from "@/components/ui/button";
+      5  import { Input } from "@/components/ui/input";
+      6 -import { RefreshCw, Search, Copy, ScrollText } from "lucide-reac
+        -t";                                                             
+      6 +import { RefreshCw, Search, Copy } from "lucide-react";         
+      7  
+      8  export function LogsPage() {
+      9    const { logs, loading, error, refresh } = useLogs();
+
+⏺ Update(src/pages/logs.tsx)
+  ⎿  Added 1 line, removed 5 lines
+      60  
+      61    return (
+      62      <div className="space-y-6">
+      63 -      <div className="flex items-center justify-between">      
+      64 -        <h2 className="text-lg font-semibold flex items-center 
+         -gap-2">                                                        
+      65 -          <ScrollText className="h-5 w-5" />                   
+      66 -          Logs                                                 
+      67 -        </h2>                                                  
+      63 +      <div className="flex items-center justify-end">          
+      64          <Button size="sm" variant="outline" onClick={refresh}>
+      65            <RefreshCw className="h-3.5 w-3.5" />
+      66            Refresh
+
+⏺ Now create the import.tsx page with all the extracted YouTube logic.
+
+⏺ Write(src/pages/import.tsx)
+  ⎿  Wrote 340 lines to src/pages/import.tsx
+       1 import { useState, useEffect, useMemo } from "react";
+       2 import { apiGetText } from "@/api/client";
+       3 import { useActionRunner } from "@/hooks/use-action-runner";
+       4 import { useOutputTree } from "@/hooks/use-output-tree";
+       5 import { Button } from "@/components/ui/button";
+       6 import { Label } from "@/components/ui/label";
+       7 import { Input } from "@/components/ui/input";
+       8 import { Switch } from "@/components/ui/switch";
+       9 import { RefreshCw } from "lucide-react";
+      10 import {
+     … +330 lines (ctrl+o to expand)
+
+⏺ Now run the TypeScript check.
+
+⏺ Bash(cd /Users/josh/Projects/_whaleen/tiles/apps/tiles-studio && npx tsc
+      --noEmit 2>&1)
+  ⎿  (No output)
+
+⏺ Clean build, no errors.
+
+⏺ All done. Here's a summary of the changes:
+
+  New files:
+  - apps/tiles-studio/src/components/layout/project-bar.tsx — Sticky bar at top
+  of main content showing page title with icon + project selector dropdown +
+  "New Project" button
+  - apps/tiles-studio/src/pages/import.tsx — Standalone Import page with all
+  YouTube import logic (11 state variables, URL input, settings, transcript
+  viewer)
+
+  Modified files:
+  - app-shell.tsx — Renders <ProjectBar> above page content, adds Import route,
+  passes project (not initialProject) to Library, removed project props from
+  Sidebar
+  - sidebar.tsx — Stripped to ~45 lines: nav-only with "Tiles Studio" branding +
+   5 tab buttons (Library, Tile Builder, Import, Outputs, Logs). Removed
+  useProjects, useVideos, project dropdown, thumbnails, "New Project" button
+  - library.tsx — Prop renamed initialProject → project, removed internal
+  selectedProject state + sync useEffect, removed h2 header, removed Library
+  icon import
+  - tile-builder.tsx — Removed h2 header, 11 YouTube state vars, 2 useOutputTree
+   calls, import run memos, 2 useEffects, ~185 lines of YouTube JSX, helper
+  functions (parseJson3Transcript, formatTimestamp, outFilePath). Cleaned up
+  imports (apiGetText, useOutputTree, RefreshCw, LayoutGrid removed)
+  - outputs.tsx — Removed h2 header + FolderOutput icon import + rootPath badge
+  - logs.tsx — Removed h2 header + ScrollText icon import
+
+  npx tsc --noEmit passes cleanly.
+
+✻ Churned for 5m 11s
+
+❯ we need to be able to sort by project on the library page. each project   
+  also has subfolders and there is the default system of output folders as  
+  well.                                                                     
+
+⏺ Let me understand the current state of the Library page and how project
+  filtering works.
+
+⏺ Read 3 files (ctrl+o to expand)
+
+⏺ Let me check the types and understand the video data structure better.
+
+⏺ Searched for 1 pattern, read 1 file (ctrl+o to expand)
+  ⎿  Tool use rejected with user message: The user wants to clarify these 
+     questions.
+         This means they may have additional information, context or questions 
+     for you.
+         Take their response into account and then reformulate the questions if 
+     appropriate.
+         Start by asking them what they would like to clarify.
+
+         Questions asked:
+     - "When you say 'sort by project' on the Library page, what behavior do you
+      want when no project is selected (All Projects mode)?"
+       (No answer provided)
+
+❯ you removed project filtering 
+
+⏺ You're right, let me understand — when you select a project in the ProjectBar,
+   the Library page should still filter to that project (and it does, since
+  project is passed as a prop). Are you saying that when "All Projects" is
+  selected, you want the Library page to show project-level grouping/navigation
+  so you can browse into individual projects from within the Library itself? Or
+  is there a different filtering issue I broke?
+
+✻ Sautéed for 51s
+
+❯ what happened to the project context slect? 
+
+⏺ It moved from the sidebar to the new ProjectBar. It's in project-bar.tsx — the
+   <Select> component that shows "All Projects" or the selected project name,
+  rendered as the first child of <main> in app-shell.tsx.
+
+  The flow is:
+  - AppShell owns project state
+  - ProjectBar renders the Select dropdown + "New Project" button (previously in
+   sidebar)
+  - ProjectBar.onProjectChange → setProject in AppShell → passed as project prop
+   to Library, TileBuilder, Import, Outputs
+
+  So the project filtering still works exactly as before — it just lives in the
+  top bar instead of the sidebar. When you pick a project in the bar, Library
+  filters to that project and shows its folder browser. When "All Projects" is
+  selected, Library shows all videos.
+
+  Is the issue that you want project filtering to also exist within the Library
+  page itself (e.g. project cards you can click when in "All Projects" mode)? Or
+   is the ProjectBar selector sufficient and you're seeing a different problem?
+
+❯ oh i see the project selector now. you moved it. the library looks good   
+  too. i think we need to make the folder name a little bigger and bolder   
+  like a title per each above the thumbs preview. it is difficult to parse  
+  with my eyes as it is just a wall of thumbnails and tiny text.            
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ The folder label is below the thumbs in tiny muted text. I'll move it above
+  the thumbnails and make it a proper title.
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 3 lines, removed 3 lines
+      239                          }`}
+      240                          title={folder.path}
+      241                        >
+      242 +                        <div className="text-sm font-semibold 
+          +truncate mb-1">                                               
+      243 +                          {folder.label}                      
+      244 +                        </div>                                
+      245                          {folder.thumbs.length > 0 ? (
+      246                            <div className="grid grid-cols-2 gap
+           -1 h-24">
+      247                              {folder.thumbs.map((thumb, i) => (
+     ...
+      266                              No preview
+      267                            </div>
+      268                          )}
+      266 -                        <div className="text-xs text-muted-for
+          -eground mt-1 truncate">                                       
+      267 -                          {folder.label}                      
+      268 -                        </div>                                
+      269                        </button>
+      270                      ))}
+      271                    </div>
+
+⏺ Moved the folder name above the thumbnails, bumped it from text-xs 
+  text-muted-foreground to text-sm font-semibold so it reads as a clear title
+  above each card.
+
+❯ the thumbs preview for the parent folder when you are viewing a subfolder 
+   should have a title too. also the breadcrumbs should include the parent  
+  folder                                                                    
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Now let me see the breadcrumb area at the top of the page.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Two changes: (1) add a title to the parent folder "up" card, and (2) make the
+  breadcrumb clickable with each segment navigable.
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 29 lines, removed 3 lines
+      128        <div className="p-4 overflow-auto">
+      129          <div className="flex items-center gap-3 mb-4">
+      130            {selectedFolder && (
+      131 -            <span className="text-sm text-muted-foreground">  
+      132 -              / {selectedFolder}                              
+      133 -            </span>                                           
+      131 +            <div className="flex items-center gap-1 text-sm te
+          +xt-muted-foreground">                                         
+      132 +              <button                                         
+      133 +                className="hover:text-foreground"             
+      134 +                onClick={() => setSelectedFolder(undefined)}  
+      135 +              >                                               
+      136 +                /                                             
+      137 +              </button>                                       
+      138 +              {selectedFolder.split("/").map((segment, i, arr)
+          + => {                                                         
+      139 +                const path = arr.slice(0, i + 1).join("/");   
+      140 +                const isLast = i === arr.length - 1;          
+      141 +                return (                                      
+      142 +                  <span key={path} className="flex items-cente
+          +r gap-1">                                                     
+      143 +                    {isLast ? (                               
+      144 +                      <span className="text-foreground font-me
+          +dium">{segment}</span>                                        
+      145 +                    ) : (                                     
+      146 +                      <>                                      
+      147 +                        <button                               
+      148 +                          className="hover:text-foreground"   
+      149 +                          onClick={() => setSelectedFolder(pat
+          +h)}                                                           
+      150 +                        >                                     
+      151 +                          {segment}                           
+      152 +                        </button>                             
+      153 +                        <span>/</span>                        
+      154 +                      </>                                     
+      155 +                    )}                                        
+      156 +                  </span>                                     
+      157 +                );                                            
+      158 +              })}                                             
+      159 +            </div>                                            
+      160            )}
+      161            <div className="ml-auto w-[220px] relative">
+      162              <Search className="absolute left-2.5 top-1.5 h-4 w
+           -4 text-muted-foreground" />
+
+⏺ Now add a title to the parent folder card.
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 7 lines, removed 5 lines
+      221                          }}
+      222                          className="rounded border text-left p-
+           2 min-w-[180px] hover:bg-accent/50"
+      223                        >
+      224 +                        <div className="text-sm font-semibold 
+          +truncate mb-1 flex items-center gap-1">                       
+      225 +                          <ChevronUp className="h-3.5 w-3.5" /
+          +>                                                             
+      226 +                          {selectedFolder.split("/").length > 
+          +1                                                             
+      227 +                            ? selectedFolder.split("/").slice(
+          +0, -1).pop()                                                  
+      228 +                            : project}                        
+      229 +                        </div>                                
+      230                          {parentFolderCards.length > 0 ? (
+      231                            <div className="grid grid-cols-2 gap
+           -1 h-24">
+      232                              {parentFolderCards
+     ...
+      244                            </div>
+      245                          ) : (
+      246                            <div className="h-24 rounded bg-mute
+           d flex items-center justify-center text-xs text-muted-foregrou
+           nd">
+      241 -                            Up one level                      
+      247 +                            No preview                        
+      248                            </div>
+      249                          )}
+      244 -                        <div className="text-xs text-muted-for
+          -eground mt-1 truncate flex items-center gap-1">               
+      245 -                          <ChevronUp className="h-3 w-3" />   
+      246 -                          Up one level                        
+      247 -                        </div>                                
+      250                        </button>
+      251                      )}
+      252                      {folderCards.length === 0 && (
+
+⏺ Let me verify it compiles.
+
+⏺ Bash(npx tsc --noEmit 2>&1)
+  ⎿  (No output)
+
+⏺ Clean. Here's what changed:
+
+  Parent folder card — Now has a bold title showing the parent folder name (or
+  project name if at root level) with a ChevronUp icon, matching the style of
+  the subfolder cards.
+
+  Breadcrumbs — Changed from a flat / some/nested/path string to clickable
+  segments: / segment1 / segment2 / **current**. Each ancestor segment is
+  clickable to navigate to that level, and the current folder is highlighted in
+  foreground with font-medium.
+
+✻ Baked for 35s
+
+❯ the library page should have a main title based on the project context.   
+  it could be in place of where it says "Folders".                          
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 1 line, removed 1 line
+      191                <div className="space-y-2">
+      192                  <div className="flex items-center justify-betw
+           een">
+      193                    <div className="flex items-center gap-2">
+      194 -                    <h3 className="text-sm font-semibold">Fold
+          -ers</h3>                                                      
+      194 +                    <h3 className="text-lg font-semibold">{pro
+          +ject}</h3>                                                    
+      195                      {selectedFolder && (
+      196                        <button
+      197                          className="text-xs text-muted-foregrou
+           nd hover:text-foreground flex items-center gap-1"
+
+⏺ Replaced "Folders" with the project name at text-lg font-semibold so it reads
+  as the page title.
+
+❯ the breadcrumbs still need to show the parent folder (project folder) 
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ The breadcrumb starts at / but doesn't show the project name as the root. I'll
+   prepend it.
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 2 lines, removed 1 line
+      133                  className="hover:text-foreground"
+      134                  onClick={() => setSelectedFolder(undefined)}
+      135                >
+      136 -                /                                             
+      136 +                {project}                                     
+      137                </button>
+      138 +              <span>/</span>                                  
+      139                {selectedFolder.split("/").map((segment, i, arr)
+            => {
+      140                  const path = arr.slice(0, i + 1).join("/");
+      141                  const isLast = i === arr.length - 1;
+
+⏺ Now the breadcrumb reads like projectName / subfolder / current with the
+  project name as the clickable root that resets to the top level.
+
+❯ each project has an outputs folder. it would be good to show these in the 
+   library under projects as links to the outputs pages.                    
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Now let me see how Library filters out output folders currently.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ I need to: (1) pass onNavigate to Library so it can switch tabs, (2) check if
+  the project has an outputs folder, and (3) render a link card for it. Let me
+  also check what detail.subfolders looks like for outputs.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Now let me see the folder cards rendering area to know where to add the
+  outputs link.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ I need to: (1) add onNavigate prop to Library, (2) pass it from AppShell, (3)
+  compute whether the project has output subfolders, (4) render an outputs card
+  at the end of the folder row that navigates to the Outputs tab. I'll only show
+   it at the root folder level (not when browsing subfolders).
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 2 lines, removed 2 lines
+       8  import { Input } from "@/components/ui/input";
+       9  import { thumbUrl } from "@/api/client";
+      10  import type { VideoEntry } from "@/types";
+      11 -import { Search, ChevronUp, Folder } from "lucide-react";      
+      11 +import { Search, ChevronUp, Folder, FolderOutput } from "lucide
+         +-react";                                                       
+      12  
+      13 -export function LibraryPage({ project }: { project?: string }) 
+         -{                                                              
+      13 +export function LibraryPage({ project, onNavigate }: { project?
+         +: string; onNavigate?: (tab: string) => void }) {              
+      14    const [selectedFolder, setSelectedFolder] = useState<string |
+           undefined>();
+      15    const [search, setSearch] = useState("");
+      16    const { detail, loading: detailLoading, error: detailError } 
+          =
+
+⏺ Now add a memo to detect output subfolders.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 5 lines
+      62      return buildFolderCards(parent);
+      63    }, [detail?.subfolders, project, selectedFolder, videos]);
+      64  
+      65 +  const hasOutputs = useMemo(() => {                           
+      66 +    if (!project || !detail?.subfolders) return false;         
+      67 +    return detail.subfolders.some((f) => f.split("/").includes(
+         +"outputs"));                                                   
+      68 +  }, [project, detail?.subfolders]);                           
+      69 +                                                               
+      70    const selectedVideos = useMemo(
+      71      () => filteredVideos.filter((v) => selectedPaths.has(v.rel_
+          path)),
+      72      [filteredVideos, selectedPaths]
+
+⏺ Now add the outputs card at the end of the folder row, only at root level.
+
+⏺ Update(src/pages/library.tsx)
+  ⎿  Added 14 lines
+      302                          )}
+      303                        </button>
+      304                      ))}
+      305 +                    {!selectedFolder && hasOutputs && onNaviga
+          +te && (                                                       
+      306 +                      <button                                 
+      307 +                        onClick={() => onNavigate("outputs")} 
+      308 +                        className="rounded border text-left p-
+          +2 min-w-[180px] hover:bg-accent/50"                           
+      309 +                      >                                       
+      310 +                        <div className="text-sm font-semibold 
+          +truncate mb-1 flex items-center gap-1">                       
+      311 +                          <FolderOutput className="h-3.5 w-3.5
+          +" />                                                          
+      312 +                          Outputs                             
+      313 +                        </div>                                
+      314 +                        <div className="h-24 rounded bg-muted/
+          +50 flex items-center justify-center text-xs text-muted-foregro
+          +und">                                                         
+      315 +                          View project outputs                
+      316 +                        </div>                                
+      317 +                      </button>                               
+      318 +                    )}                                        
+      319                    </div>
+      320                  )}
+      321                </div>
+
+⏺ Now wire up onNavigate in AppShell.
+
+⏺ Update(src/components/layout/app-shell.tsx)
+  ⎿  Added 1 line, removed 1 line
+      21            onProjectChange={setProject}
+      22          />
+      23          <div className="p-6">
+      24 -          {activeTab === "library" && <LibraryPage project={pro
+         -ject} />}                                                      
+      24 +          {activeTab === "library" && <LibraryPage project={pro
+         +ject} onNavigate={setActiveTab} />}                            
+      25            {activeTab === "tile-builder" && <TileBuilderPage pro
+          ject={project} />}
+      26            {activeTab === "import" && <ImportPage project={proje
+          ct} />}
+      27            {activeTab === "outputs" && <OutputsPage project={pro
+          ject} />}
+
+⏺ Bash(npx tsc --noEmit 2>&1)
+  ⎿  (No output)
+
+⏺ Clean. Here's what changed:
+
+  - Library now accepts an onNavigate prop, wired to setActiveTab from AppShell
+  - A hasOutputs memo checks if the project's subfolders include any outputs
+  paths
+  - At the root folder level (no subfolder selected), an "Outputs" card appears
+  at the end of the folder row with a FolderOutput icon — clicking it switches
+  to the Outputs tab while keeping the project context
+
+✻ Brewed for 1m 1s
+
+❯ ok let's focus on the outputs page. it is a mess. too many things doing   
+  the same thing.                                                           
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ I agree — looking at it there's a lot of duplication:
+
+  1. Two refresh buttons (top bar + groups panel header)
+  2. Three ways to pick a file (file grid click, group summary thumbs click,
+  "Select output" dropdown)
+  3. Two delete file buttons (files header + preview panel)
+  4. Group summary duplicates the file grid thumbnails
+  5. Embedded log viewer duplicates the Logs page
+  6. Group summary "Select output" dropdown duplicates clicking the file grid
+
+  The group summary section is essentially a mini copy of the file grid + logs
+  page crammed together.
+
+  I'd simplify to:
+  - Left: group list with thumbs (keep as-is, good navigation)
+  - Right: search + file grid + preview when selected, one delete button in the
+  preview
+  - Remove: group summary section, duplicate refresh, duplicate delete, log
+  viewer, select dropdown
+  - Keep: in-progress section (useful, non-duplicated)
+
+  Want me to go ahead and clean it up that way, or do you want to keep any of
+  those pieces?
+
+❯ yes clean it up.  
+
+⏺ Write(src/pages/outputs.tsx)
+  ⎿  Added 35 lines, removed 252 lines
+       1  import { useEffect, useMemo, useState } from "react";
+       2  import { useOutputTree } from "@/hooks/use-output-tree";
+       3 -import { useLogs } from "@/hooks/use-logs";                    
+       4 -import { apiDelete, apiGet, apiGetText, outThumbUrl, outVideoUr
+         -l } from "@/api/client";                                       
+       3 +import { apiDelete, apiGet, outThumbUrl, outVideoUrl } from "@/
+         +api/client";                                                   
+       4  import { Button } from "@/components/ui/button";
+       5  import { Input } from "@/components/ui/input";
+       7 -import { Badge } from "@/components/ui/badge";                 
+       6  import { useRunningActions } from "@/hooks/use-running-actions"
+          ;
+       7  import {
+       8    RefreshCw,
+     ...
+      10    Search,
+      11    Loader2,
+      12  } from "lucide-react";
+      15 -import {                                                       
+      16 -  Select,                                                      
+      17 -  SelectContent,                                               
+      18 -  SelectItem,                                                  
+      19 -  SelectTrigger,                                               
+      20 -  SelectValue,                                                 
+      21 -} from "@/components/ui/select";                               
+      22 -import {                                                       
+      23 -  Accordion,                                                   
+      24 -  AccordionContent,                                            
+      25 -  AccordionItem,                                               
+      26 -  AccordionTrigger,                                            
+      27 -} from "@/components/ui/accordion";                            
+      13  import { toast } from "sonner";
+      14  import type { OutputEntry } from "@/types";
+      15  
+     ...
+      17    const [activeGroup, setActiveGroup] = useState<string>("");
+      18    const [selectedFile, setSelectedFile] = useState<OutputEntry 
+          | null>(null);
+      19    const [search, setSearch] = useState("");
+      35 -  const [selectedLog, setSelectedLog] = useState<string | null>
+         -(null);                                                        
+      36 -  const [logContent, setLogContent] = useState<string>("");    
+      37 -  const [logLoading, setLogLoading] = useState(false);         
+      38 -  const [logError, setLogError] = useState<string | null>(null)
+         -;                                                              
+      20    const [groupThumbs, setGroupThumbs] = useState<Record<string,
+           OutputEntry[]>>({});
+      21    const [deleting, setDeleting] = useState(false);
+      22    const { running: runningActions } = useRunningActions();
+      23  
+      24    const rootPath = project ? `src/${project}/outputs` : "output
+          s";
+      25    const { entries, loading, error, refresh } = useOutputTree(ro
+          otPath);
+      45 -  const { logs, loading: logsLoading, error: logsError, refresh
+         -: refreshLogs } =                                              
+      46 -    useLogs();                                                 
+      26  
+      27    const groups = useMemo(
+      28      () =>
+     ...
+       93      return q ? list.filter((e) => e.name.toLowerCase().include
+           s(q)) : list;
+       94    }, [groupEntries, rootFiles, search, activeGroup]);
+       95  
+      117 -  const activeGroupName = activeGroup                         
+      118 -    ? activeGroup.split("/").pop() || activeGroup             
+      119 -    : "";                                                     
+      120 -  const groupLogs = useMemo(() => {                           
+      121 -    if (!activeGroupName) return [] as string[];              
+      122 -    return logs.filter((log) => matchesTool(log, activeGroupNa
+          -me));                                                         
+      123 -  }, [logs, activeGroupName]);                                
+      124 -                                                              
+      125 -  useEffect(() => {                                           
+      126 -    if (!activeGroupName) {                                   
+      127 -      setSelectedLog(null);                                   
+      128 -      setLogContent("");                                      
+      129 -      return;                                                 
+      130 -    }                                                         
+      131 -    const candidate = groupLogs[0];                           
+      132 -    if (candidate) setSelectedLog(candidate);                 
+      133 -  }, [activeGroupName, groupLogs]);                           
+      134 -                                                              
+      135 -  useEffect(() => {                                           
+      136 -    if (!selectedLog) {                                       
+      137 -      setLogContent("");                                      
+      138 -      return;                                                 
+      139 -    }                                                         
+      140 -    setLogLoading(true);                                      
+      141 -    setLogError(null);                                        
+      142 -    apiGetText(`/api/logs/${selectedLog}`)                    
+      143 -      .then(setLogContent)                                    
+      144 -      .catch((err) => setLogError(err.message || "Failed to lo
+          -ad log"))                                                     
+      145 -      .finally(() => setLogLoading(false));                   
+      146 -  }, [selectedLog]);                                          
+      147 -                                                              
+      148 -  const fileThumbs = useMemo(                                 
+      149 -    () => files.filter((f) => f.kind === "video" || f.kind ===
+          - "image").slice(0, 6),                                        
+      150 -    [files]                                                   
+      151 -  );                                                          
+      152 -                                                              
+       96    const visibleRunning = useMemo(() => {
+       97      if (!project) return runningActions;
+       98      return runningActions.filter(
+     ...
+      123  
+      124    return (
+      125      <div className="space-y-6">
+      183 -      <div className="flex items-center justify-between">     
+      184 -        <Button variant="outline" size="sm" onClick={refresh}>
+      185 -          <RefreshCw className="h-3.5 w-3.5" />               
+      186 -          Refresh                                             
+      187 -        </Button>                                             
+      188 -      </div>                                                  
+      189 -                                                              
+      126        {visibleRunning.length > 0 && (
+      127          <div className="border rounded-lg p-4 bg-muted/20 spac
+           e-y-2">
+      128            <div className="text-sm font-semibold flex items-cen
+           ter gap-2">
+     ...
+      172                className={`w-full text-left px-2 py-2 rounded b
+           order ${
+      173                  activeGroup === "" ? "border-primary bg-primar
+           y/10" : "hover:bg-accent/50"
+      174                }`}
+      239 -              onClick={() => setActiveGroup("")}              
+      175 +              onClick={() => { setActiveGroup(""); setSelected
+          +File(null); }}                                                
+      176              >
+      177                <div className="text-sm font-medium">All outputs
+           </div>
+      178                <div className="text-[11px] text-muted-foregroun
+           d">{rootPath}</div>
+     ...
+      185                      ? "border-primary bg-primary/10"
+      186                      : "hover:bg-accent/50"
+      187                  }`}
+      252 -                onClick={() => setActiveGroup(group.rel_path)}
+      188 +                onClick={() => { setActiveGroup(group.rel_path
+          +); setSelectedFile(null); }}                                  
+      189                >
+      190                  <div className="flex items-center gap-2">
+      191                    <div className="w-10 h-8 rounded border bg-m
+           uted overflow-hidden grid grid-cols-2 gap-0.5">
+     ...
+      193                    </div>
+      194                    <div className="min-w-0">
+      195                      <div className="text-sm font-medium trunca
+           te">{group.name}</div>
+      260 -                    <div className="text-[11px] text-muted-for
+          -eground truncate">                                            
+      261 -                      {group.rel_path}                        
+      262 -                    </div>                                    
+      196                      <div className="text-[10px] text-muted-for
+           eground">
+      197                        {timeAgo(group.modified_epoch)}
+      198                      </div>
+     ...
+      203            </div>
+      204          </div>
+      205  
+      273 -        <div className="lg:col-span-2 border rounded-lg p-4 sp
+          -ace-y-4">                                                     
+      274 -          <div className="flex items-center justify-between ga
+          -p-2">                                                         
+      275 -            <div>                                             
+      276 -              <h3 className="text-sm font-semibold">Files</h3>
+      277 -              <div className="text-[11px] text-muted-foregroun
+          -d truncate">                                                  
+      278 -                {activePath}                                  
+      279 -              </div>                                          
+      206 +        <div className="lg:col-span-2 space-y-4">             
+      207 +          <div className="flex items-center gap-2">           
+      208 +            <div className="relative flex-1">                 
+      209 +              <Search className="absolute left-2.5 top-2.5 h-4
+          + w-4 text-muted-foreground" />                                
+      210 +              <Input                                          
+      211 +                value={search}                                
+      212 +                onChange={(e) => setSearch(e.target.value)}   
+      213 +                placeholder="Search outputs..."               
+      214 +                className="pl-9"                              
+      215 +              />                                              
+      216              </div>
+      281 -            <div className="flex items-center gap-2">         
+      282 -              {activeGroup && (                               
+      283 -                <Button                                       
+      284 -                  size="sm"                                   
+      285 -                  variant="destructive"                       
+      286 -                  disabled={deleting}                         
+      287 -                  onClick={() =>                              
+      288 -                    handleDelete(activeGroup, "group", () => {
+      289 -                      setActiveGroup("");                     
+      290 -                      setSelectedFile(null);                  
+      291 -                    })                                        
+      292 -                  }                                           
+      293 -                >                                             
+      294 -                  <Trash2 className="h-3.5 w-3.5" />          
+      295 -                  Delete Group                                
+      296 -                </Button>                                     
+      297 -              )}                                              
+      298 -              {selectedFile && (                              
+      299 -                <Button                                       
+      300 -                  size="sm"                                   
+      301 -                  variant="destructive"                       
+      302 -                  disabled={deleting}                         
+      303 -                  onClick={() =>                              
+      304 -                    handleDelete(selectedFile.rel_path, select
+          -edFile.name, () => {                                          
+      305 -                      setSelectedFile(null);                  
+      306 -                    })                                        
+      307 -                  }                                           
+      308 -                >                                             
+      309 -                  <Trash2 className="h-3.5 w-3.5" />          
+      310 -                  Delete File                                 
+      311 -                </Button>                                     
+      312 -              )}                                              
+      313 -              <Button size="sm" variant="outline" onClick={ref
+          -reshGroup}>                                                   
+      314 -                <RefreshCw className="h-3.5 w-3.5" />         
+      217 +            {activeGroup && (                                 
+      218 +              <Button                                         
+      219 +                size="sm"                                     
+      220 +                variant="destructive"                         
+      221 +                disabled={deleting}                           
+      222 +                onClick={() =>                                
+      223 +                  handleDelete(activeGroup, "group", () => {  
+      224 +                    setActiveGroup("");                       
+      225 +                    setSelectedFile(null);                    
+      226 +                  })                                          
+      227 +                }                                             
+      228 +              >                                               
+      229 +                <Trash2 className="h-3.5 w-3.5" />            
+      230 +                Delete Group                                  
+      231                </Button>
+      316 -            </div>                                            
+      232 +            )}                                                
+      233            </div>
+      318 -                                                              
+      319 -          {activeGroup && (                                   
+      320 -            <div className="space-y-3 border rounded-lg p-3 bg
+          --muted/20">                                                   
+      321 -              <div className="flex items-center justify-betwee
+          -n">                                                           
+      322 -                <div className="text-sm font-semibold">Group S
+          -ummary</div>                                                  
+      323 -                <Button size="sm" variant="outline" onClick={r
+          -efreshLogs}>                                                  
+      324 -                  <RefreshCw className="h-3.5 w-3.5" />       
+      325 -                  Refresh Logs                                
+      326 -                </Button>                                     
+      327 -              </div>                                          
+      328 -              <div className="grid grid-cols-3 gap-2">        
+      329 -                {fileThumbs.map((file) => (                   
+      330 -                  <button                                     
+      331 -                    key={file.rel_path}                       
+      332 -                    className={`rounded border overflow-hidden
+          - ${                                                           
+      333 -                      selectedFile?.rel_path === file.rel_path
+      334 -                        ? "border-primary"                    
+      335 -                        : "hover:border-primary/50"           
+      336 -                    }`}                                       
+      337 -                    onClick={() => setSelectedFile(file)}     
+      338 -                  >                                           
+      339 -                    {file.kind === "image" ? (                
+      340 -                      <img                                    
+      341 -                        src={outVideoUrl(file.rel_path)}      
+      342 -                        alt={file.name}                       
+      343 -                        className="w-full h-16 object-cover"  
+      344 -                        loading="lazy"                        
+      345 -                      />                                      
+      346 -                    ) : (                                     
+      347 -                      <video                                  
+      348 -                        src={outVideoUrl(file.rel_path)}      
+      349 -                        className="w-full h-16 object-cover"  
+      350 -                        muted                                 
+      351 -                        preload="metadata"                    
+      352 -                      />                                      
+      353 -                    )}                                        
+      354 -                  </button>                                   
+      355 -                ))}                                           
+      356 -                {fileThumbs.length === 0 && (                 
+      357 -                  <div className="text-xs text-muted-foregroun
+          -d col-span-full">                                             
+      358 -                    No previewable files in this group.       
+      359 -                  </div>                                      
+      360 -                )}                                            
+      361 -              </div>                                          
+      362 -              <div className="space-y-2">                     
+      363 -                <div className="text-xs font-medium">Latest lo
+          -g</div>                                                       
+      364 -                {logsLoading && (                             
+      365 -                  <div className="text-xs text-muted-foregroun
+          -d">Loading logs...</div>                                      
+      366 -                )}                                            
+      367 -                {logsError && !logsLoading && (               
+      368 -                  <div className="text-xs text-destructive">{l
+          -ogsError}</div>                                               
+      369 -                )}                                            
+      370 -                {!logsLoading && groupLogs.length === 0 && (  
+      371 -                  <div className="text-xs text-muted-foregroun
+          -d">No logs found.</div>                                       
+      372 -                )}                                            
+      373 -                {selectedLog && (                             
+      374 -                  <Accordion type="single" collapsible>       
+      375 -                    <AccordionItem value="log">               
+      376 -                      <AccordionTrigger>View log output</Accor
+          -dionTrigger>                                                  
+      377 -                      <AccordionContent>                      
+      378 -                        <pre className="text-[11px] bg-muted p
+          --3 rounded max-h-48 overflow-auto whitespace-pre-wrap">       
+      379 -                          {logLoading && "Loading log..."}    
+      380 -                          {logError && `Error: ${logError}`}  
+      381 -                          {!logLoading && !logError && logCont
+          -ent}                                                          
+      382 -                        </pre>                                
+      383 -                      </AccordionContent>                     
+      384 -                    </AccordionItem>                          
+      385 -                  </Accordion>                                
+      386 -                )}                                            
+      387 -              </div>                                          
+      388 -              {files.length > 0 && (                          
+      389 -                <div className="space-y-2">                   
+      390 -                  <div className="text-xs font-medium">Select 
+          -output</div>                                                  
+      391 -                  <Select                                     
+      392 -                    value={selectedFile?.rel_path || ""}      
+      393 -                    onValueChange={(v) =>                     
+      394 -                      setSelectedFile(files.find((f) => f.rel_
+          -path === v) || null)                                          
+      395 -                    }                                         
+      396 -                  >                                           
+      397 -                    <SelectTrigger>                           
+      398 -                      <SelectValue placeholder="Choose a file"
+          - />                                                           
+      399 -                    </SelectTrigger>                          
+      400 -                    <SelectContent>                           
+      401 -                      {files.map((file) => (                  
+      402 -                        <SelectItem key={file.rel_path} value=
+          -{file.rel_path}>                                              
+      403 -                          <div className="flex items-center ga
+          -p-2">                                                         
+      404 -                            <div className="w-10 h-6 rounded b
+          -order bg-muted overflow-hidden">                              
+      405 -                              {file.kind === "image" ? (      
+      406 -                                <img                          
+      407 -                                  src={outVideoUrl(file.rel_pa
+          -th)}                                                          
+      408 -                                  alt={file.name}             
+      409 -                                  className="w-full h-full obj
+          -ect-cover"                                                    
+      410 -                                  loading="lazy"              
+      411 -                                />                            
+      412 -                              ) : (                           
+      413 -                                <video                        
+      414 -                                  src={outVideoUrl(file.rel_pa
+          -th)}                                                          
+      415 -                                  className="w-full h-full obj
+          -ect-cover"                                                    
+      416 -                                  muted                       
+      417 -                                  preload="metadata"          
+      418 -                                />                            
+      419 -                              )}                              
+      420 -                            </div>                            
+      421 -                            <span className="truncate">{file.n
+          -ame}</span>                                                   
+      422 -                          </div>                              
+      423 -                        </SelectItem>                         
+      424 -                      ))}                                     
+      425 -                    </SelectContent>                          
+      426 -                  </Select>                                   
+      427 -                </div>                                        
+      428 -              )}                                              
+      429 -            </div>                                            
+      430 -          )}                                                  
+      431 -                                                              
+      432 -          <div className="relative">                          
+      433 -            <Search className="absolute left-2.5 top-2.5 h-4 w
+          --4 text-muted-foreground" />                                  
+      434 -            <Input                                            
+      435 -              value={search}                                  
+      436 -              onChange={(e) => setSearch(e.target.value)}     
+      437 -              placeholder="Search outputs..."                 
+      438 -              className="pl-9"                                
+      439 -            />                                                
+      440 -          </div>                                              
+      234            {groupLoading && (
+      235              <div className="text-xs text-muted-foreground">Loa
+           ding files...</div>
+      236            )}
+     ...
+      271                    </div>
+      272                    <div className="min-w-0">
+      273                      <div className="text-sm truncate">{file.na
+           me}</div>
+      481 -                    <div className="text-[11px] text-muted-for
+          -eground truncate">                                            
+      482 -                      {file.rel_path}                         
+      483 -                    </div>                                    
+      274                      <div className="text-[10px] text-muted-for
+           eground">
+      275                        {timeAgo(file.modified_epoch)}
+      276                      </div>
+     ...
+      281            </div>
+      282  
+      283            {selectedFile && (
+      494 -            <div className="border-t pt-4 space-y-2">         
+      284 +            <div className="border rounded-lg p-4 space-y-3"> 
+      285                <div className="flex items-center justify-betwee
+           n">
+      496 -                <div className="text-sm font-semibold">Preview
+          -</div>                                                        
+      286 +                <div>                                         
+      287 +                  <div className="text-sm font-semibold">{sele
+          +ctedFile.name}</div>                                          
+      288 +                  <div className="text-[11px] text-muted-foreg
+          +round truncate">                                              
+      289 +                    {selectedFile.rel_path}                   
+      290 +                  </div>                                      
+      291 +                </div>                                        
+      292                  <Button
+      293                    size="sm"
+      294                    variant="destructive"
+     ...
+      323                    No preview available for this file type.
+      324                  </div>
+      325                )}
+      531 -              <div className="text-[11px] text-muted-foregroun
+          -d truncate">                                                  
+      532 -                {selectedFile.rel_path}                       
+      533 -              </div>                                          
+      326              </div>
+      327            )}
+      328          </div>
+     ...
+      374      .map((part) => part.charAt(0).toUpperCase() + part.slice(1
+           ))
+      375      .join(" ");
+      376  }
+      585 -                                                              
+      586 -function matchesTool(logName: string, tool: string) {         
+      587 -  if (!tool) return true;                                     
+      588 -  if (logName.includes(`_${tool}_`)) return true;             
+      589 -  if (logName.includes(`-${tool}-`)) return true;             
+      590 -  if (logName.includes(`studio_${tool}_`)) return true;       
+      591 -  if (logName.includes(`tui_${tool}_`)) return true;          
+      592 -  return false;                                               
+      593 -}                                                             
+
+⏺ Bash(npx tsc --noEmit 2>&1)
+  ⎿  (No output)
+
+⏺ Clean. Here's what was removed:
+
+  - Top refresh button — kept only the one in the Groups panel header
+  - Group summary section — the entire block with duplicate thumb grid, log
+  viewer, "Select output" dropdown, and "Refresh Logs" button
+  - Duplicate delete file button — removed from the files header; kept only the
+  one in the preview panel
+  - Log viewer + useLogs hook — that's what the Logs page is for
+  - Accordion, Select, Badge, useLogs imports — no longer needed
+  - matchesTool helper — only used by the removed log viewer
+  - rel_path line in group list items — unnecessary detail, kept just the name +
+   time ago
+
+  The page is now ~260 lines (down from ~595): groups sidebar on the left,
+  search + file grid + preview on the right.
+
+✻ Brewed for 56s
+
+❯ awesome. now let's talk about icons per action. it would be helpful if we 
+   could start using icons and make the actions pop more across the ui. for 
+   example on the outputs page each output based on an action that gets     
+  written to a default folder could use this pattern                        
+
+⏺ Let me see what actions exist in the codebase to understand the full set.
+
+⏺ Explore(Find all action types)
+  ⎿  Done (30 tool uses · 44.2k tokens · 51s)
+  (ctrl+o to expand)
+
+⏺ Looks like your message got cut off — you were saying each output folder could
+   use a pattern based on the action. Were you about to describe the pattern, or
+   should I propose one?
+
+  Here's what I'm thinking — a shared action icon map using lucide icons:
+
+  ┌────────────────────┬───────────────────┬────────────────────────┐
+  │       Action       │       Icon        │       Rationale        │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ tile               │ LayoutGrid        │ Grid/tile composition  │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ yt-import          │ Download          │ Import from YouTube    │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ trim               │ Scissors          │ Cutting video          │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ concat             │ Link              │ Joining clips together │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ detect             │ ScanLine          │ Scene detection        │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ split-detect       │ Columns2          │ Split-screen detection │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ strip-audio        │ VolumeX           │ Removing audio         │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ clean              │ Sparkles          │ Tidying filenames      │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ slowmo             │ Gauge             │ Speed change           │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ doctor-reencode    │ Wrench            │ Re-encode fix          │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ doctor-trim-start  │ TimerReset        │ Trim start             │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ organize-landscape │ MonitorSmartphone │ Orientation sorting    │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ yolo               │ Shuffle           │ Random composition     │
+  ├────────────────────┼───────────────────┼────────────────────────┤
+  │ run                │ Play              │ Run settings           │
+  └────────────────────┴───────────────────┴────────────────────────┘
+
+  This could live in a shared src/lib/action-icons.ts and be used on the Outputs
+   page (group icons), In Progress cards, Library action panel, etc. Want me to
+  go with this mapping, or did you have something specific in mind?
+
+✻ Brewed for 1m 12s
+
+❯ that sounds good. bust it out dog 
+
+⏺ Explore(Check lucide icon availability)
+  ⎿  Done (6 tool uses · 26.3k tokens · 17s)
+  (ctrl+o to expand)
+
+⏺ All icons confirmed. Let me create the shared map and wire it into the outputs
+   page.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Write(src/lib/action-icons.ts)
+  ⎿  Wrote 48 lines to src/lib/action-icons.ts
+       1 import {
+       2   LayoutGrid,
+       3   Download,
+       4   Scissors,
+       5   Link,
+       6   ScanLine,
+       7   Columns2,
+       8   VolumeX,
+       9   Sparkles,
+      10   Gauge,
+     … +38 lines (ctrl+o to expand)
+
+⏺ Now wire it into the outputs page — group list icons and in-progress cards.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Now I'll update outputs.tsx to use the shared module, and add icons to group
+  items and in-progress cards.
+
+⏺ Update(src/pages/outputs.tsx)
+  ⎿  Added 1 line
+      10    Search,
+      11    Loader2,
+      12  } from "lucide-react";
+      13 +import { getActionIcon, formatActionName } from "@/lib/action-i
+         +cons";                                                         
+      14  import { toast } from "sonner";
+      15  import type { OutputEntry } from "@/types";
+      16  
+
+⏺ Now add icons to the group list items. The group name is the action folder
+  name (e.g. "tile", "yt-import").
+
+⏺ Update(src/pages/outputs.tsx)
+  ⎿  Added 27 lines, removed 21 lines
+      178                <div className="text-sm font-medium">All outputs
+           </div>
+      179                <div className="text-[11px] text-muted-foregroun
+           d">{rootPath}</div>
+      180              </button>
+      181 -            {groups.map((group) => (                          
+      182 -              <button                                         
+      183 -                key={group.rel_path}                          
+      184 -                className={`w-full text-left px-2 py-2 rounded
+          - border ${                                                    
+      185 -                  activeGroup === group.rel_path              
+      186 -                    ? "border-primary bg-primary/10"          
+      187 -                    : "hover:bg-accent/50"                    
+      188 -                }`}                                           
+      189 -                onClick={() => { setActiveGroup(group.rel_path
+          -); setSelectedFile(null); }}                                  
+      190 -              >                                               
+      191 -                <div className="flex items-center gap-2">     
+      192 -                  <div className="w-10 h-8 rounded border bg-m
+          -uted overflow-hidden grid grid-cols-2 gap-0.5">               
+      193 -                    {renderThumbGrid(groupThumbs[group.rel_pat
+          -h] || [])}                                                    
+      194 -                  </div>                                      
+      195 -                  <div className="min-w-0">                   
+      196 -                    <div className="text-sm font-medium trunca
+          -te">{group.name}</div>                                        
+      197 -                    <div className="text-[10px] text-muted-for
+          -eground">                                                     
+      198 -                      {timeAgo(group.modified_epoch)}         
+      181 +            {groups.map((group) => {                          
+      182 +              const GroupIcon = getActionIcon(group.name);    
+      183 +              return (                                        
+      184 +                <button                                       
+      185 +                  key={group.rel_path}                        
+      186 +                  className={`w-full text-left px-2 py-2 round
+          +ed border ${                                                  
+      187 +                    activeGroup === group.rel_path            
+      188 +                      ? "border-primary bg-primary/10"        
+      189 +                      : "hover:bg-accent/50"                  
+      190 +                  }`}                                         
+      191 +                  onClick={() => { setActiveGroup(group.rel_pa
+          +th); setSelectedFile(null); }}                                
+      192 +                >                                             
+      193 +                  <div className="flex items-center gap-2">   
+      194 +                    <div className="w-10 h-8 rounded border bg
+          +-muted overflow-hidden grid grid-cols-2 gap-0.5">             
+      195 +                      {renderThumbGrid(groupThumbs[group.rel_p
+          +ath] || [])}                                                  
+      196                      </div>
+      197 +                    <div className="min-w-0">                 
+      198 +                      <div className="text-sm font-medium trun
+          +cate flex items-center gap-1.5">                              
+      199 +                        <GroupIcon className="h-3.5 w-3.5 shri
+          +nk-0" />                                                      
+      200 +                        {formatActionName(group.name)}        
+      201 +                      </div>                                  
+      202 +                      <div className="text-[10px] text-muted-f
+          +oreground">                                                   
+      203 +                        {timeAgo(group.modified_epoch)}       
+      204 +                      </div>                                  
+      205 +                    </div>                                    
+      206                    </div>
+      201 -                </div>                                        
+      202 -              </button>                                       
+      203 -            ))}                                               
+      207 +                </button>                                     
+      208 +              );                                              
+      209 +            })}                                               
+      210            </div>
+      211          </div>
+      212  
+
+⏺ Now add icons to the in-progress cards.
+
+⏺ Update(src/pages/outputs.tsx)
+  ⎿  Added 5 lines, removed 2 lines
+      131              In Progress
+      132            </div>
+      133            <div className="grid grid-cols-1 md:grid-cols-2 gap-
+           2">
+      134 -            {visibleRunning.map((run) => (                    
+      134 +            {visibleRunning.map((run) => {                    
+      135 +              const RunIcon = getActionIcon(run.action);      
+      136 +              return (                                        
+      137                <div key={run.id} className="border rounded-lg p
+           -3 bg-background">
+      138                  <div className="flex items-center justify-betw
+           een">
+      137 -                  <div className="text-sm font-medium">       
+      139 +                  <div className="text-sm font-medium flex ite
+          +ms-center gap-1.5">                                           
+      140 +                    <RunIcon className="h-3.5 w-3.5 shrink-0" 
+          +/>                                                            
+      141                      {formatActionName(run.action)}
+      142                    </div>
+      143                    <div className="text-[11px] text-muted-foreg
+           round">
+
+⏺ Need to close the .map callback properly.
+
+⏺ Update(src/pages/outputs.tsx)
+  ⎿  Added 2 lines, removed 1 line
+      151                    Output: {run.output || run.output_mode}
+      152                  </div>
+      153                </div>
+      154 -            ))}                                               
+      154 +              );                                              
+      155 +            })}                                               
+      156            </div>
+      157          </div>
+      158        )}
+
+⏺ Now remove the local formatActionName since we're using the shared one.
+
+⏺ Update(src/pages/outputs.tsx)
+  ⎿  Removed 6 lines
+      379    return `/api/outputs/${encodeURIComponent(relPath).replace(/
+           %2F/g, "/")}`;
+      380  }
+      381  
+      382 -function formatActionName(action: string) {                   
+      383 -  return action                                               
+      384 -    .split(/[-_]/g)                                           
+      385 -    .map((part) => part.charAt(0).toUpperCase() + part.slice(1
+          -))                                                            
+      386 -    .join(" ");                                               
+      387 -}                                                             
+
+⏺ Bash(npx tsc --noEmit 2>&1)
+  ⎿  (No output)
+
+⏺ Clean. Now let me also check if there are other places using formatActionName
+  locally that should use the shared one.
+
+⏺ Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Only used in outputs now. Here's what was done:
+
+  New file: src/lib/action-icons.ts
+  - getActionIcon(action) — returns the matching lucide icon for any of the 14
+  actions, with Clapperboard as fallback
+  - formatActionName(action) — shared helper (moved out of outputs.tsx)
+
+  Updated: src/pages/outputs.tsx
+  - Group list items now show the action icon + formatted name (e.g. LayoutGrid
+  + "Tile", Download + "Yt Import")
+  - In-progress cards show the action icon next to the action name
+  - Removed local formatActionName in favor of the shared one
+
+✻ Churned for 1m 30s
+
+❯ cool. now let's talk about folder managment from within the library ui.   
+  we might consider adding the ability for crud on folders. additionally a  
+  drag interface so we could move videos into other folders would be good.  
+  i'm not sure how to lay that out. what would be the best ui/ux for such a 
+   thing?                                                                   
+
+⏺ Good question — there are a few patterns that could work here, each with
+  different tradeoffs given the current layout:
+
+  Option A: Enhance what's there
+  - Folder cards become drag-drop targets (highlight when dragging over)
+  - "Move to..." button in the action panel when videos are selected (opens a
+  folder picker)
+  - "+" card at the end of the folder row to create new folders
+  - Long-press or right-click on folder cards for rename/delete
+  - Pros: minimal layout change, builds on existing patterns
+  - Cons: dragging "up" to the folder row feels a bit awkward
+
+  Option B: Dual-pane file manager
+  - Persistent folder tree on the left (vertical, like Finder)
+  - Video grid on the right
+  - Drag from grid → tree to move
+  - Tree has inline rename, delete, create controls
+  - Pros: very intuitive, standard pattern everyone knows
+  - Cons: bigger layout change, eats horizontal space, folder tree might feel
+  redundant with the folder cards
+
+  Option C: Hybrid — keep cards, add move via action panel
+  - Keep the folder card row for browsing (it's nice for visual nav)
+  - Add CRUD buttons near the folder section header (New, Rename, Delete for
+  selected folder)
+  - Add "Move to..." in the action panel — when clicked, the folder cards switch
+   to "drop mode" with a visual cue, click a folder card to move the selected
+  videos there
+  - No actual drag-and-drop, just select → move → pick destination
+  - Pros: simpler to implement, works on mobile, no drag complexity
+  - Cons: less "direct manipulation" feel
+
+  My recommendation would be Option C — it avoids the complexity of
+  drag-and-drop (which is fiddly with scroll containers and touch devices) while
+   still giving you full folder CRUD and easy video moves. The "select videos →
+  Move to → click folder" flow is actually faster than drag-and-drop for bulk
+  operations.
+
+  What feels right to you?
+
+❯ if the folder nav on top became sticky it would make sense to have those  
+  be the drop target as you suggest in option a as this would allow use to  
+  scroll through long lists of videos and not lost the target folders on    
+  scroll. we might want to ALSO have a move folders actions available if    
+  the user has selected 1 or move videos via their checkboxes. is this a    
+  reasonable idea?                                                          
+
+⏺ That's a great idea. The sticky folder row solves the core drag-and-drop
+  problem — your drop targets are always visible no matter how far you've
+  scrolled. And having the "Move to..." button as a fallback covers keyboard
+  users, touch devices, and bulk operations where drag would be tedious.
+
+  This is a substantial feature though — drag-and-drop, sticky layout changes, a
+   new API endpoint for moving files, folder CRUD, and action panel changes. Let
+   me plan it out properly.
+
+⏺ Entered plan mode
+  Claude is now exploring and designing an implementation approach.
+
+⏺ 2 Explore agents finished (ctrl+o to expand)
+   ├─ Explore backend move/folder APIs · 28 tool uses · 46.1k tokens
+   │  ⎿  Done
+   └─ Explore library page layout · 4 tool uses · 17.4k tokens
+      ⎿  Done
+
+⏺ Read 3 files (ctrl+o to expand)
+
+⏺ Now let me check the Rust routes setup and projects route for the folder
+  creation pattern.
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ Now let me also check the routes/mod.rs to see how routes are organized.
+
+⏺ Read 2 files (ctrl+o to expand)
+  ⎿  You've hit your limit · resets 6pm (America/Los_Angeles)
+     /upgrade to increase your usage limit.
+
+✻ Crunched for 1m 30s

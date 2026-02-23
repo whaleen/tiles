@@ -1,0 +1,95 @@
+import { useState } from "react";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ActionFormWrapper } from "./action-form-wrapper";
+
+interface ActionFormProps {
+  targetsOverride?: string[];
+  targetsSummary?: string;
+  allowOutput?: boolean;
+  allowOverwrite?: boolean;
+  allowAlongside?: boolean;
+  onRunComplete?: () => void;
+}
+
+export function DetectForm({
+  targetsOverride,
+  targetsSummary,
+  allowOutput,
+  allowOverwrite,
+  allowAlongside,
+  onRunComplete,
+}: ActionFormProps) {
+  const [threshold, setThreshold] = useState("0.3");
+  const [method, setMethod] = useState("content");
+  const [listOnly, setListOnly] = useState(false);
+
+  return (
+    <ActionFormWrapper
+      actionName="detect"
+      targetType="folders_or_videos"
+      targetsOverride={targetsOverride}
+      targetsSummary={targetsSummary}
+      allowOutput={allowOutput}
+      allowOverwrite={allowOverwrite}
+      allowAlongside={allowAlongside}
+      onRunComplete={onRunComplete}
+      buildRequest={(targets, outputMode) => ({
+        action: "detect",
+        targets,
+        target_type: "folders_or_videos",
+        output_mode: outputMode,
+        params: {
+          threshold: parseFloat(threshold),
+          method,
+          list_only: listOnly,
+        },
+      })}
+    >
+      {() => (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Analyzes videos for scene changes and splits them into separate
+            clips at each cut point. Lower thresholds detect more scenes.
+          </p>
+          <div>
+            <Label className="text-sm">Threshold</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              max="1.0"
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Method</Label>
+            <Select value={method} onValueChange={setMethod}>
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="content">Content</SelectItem>
+                <SelectItem value="adaptive">Adaptive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch checked={listOnly} onCheckedChange={setListOnly} />
+            <Label className="text-sm">List Only (no splitting)</Label>
+          </div>
+        </div>
+      )}
+    </ActionFormWrapper>
+  );
+}

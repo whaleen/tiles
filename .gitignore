@@ -4,18 +4,15 @@ trimmed_output/
 concatenated_output/
 output/
 scenes_output/
+target/
+apps/tiles-tui/target/
 
 # Settings file (optional - remove this line if you want to commit settings)
 configs/tile_videos_settings.json
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-
-# Virtual environment
-venv/
-env/
+# Node / React
+node_modules/
+apps/tiles-studio/dist/
 
 # macOS
 .DS_Store
@@ -24,8 +21,11 @@ env/
 *.tmp
 *.swp
 
+# Whisper models
+models/
+
 # Video files
-src/
+/src/
 *.mp4
 *.mov
 *.avi

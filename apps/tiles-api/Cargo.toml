@@ -1,0 +1,21 @@
+[package]
+name = "tiles-api"
+version = "0.1.0"
+edition = "2021"
+description = "Axum REST API for Tiles Studio"
+license = "MIT"
+
+[[bin]]
+name = "tiles-api"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["multipart"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
