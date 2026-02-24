@@ -1,26 +1,39 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
 import type { VideoEntry } from "@/types";
 
 export function useVideos(project?: string, search?: string) {
-  const [videos, setVideos] = useState<VideoEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const key = queryKeys.videos.list(project, search);
 
-  const fetchVideos = useCallback(() => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (project) params.set("project", project);
-    if (search) params.set("search", search);
-    const qs = params.toString();
-    apiGet<VideoEntry[]>(`/api/videos${qs ? `?${qs}` : ""}`)
-      .then(setVideos)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [project, search]);
+  const { data, isLoading } = useQuery({
+    queryKey: key,
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (project) params.set("project", project);
+      if (search) params.set("search", search);
+      const qs = params.toString();
+      return apiGet<VideoEntry[]>(`/api/videos${qs ? `?${qs}` : ""}`);
+    },
+    staleTime: 10_000,
+  });
 
-  useEffect(() => {
-    fetchVideos();
-  }, [fetchVideos]);
+  const removeVideo = useCallback(
+    (relPath: string) => {
+      queryClient.setQueryData<VideoEntry[]>(key, (prev) =>
+        prev ? prev.filter((v) => v.rel_path !== relPath) : []
+      );
+    },
+    [queryClient, key]
+  );
 
-  return { videos, loading, refresh: fetchVideos };
+  return {
+    videos: data ?? [],
+    loading: isLoading,
+    refresh: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.videos.all }),
+    removeVideo,
+  };
 }

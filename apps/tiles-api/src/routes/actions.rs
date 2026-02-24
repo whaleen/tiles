@@ -95,6 +95,12 @@ pub async fn list_actions() -> Json<Vec<ActionInfo>> {
             target_type: "folders_or_videos".to_string(),
         },
         ActionInfo {
+            name: "crop".to_string(),
+            label: "Crop".to_string(),
+            description: "Crop videos to a specific region. Set the position and size of the crop rectangle.".to_string(),
+            target_type: "folders_or_videos".to_string(),
+        },
+        ActionInfo {
             name: "organize-landscape".to_string(),
             label: "Organize by Orientation".to_string(),
             description: "Sort videos into landscape/ and portrait/ subfolders based on their aspect ratio.".to_string(),
@@ -143,6 +149,7 @@ pub async fn run_action(
     if let Ok(mut guard) = state.running_actions.lock() {
         guard.retain(|item| item.id != id);
     }
+    state.invalidate_video_cache();
     let result = result.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(result))
 }

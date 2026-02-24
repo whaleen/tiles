@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import type { DragEvent } from "react";
 import { apiPost, apiPostNoContent, thumbUrl } from "@/api/client";
 import { useProjectDetail } from "@/hooks/use-project-detail";
 import { useVideos } from "@/hooks/use-videos";
 import { VideoGrid } from "@/components/library/video-grid";
-import { VideoPlayerModal } from "@/components/library/video-player-modal";
+import { VideoEditor } from "@/components/editor/video-editor";
 import { LibraryActionPanel } from "@/components/library/library-action-panel";
 import { FolderContextMenu } from "@/components/library/folder-context-menu";
 import { Badge } from "@/components/ui/badge";
@@ -72,9 +72,9 @@ export function LibraryPage({
     error: detailError,
     refresh: refreshDetail,
   } = useProjectDetail(project);
-  const { videos, loading: videosLoading, refresh } = useVideos(project, search);
+  const { videos, loading: videosLoading, refresh, removeVideo } = useVideos(project, search);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
-  const [activeVideo, setActiveVideo] = useState<VideoEntry | null>(null);
+  const [editorVideo, setEditorVideo] = useState<VideoEntry | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
   const [movingVideos, setMovingVideos] = useState(false);
   const [dragRelPath, setDragRelPath] = useState<string | null>(null);
@@ -95,17 +95,28 @@ export function LibraryPage({
   useEffect(() => {
     setSelectedFolder(undefined);
     setSelectedPaths(new Set());
-    setActiveVideo(null);
+    setEditorVideo(null);
     setDragRelPath(null);
     setDragOverFolderPath(null);
   }, [project]);
 
   useEffect(() => {
     setSelectedPaths(new Set());
-    setActiveVideo(null);
+    setEditorVideo(null);
     setDragRelPath(null);
     setDragOverFolderPath(null);
   }, [selectedFolder]);
+
+  // Listen for editor navigation events (prev/next inside editor)
+  const handleEditorNavigate = useCallback((e: Event) => {
+    const video = (e as CustomEvent<VideoEntry>).detail;
+    if (video) setEditorVideo(video);
+  }, []);
+  useEffect(() => {
+    window.addEventListener("editor-navigate", handleEditorNavigate);
+    return () =>
+      window.removeEventListener("editor-navigate", handleEditorNavigate);
+  }, [handleEditorNavigate]);
 
   const filteredVideos = useMemo(() => {
     if (!project || !selectedFolder) return videos;
@@ -380,6 +391,27 @@ export function LibraryPage({
     setNewFolderParent(selectedFolder || "__root__");
     setNewFolderName("");
     setNewFolderOpen(true);
+  }
+
+  // Editor sub-view
+  if (editorVideo) {
+    return (
+      <div ref={pageRef} className="h-full">
+        <VideoEditor
+          video={editorVideo}
+          videos={filteredVideos}
+          onBack={() => setEditorVideo(null)}
+          onRemoveVideo={(relPath) => {
+            removeVideo(relPath);
+            setSelectedPaths((prev) => {
+              const next = new Set(prev);
+              next.delete(relPath);
+              return next;
+            });
+          }}
+        />
+      </div>
+    );
   }
 
   return (
@@ -769,7 +801,7 @@ export function LibraryPage({
               videos={filteredVideos}
               selectedPaths={selectedPaths}
               onToggleSelect={toggleSelect}
-              onVideoClick={setActiveVideo}
+              onVideoClick={setEditorVideo}
               onVideoDragStart={(video, event) => {
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("text/plain", video.rel_path);
@@ -783,14 +815,6 @@ export function LibraryPage({
           </div>
         )}
       </div>
-      <VideoPlayerModal
-        video={activeVideo}
-        videos={filteredVideos}
-        onClose={() => setActiveVideo(null)}
-        onNavigate={setActiveVideo}
-        onDeleted={() => setSelectedPaths(new Set())}
-        onRefresh={refresh}
-      />
       <Dialog
         open={newFolderOpen}
         onOpenChange={(open) => {

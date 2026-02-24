@@ -1,22 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
 import type { ProjectSummary } from "@/types";
 
 export function useProjects() {
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const refresh = useCallback(() => {
-    setLoading(true);
-    apiGet<ProjectSummary[]>("/api/projects")
-      .then(setProjects)
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+  const { data, isLoading } = useQuery({
+    queryKey: queryKeys.projects.all,
+    queryFn: () => apiGet<ProjectSummary[]>("/api/projects"),
+    staleTime: 30_000,
+  });
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  return { projects, loading, refresh };
+  return {
+    projects: data ?? [],
+    loading: isLoading,
+    refresh: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all }),
+  };
 }

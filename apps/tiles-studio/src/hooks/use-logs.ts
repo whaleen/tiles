@@ -1,23 +1,20 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
 
 export function useLogs() {
-  const [logs, setLogs] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchLogs = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    apiGet<string[]>("/api/logs")
-      .then(setLogs)
-      .catch((err) => setError(err.message || "Failed to load logs"))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.logs,
+    queryFn: () => apiGet<string[]>("/api/logs"),
+    staleTime: 0,
+  });
 
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
-
-  return { logs, loading, error, refresh: fetchLogs };
+  return {
+    logs: data ?? [],
+    loading: isLoading,
+    error: error ? (error as Error).message : null,
+    refresh: () => queryClient.invalidateQueries({ queryKey: queryKeys.logs }),
+  };
 }

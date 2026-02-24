@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { apiGet } from "@/api/client";
+import { useMemo, useState } from "react";
+import { useActions } from "@/hooks/use-actions";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { X, Play } from "lucide-react";
-import type { ActionInfo, VideoEntry } from "@/types";
+import type { VideoEntry } from "@/types";
 import { ConcatForm } from "@/components/actions/concat-form";
 import { TrimForm } from "@/components/actions/trim-form";
 import { DetectForm } from "@/components/actions/detect-form";
@@ -24,6 +24,7 @@ import { YtImportForm } from "@/components/actions/yt-import-form";
 import { TranscribeForm } from "@/components/actions/transcribe-form";
 import { ChopForm } from "@/components/actions/chop-form";
 import { LoopForm } from "@/components/actions/loop-form";
+import { CropForm } from "@/components/actions/crop-form";
 import { actionCapabilities } from "@/components/actions/action-capabilities";
 
 interface LibraryActionPanelProps {
@@ -38,9 +39,11 @@ export function LibraryActionPanel({
   currentProject,
 }: LibraryActionPanelProps) {
   const baseVideos = selectedVideos.length > 0 ? selectedVideos : displayedVideos;
-  const [actions, setActions] = useState<ActionInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { actions: allActions, loading, error } = useActions();
+  const actions = useMemo(
+    () => allActions.filter((a) => a.target_type !== "settings"),
+    [allActions]
+  );
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
 
   const isImage = (path: string) =>
@@ -53,18 +56,6 @@ export function LibraryActionPanel({
     () => baseVideos.filter((v) => isImage(v.rel_path)).length,
     [baseVideos]
   );
-
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    apiGet<ActionInfo[]>("/api/actions")
-      .then((data) => setActions(data.filter((a) => a.target_type !== "settings")))
-      .catch((err) => {
-        console.error(err);
-        setError(err.message || "Failed to load actions");
-      })
-      .finally(() => setLoading(false));
-  }, []);
 
   const selectedActionInfo = useMemo(
     () => actions.find((a) => a.name === selectedAction) || null,
@@ -136,6 +127,7 @@ export function LibraryActionPanel({
     "organize-landscape": <OrganizeLandscapeForm {...formProps} {...caps} />,
     chop: <ChopForm {...formProps} {...caps} />,
     loop: <LoopForm {...formProps} {...caps} />,
+    crop: <CropForm {...formProps} {...caps} />,
     "yt-import": (
         <YtImportForm
           {...formProps}

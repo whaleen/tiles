@@ -24,7 +24,7 @@ import { useActionRunner } from "@/hooks/use-action-runner";
 import { bumpMediaCache } from "@/api/client";
 import { toast } from "sonner";
 import type { ActionRunRequest } from "@/types";
-import { ActionCompleteContext } from "@/components/library/video-player-modal";
+import { ActionCompleteContext } from "@/contexts/action-complete-context";
 
 interface ActionFormWrapperProps {
   actionName: string;

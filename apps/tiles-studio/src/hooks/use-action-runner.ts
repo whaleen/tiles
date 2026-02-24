@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { apiPost } from "@/api/client";
+import { queryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
 import type { ActionRunRequest, ActionRunResult } from "@/types";
 
 export function useActionRunner(scopeKey = "__default__") {
@@ -20,6 +22,10 @@ export function useActionRunner(scopeKey = "__default__") {
       if (requestId === requestSeqRef.current) {
         setResult(res);
       }
+      queryClient.invalidateQueries({ queryKey: queryKeys.actions.running });
+      queryClient.invalidateQueries({ queryKey: queryKeys.outputs.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.videos.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.logs });
       playPing();
       return res;
     } catch (e) {

@@ -1,24 +1,22 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/api/client";
+import { queryKeys } from "@/lib/query-keys";
 import type { RunningAction } from "@/types";
 
 export function useRunningActions(pollMs = 2500) {
-  const [running, setRunning] = useState<RunningAction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchRunning = useCallback(() => {
-    setLoading(true);
-    apiGet<RunningAction[]>("/api/actions/running")
-      .then(setRunning)
-      .catch(() => setRunning([]))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data, isLoading } = useQuery({
+    queryKey: queryKeys.actions.running,
+    queryFn: () => apiGet<RunningAction[]>("/api/actions/running"),
+    refetchInterval: pollMs,
+    staleTime: 0,
+  });
 
-  useEffect(() => {
-    fetchRunning();
-    const id = window.setInterval(fetchRunning, pollMs);
-    return () => window.clearInterval(id);
-  }, [fetchRunning, pollMs]);
-
-  return { running, loading, refresh: fetchRunning };
+  return {
+    running: data ?? [],
+    loading: isLoading,
+    refresh: () =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.actions.running }),
+  };
 }

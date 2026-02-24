@@ -116,6 +116,7 @@ pub async fn rename_folder(
         return Err(StatusCode::CONFLICT);
     }
     std::fs::rename(&from, &to).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state.invalidate_video_cache();
     Ok(Json(FolderPathResponse { path: to_rel }))
 }
 
@@ -157,6 +158,7 @@ pub async fn move_folder(
         return Err(StatusCode::CONFLICT);
     }
     std::fs::rename(&from, &to).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state.invalidate_video_cache();
     Ok(Json(FolderPathResponse { path: to_rel }))
 }
 
@@ -174,6 +176,7 @@ pub async fn delete_folder(
         return Err(StatusCode::NOT_FOUND);
     }
     std::fs::remove_dir_all(dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state.invalidate_video_cache();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -226,6 +229,7 @@ pub async fn move_videos(
         });
     }
 
+    state.invalidate_video_cache();
     Ok(Json(MoveVideosResponse { moved, moved_paths }))
 }
 

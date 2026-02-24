@@ -272,6 +272,24 @@ fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
                 args.push(format!("{v}").into());
             }
         }
+        "crop" => {
+            if let Some(v) = params.get("x").and_then(|v| v.as_u64()) {
+                args.push("--x".into());
+                args.push(format!("{v}").into());
+            }
+            if let Some(v) = params.get("y").and_then(|v| v.as_u64()) {
+                args.push("--y".into());
+                args.push(format!("{v}").into());
+            }
+            if let Some(v) = params.get("w").and_then(|v| v.as_u64()) {
+                args.push("--w".into());
+                args.push(format!("{v}").into());
+            }
+            if let Some(v) = params.get("h").and_then(|v| v.as_u64()) {
+                args.push("--h".into());
+                args.push(format!("{v}").into());
+            }
+        }
         _ => {}
     }
 
@@ -316,6 +334,7 @@ fn action_supports_output(action: &str) -> bool {
             | "doctor-reencode"
             | "doctor-trim-start"
             | "chop"
+            | "crop"
             | "tile"
             | "run"
     )
@@ -324,7 +343,7 @@ fn action_supports_output(action: &str) -> bool {
 fn action_supports_overwrite(action: &str) -> bool {
     matches!(
         action,
-        "trim" | "strip-audio" | "chop" | "slowmo" | "doctor-reencode" | "doctor-trim-start"
+        "trim" | "strip-audio" | "chop" | "crop" | "slowmo" | "doctor-reencode" | "doctor-trim-start"
     )
 }
 

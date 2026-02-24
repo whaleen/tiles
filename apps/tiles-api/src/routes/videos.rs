@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::models::{VideoEntry, VideoInfo};
-use crate::services::{ffprobe, fs_scanner};
+use crate::services::ffprobe;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -19,11 +19,7 @@ pub async fn list_videos(
     State(state): State<Arc<AppState>>,
     Query(query): Query<VideoListQuery>,
 ) -> Json<Vec<VideoEntry>> {
-    let videos = fs_scanner::list_videos(
-        &state.root,
-        query.project.as_deref(),
-        query.search.as_deref(),
-    );
+    let videos = state.get_videos(query.project.as_deref(), query.search.as_deref());
     Json(videos)
 }
 
@@ -64,5 +60,6 @@ pub async fn delete_video(
         return Err(StatusCode::NOT_FOUND);
     }
     std::fs::remove_file(&full).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    state.invalidate_video_cache();
     Ok(StatusCode::NO_CONTENT)
 }

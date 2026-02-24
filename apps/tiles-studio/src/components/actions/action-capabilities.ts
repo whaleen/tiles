@@ -23,6 +23,7 @@ const ACTION_CAPS: Record<string, ActionCapability> = {
   transcribe: { allowOutput: true, allowOverwrite: false, allowAlongside: true },
   loop: { allowOutput: true, allowOverwrite: false, allowAlongside: true },
   "yt-import": { allowOutput: true, allowOverwrite: false, allowAlongside: false },
+  crop: { allowOutput: true, allowOverwrite: true, allowAlongside: true },
 };
 
 export function actionCapabilities(actionName: string | undefined) {

@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { MouseEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useProjects } from "@/hooks/use-projects";
 import { useOutputs } from "@/hooks/use-outputs";
 import { useRunningActions } from "@/hooks/use-running-actions";
+import { useProjectDetailsMap } from "@/hooks/use-project-details-map";
+import { useProjectMetasMap } from "@/hooks/use-project-metas-map";
+import { queryKeys } from "@/lib/query-keys";
 import {
   apiGet,
   apiPost,
@@ -13,7 +17,6 @@ import {
   videoUrl,
 } from "@/api/client";
 import type {
-  ProjectDetail,
   ProjectMeta,
   OutputRun,
   RunningAction,
@@ -73,11 +76,15 @@ const EMPTY_META: ProjectMeta = {
 };
 
 export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProps) {
+  const queryClient = useQueryClient();
   const { projects, loading: projectsLoading, refresh } = useProjects();
   const { outputs } = useOutputs();
   const { running } = useRunningActions();
-  const [details, setDetails] = useState<Record<string, ProjectDetail>>({});
-  const [metas, setMetas] = useState<Record<string, ProjectMeta>>({});
+
+  const projectNames = useMemo(() => projects.map((p) => p.name), [projects]);
+  const details = useProjectDetailsMap(projectNames);
+  const metas = useProjectMetasMap(projectNames);
+
   const [search, setSearch] = useState("");
 
   const [settingsProject, setSettingsProject] = useState<string | null>(null);
@@ -91,39 +98,6 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
     description: "",
     tags: "",
   });
-
-  useEffect(() => {
-    if (projects.length === 0) return;
-    Promise.all(
-      projects.map((p) =>
-        apiGet<ProjectDetail>(`/api/projects/${encodeURIComponent(p.name)}`)
-          .then((d) => [p.name, d] as const)
-          .catch(() => null)
-      )
-    ).then((results) => {
-      const map: Record<string, ProjectDetail> = {};
-      for (const r of results) {
-        if (r) map[r[0]] = r[1];
-      }
-      setDetails(map);
-    });
-  }, [projects]);
-
-  useEffect(() => {
-    if (projects.length === 0) {
-      setMetas({});
-      return;
-    }
-    Promise.all(
-      projects.map((p) =>
-        apiGet<ProjectMeta>(`/api/projects/${encodeURIComponent(p.name)}/meta`)
-          .then((meta) => [p.name, normalizeMeta(meta)] as const)
-          .catch(() => [p.name, EMPTY_META] as const)
-      )
-    ).then((results) => {
-      setMetas(Object.fromEntries(results));
-    });
-  }, [projects]);
 
   const outputsByProject = outputs.reduce<Record<string, OutputRun[]>>((acc, o) => {
     (acc[o.project] ||= []).push(o);
@@ -240,8 +214,11 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
     setSettingsSaving(true);
     try {
       await apiPut(`/api/projects/${encodeURIComponent(settingsProject)}/meta`, payload);
+      queryClient.setQueryData(
+        queryKeys.projects.meta(settingsProject),
+        payload
+      );
       const normalized = normalizeMeta(payload);
-      setMetas((prev) => ({ ...prev, [settingsProject]: normalized }));
       toast.success("Project settings saved", {
         description: normalized.display_name || settingsProject,
       });

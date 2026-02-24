@@ -43,6 +43,7 @@ USAGE:
    tiles slowmo              Make slow-motion versions
    tiles strip-audio         Remove audio from videos
    tiles chop                Split videos into smaller segments
+   tiles crop                Crop videos to a specific region
    tiles yolo                Run YOLO random tile render
    tiles web                 Launch minimal browser UI
   tiles help                Show this help
@@ -257,6 +258,25 @@ OPTIONS:
       --no-audio           Strip audio
       --overwrite          Overwrite originals (default writes to slowmo/)
   -h, --help               Show this help
+"#;
+
+const CROP_HELP: &str = r#"tiles crop - crop videos to a specific region
+
+USAGE:
+  tiles crop <input> [<input> ...] [options]
+
+OPTIONS:
+  -o, --output <dir>          Output directory (default: outputs/crop)
+      --x <pixels>            Left offset (default: 0)
+      --y <pixels>            Top offset (default: 0)
+      --w <pixels>            Crop width (required)
+      --h <pixels>            Crop height (required)
+      --overwrite             Overwrite original videos in place
+  -h, --help                  Show this help
+
+EXAMPLES:
+  tiles crop src/myproject/video.mp4 --x 100 --y 50 --w 1280 --h 720
+  tiles crop src/myproject --w 1080 --h 1080 --overwrite
 "#;
 
 const STRIP_AUDIO_HELP: &str = r#"tiles strip-audio - remove audio from videos
@@ -524,6 +544,7 @@ fn run() -> i32 {
         "slowmo" => run_slowmo(rest),
         "strip-audio" => run_strip_audio(rest),
         "chop" => run_chop(rest),
+        "crop" => run_crop(rest),
         "web" => run_web_ui(),
         "yolo" => match run_yolo_tile(find_repo_root().as_deref()) {
             Ok(code) => code,
@@ -10225,6 +10246,202 @@ fn run_slowmo(args: &[OsString]) -> i32 {
         }
     }
     let log_path = tool_log_path("slowmo");
+    write_tool_log(&log_path, &lines);
+    0
+}
+
+fn run_crop(args: &[OsString]) -> i32 {
+    if args
+        .iter()
+        .any(|a| matches!(a.to_string_lossy().as_ref(), "-h" | "--help" | "help"))
+    {
+        println!("{CROP_HELP}");
+        return 0;
+    }
+    let root = find_repo_root();
+    let mut folders = Vec::<String>::new();
+    let mut output_override: Option<PathBuf> = None;
+    let mut alongside = false;
+    let mut crop_x: u32 = 0;
+    let mut crop_y: u32 = 0;
+    let mut crop_w: Option<u32> = None;
+    let mut crop_h: Option<u32> = None;
+    let mut overwrite = false;
+    let mut i = 0usize;
+    while i < args.len() {
+        let t = args[i].to_string_lossy().to_string();
+        match t.as_str() {
+            "-o" | "--output" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --output");
+                    return 2;
+                }
+                let output = args[i].to_string_lossy();
+                if parse_alongside_token(output.as_ref()) {
+                    alongside = true;
+                    output_override = None;
+                } else {
+                    let base = root.as_deref().unwrap_or_else(|| Path::new("."));
+                    output_override = Some(resolve_output_dir(base, &output));
+                }
+            }
+            "--x" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --x");
+                    return 2;
+                }
+                crop_x = args[i].to_string_lossy().parse::<u32>().unwrap_or(0);
+            }
+            "--y" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --y");
+                    return 2;
+                }
+                crop_y = args[i].to_string_lossy().parse::<u32>().unwrap_or(0);
+            }
+            "--w" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --w");
+                    return 2;
+                }
+                crop_w = Some(args[i].to_string_lossy().parse::<u32>().unwrap_or(0));
+            }
+            "--h" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --h");
+                    return 2;
+                }
+                crop_h = Some(args[i].to_string_lossy().parse::<u32>().unwrap_or(0));
+            }
+            "--overwrite" => overwrite = true,
+            _ if t.starts_with('-') => {
+                eprintln!("error: unknown option {t}");
+                return 2;
+            }
+            _ => folders.push(t),
+        }
+        i += 1;
+    }
+    let w = match crop_w {
+        Some(v) if v > 0 => v,
+        _ => {
+            eprintln!("error: --w (crop width) is required and must be > 0");
+            return 2;
+        }
+    };
+    let h = match crop_h {
+        Some(v) if v > 0 => v,
+        _ => {
+            eprintln!("error: --h (crop height) is required and must be > 0");
+            return 2;
+        }
+    };
+    let base = root.as_deref().unwrap_or_else(|| Path::new("."));
+    let mut targets: Vec<(PathBuf, PathBuf)> = Vec::new();
+    if folders.is_empty() {
+        for f in resolve_selected_folders(root.as_deref(), "Select folders for crop") {
+            for video in get_video_files(&f) {
+                targets.push((video, f.clone()));
+            }
+        }
+    } else {
+        for input in &folders {
+            let as_path = PathBuf::from(input);
+            if as_path.exists() && as_path.is_file() && is_video_file(&as_path) {
+                let parent = as_path.parent().unwrap_or(base).to_path_buf();
+                targets.push((as_path, parent));
+                continue;
+            }
+            let folder = resolve_folder_path(base, input);
+            if folder.exists() && folder.is_dir() {
+                for video in get_video_files(&folder) {
+                    targets.push((video, folder.clone()));
+                }
+                continue;
+            }
+            eprintln!("warning: '{}' is not a valid video or folder", input);
+        }
+    }
+    if targets.is_empty() {
+        eprintln!("No video files found.");
+        return 1;
+    }
+
+    if let Some(dir) = output_override.as_ref() {
+        let _ = fs::create_dir_all(dir);
+    }
+
+    let mut lines = Vec::<String>::new();
+    let mut processed = 0usize;
+    let total = targets.len();
+    for (file, base_dir) in targets {
+        // Validate crop region against video dimensions
+        let info = get_video_info(&file, base);
+        if let Some(ref info) = info {
+            if crop_x + w > info.width || crop_y + h > info.height {
+                lines.push(format!(
+                    "Skip (crop {}x{}+{}+{} exceeds {}x{}): {}",
+                    w, h, crop_x, crop_y, info.width, info.height, file.display()
+                ));
+                continue;
+            }
+        }
+
+        let out_dir = if overwrite {
+            base_dir.clone()
+        } else if alongside {
+            base_dir.clone()
+        } else if let Some(dir) = output_override.as_ref() {
+            dir.clone()
+        } else {
+            let d = base_dir.join("crop");
+            let _ = fs::create_dir_all(&d);
+            d
+        };
+        processed += 1;
+        lines.push(format!("Crop ({processed}/{total}) {}", file.display()));
+        let target = if overwrite {
+            let mut tmp = file.clone();
+            tmp.set_extension("crop_tmp.mp4");
+            tmp
+        } else {
+            out_dir.join(file.file_name().unwrap_or_default())
+        };
+        let crop_filter = format!("crop={w}:{h}:{crop_x}:{crop_y}");
+        let mut cmd = Command::new("ffmpeg");
+        cmd.arg("-v")
+            .arg("error")
+            .arg("-i")
+            .arg(&file)
+            .arg("-vf")
+            .arg(&crop_filter)
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-preset")
+            .arg("medium")
+            .arg("-crf")
+            .arg("23")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("192k");
+        let ok = matches!(cmd.arg("-y").arg(&target).output(), Ok(o) if o.status.success());
+        if ok && overwrite {
+            let _ = fs::rename(&target, &file);
+        }
+        if !ok {
+            lines.push(format!("Failed: {}", file.display()));
+            if overwrite {
+                let _ = fs::remove_file(&target);
+            }
+        }
+    }
+    let log_path = tool_log_path("crop");
     write_tool_log(&log_path, &lines);
     0
 }

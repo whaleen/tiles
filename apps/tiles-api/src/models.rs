@@ -30,7 +30,7 @@ pub struct ProjectMeta {
 
 // --- Videos ---
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VideoEntry {
     pub folder: String,
     pub name: String,
