@@ -125,9 +125,6 @@ pub fn list_videos(root: &Path, project: Option<&str>, search: Option<&str>) -> 
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                if path.file_name().and_then(|s| s.to_str()) == Some("outputs") {
-                    continue;
-                }
                 stack.push(path);
                 continue;
             }
@@ -298,6 +295,76 @@ pub fn list_output_entries(root: &Path, rel_path: Option<&str>) -> Vec<OutputEnt
             std::cmp::Ordering::Greater
         }
     });
+    out
+}
+
+pub fn list_all_videos_recursive(root: &Path, rel_path: &str) -> Vec<OutputEntry> {
+    let base = root.join(rel_path.trim_matches('/'));
+    if !base.exists() || !base.is_dir() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut stack = vec![base.clone()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                if name == "tui-thumbs" || name == "tui-logs" || name.starts_with('.') {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+            if !path.is_file() || !is_media_file(&path) {
+                continue;
+            }
+
+            let name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+            
+            let rel_path_val = match path.strip_prefix(root) {
+                Ok(v) => v.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+
+            let metadata = match path.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+            let modified_epoch = modified
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+
+            let kind = if is_video_file(&path) {
+                "video".to_string()
+            } else {
+                "image".to_string()
+            };
+
+            out.push(OutputEntry {
+                name,
+                rel_path: rel_path_val,
+                is_dir: false,
+                size_bytes: metadata.len(),
+                modified_epoch,
+                kind,
+            });
+        }
+    }
+
+    // Sort newest first globally
+    out.sort_by(|a, b| b.modified_epoch.cmp(&a.modified_epoch));
     out
 }
 

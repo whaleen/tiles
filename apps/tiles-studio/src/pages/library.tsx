@@ -1,9 +1,14 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import type { DragEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiPost, apiPostNoContent, thumbUrl } from "@/api/client";
 import { useProjectDetail } from "@/hooks/use-project-detail";
 import { useVideos } from "@/hooks/use-videos";
+import { useFolderOrder } from "@/hooks/use-folder-order";
+import { queryKeys } from "@/lib/query-keys";
 import { VideoGrid } from "@/components/library/video-grid";
+import { FolderTimeline } from "@/components/library/folder-timeline";
+import { TimelinePreview } from "@/components/library/timeline-preview";
 import { VideoEditor } from "@/components/editor/video-editor";
 import { LibraryActionPanel } from "@/components/library/library-action-panel";
 import { FolderContextMenu } from "@/components/library/folder-context-menu";
@@ -36,11 +41,12 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronRight,
-  FolderOutput,
   FolderPlus,
+  FolderMinus,
+  Film as FilmStrip,
   CheckSquare,
   XSquare,
-  X,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -57,12 +63,11 @@ const isImage = (path: string) =>
 
 export function LibraryPage({
   project,
-  onNavigate,
 }: {
   project?: string;
-  onNavigate?: (tab: string) => void;
 }) {
-  const pageRef = useRef<HTMLDivElement | null>(null);
+  const queryClient = useQueryClient();
+  const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | undefined>();
   const [search, setSearch] = useState("");
   const [foldersOpen, setFoldersOpen] = useState(true);
@@ -82,20 +87,46 @@ export function LibraryPage({
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderParent, setNewFolderParent] = useState("__root__");
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [rootOnly, setRootOnly] = useState(true);
 
-  const toggleSelect = (relPath: string) => {
+  const { order, saveOrder } = useFolderOrder(project, selectedFolder);
+  const lastSelectedRef = useRef<string | null>(null);
+
+  const toggleSelect = (relPath: string, shiftKey?: boolean) => {
+    if (shiftKey && lastSelectedRef.current && lastSelectedRef.current !== relPath) {
+      // Shift+click: select range between last selected and current
+      const lastIdx = orderedVideos.findIndex((v) => v.rel_path === lastSelectedRef.current);
+      const curIdx = orderedVideos.findIndex((v) => v.rel_path === relPath);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const start = Math.min(lastIdx, curIdx);
+        const end = Math.max(lastIdx, curIdx);
+        setSelectedPaths((prev) => {
+          const next = new Set(prev);
+          for (let i = start; i <= end; i++) {
+            next.add(orderedVideos[i].rel_path);
+          }
+          return next;
+        });
+        lastSelectedRef.current = relPath;
+        return;
+      }
+    }
     setSelectedPaths((prev) => {
       const next = new Set(prev);
       if (next.has(relPath)) next.delete(relPath);
       else next.add(relPath);
       return next;
     });
+    lastSelectedRef.current = relPath;
   };
 
   useEffect(() => {
     setSelectedFolder(undefined);
     setSelectedPaths(new Set());
     setEditorVideo(null);
+    setPreviewMode(false);
     setDragRelPath(null);
     setDragOverFolderPath(null);
   }, [project]);
@@ -103,6 +134,7 @@ export function LibraryPage({
   useEffect(() => {
     setSelectedPaths(new Set());
     setEditorVideo(null);
+    setPreviewMode(false);
     setDragRelPath(null);
     setDragOverFolderPath(null);
   }, [selectedFolder]);
@@ -119,22 +151,35 @@ export function LibraryPage({
   }, [handleEditorNavigate]);
 
   const filteredVideos = useMemo(() => {
-    if (!project || !selectedFolder) return videos;
-    const prefix = `${project}/${selectedFolder}`;
-    return videos.filter(
-      (v) => v.folder === prefix || v.folder.startsWith(`${prefix}/`)
-    );
-  }, [videos, project, selectedFolder]);
+    let result = videos;
+    if (project && selectedFolder) {
+      const prefix = `${project}/${selectedFolder}`;
+      result = result.filter(
+        (v) => v.folder === prefix || v.folder.startsWith(`${prefix}/`)
+      );
+    } else if (project && rootOnly && !selectedFolder) {
+      result = result.filter((v) => v.folder === project);
+    }
+    return result;
+  }, [videos, project, selectedFolder, rootOnly]);
+
+  const orderedVideos = useMemo(() => {
+    if (order.length === 0) return filteredVideos;
+    const orderIndex = new Map(order.map((name, i) => [name, i]));
+    return [...filteredVideos].sort((a, b) => {
+      const ai = orderIndex.get(a.name);
+      const bi = orderIndex.get(b.name);
+      if (ai !== undefined && bi !== undefined) return ai - bi;
+      if (ai !== undefined) return -1;
+      if (bi !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [filteredVideos, order]);
 
   const folderCards = useMemo(
     () => buildFolderCards(selectedFolder || "", detail?.subfolders, videos, project),
     [detail?.subfolders, project, selectedFolder, videos]
   );
-
-  const hasOutputs = useMemo(() => {
-    if (!project || !detail?.subfolders) return false;
-    return detail.subfolders.some((f) => f.split("/").includes("outputs"));
-  }, [project, detail?.subfolders]);
 
   const selectedVideos = useMemo(
     () => filteredVideos.filter((v) => selectedPaths.has(v.rel_path)),
@@ -151,15 +196,27 @@ export function LibraryPage({
   }, [parentPath, project, selectedFolder, videos]);
 
   const allFolderPaths = useMemo(() => {
-    const paths = (detail?.subfolders ?? []).filter(
-      (folder) => !folder.split("/").includes("outputs")
-    );
+    const paths = [...(detail?.subfolders ?? [])];
     paths.sort((a, b) => a.localeCompare(b));
     return paths;
   }, [detail?.subfolders]);
 
-  const siblingDropTargets = useMemo(() => {
-    if (!project || !selectedFolder) return [] as { path: string; label: string }[];
+  const dropTargets = useMemo(() => {
+    if (!project) return [] as { path: string; label: string }[];
+
+    if (!selectedFolder) {
+      // At root level: show all top-level folders
+      const topLevel = new Set<string>();
+      for (const folder of allFolderPaths) {
+        const segment = folder.split("/")[0];
+        if (segment) topLevel.add(segment);
+      }
+      return Array.from(topLevel)
+        .sort((a, b) => a.localeCompare(b))
+        .map((seg) => ({ path: seg, label: seg }));
+    }
+
+    // In a subfolder: show root, parent, and sibling folders
     const parent = selectedFolder.split("/").slice(0, -1).join("/");
     const prefix = parent ? `${parent}/` : "";
     const direct = new Set<string>();
@@ -196,7 +253,7 @@ export function LibraryPage({
   );
 
   async function refreshLibraryData() {
-    const scrollEl = findScrollContainer(pageRef.current);
+    const scrollEl = gridScrollRef.current;
     const prevTop = scrollEl?.scrollTop ?? null;
     await Promise.all([refresh(), refreshDetail()]);
     if (scrollEl && prevTop !== null) {
@@ -349,13 +406,20 @@ export function LibraryPage({
       });
       if (res.moved > 0) {
         toast.success(`Moved ${res.moved} video${res.moved !== 1 ? "s" : ""}`);
+        // Optimistic cache update: remove moved videos from the current list immediately
+        const movedFromSet = new Set(res.moved_paths.map((p) => p.from));
+        queryClient.setQueryData<VideoEntry[]>(
+          queryKeys.videos.list(project, search),
+          (prev) => (prev ? prev.filter((v) => !movedFromSet.has(v.rel_path)) : [])
+        );
       } else {
         toast("Nothing moved");
       }
       setSelectedPaths(new Set());
       setDragRelPath(null);
       setDragOverFolderPath(null);
-      await refreshLibraryData();
+      // Background refresh to sync subfolder counts and pick up new paths
+      void refreshLibraryData();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to move videos";
       toast.error(message);
@@ -393,73 +457,74 @@ export function LibraryPage({
     setNewFolderOpen(true);
   }
 
-  // Editor sub-view
-  if (editorVideo) {
-    return (
-      <div ref={pageRef} className="h-full">
-        <VideoEditor
-          video={editorVideo}
-          videos={filteredVideos}
-          onBack={() => setEditorVideo(null)}
-          onRemoveVideo={(relPath) => {
-            removeVideo(relPath);
-            setSelectedPaths((prev) => {
-              const next = new Set(prev);
-              next.delete(relPath);
-              return next;
-            });
-          }}
-        />
-      </div>
-    );
-  }
-
   return (
-    <div ref={pageRef} className="h-full">
-      <div className="p-4">
-        {videosLoading ? (
-          <div className="text-muted-foreground text-sm">Loading...</div>
-        ) : (
-          <div className="space-y-3">
-            {/* Compact sticky toolbar */}
-            {project && (
-              <div className="sticky top-12 z-10 bg-background/95 backdrop-blur border-b pb-2 shadow-sm -mx-4 px-4">
-                <div className="flex items-center gap-3 h-11">
-                  {/* Breadcrumb */}
-                  <div className="flex items-center gap-1 text-sm text-muted-foreground shrink-0">
-                    <button
-                      className="hover:text-foreground font-medium"
-                      onClick={() => setSelectedFolder(undefined)}
+    <div className="h-full min-h-0">
+      {videosLoading || (project && detailLoading) ? (
+        <div className="h-full flex items-center justify-center text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      ) : (
+        <div className="h-full min-h-0 flex flex-col gap-3">
+          {project && (
+            <div className="shrink-0 border-b pb-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1 text-sm text-muted-foreground shrink-0">
+                  <button
+                    className="hover:text-foreground font-medium"
+                    onClick={() => setSelectedFolder(undefined)}
+                  >
+                    {project}
+                  </button>
+                  {selectedFolder && (
+                    <>
+                      {selectedFolder.split("/").map((segment, i, arr) => {
+                        const path = arr.slice(0, i + 1).join("/");
+                        const isLast = i === arr.length - 1;
+                        return (
+                          <span key={path} className="flex items-center gap-1">
+                            <span>/</span>
+                            {isLast ? (
+                              <span className="text-foreground font-medium">{segment}</span>
+                            ) : (
+                              <button
+                                className="hover:text-foreground"
+                                onClick={() => setSelectedFolder(path)}
+                              >
+                                {segment}
+                              </button>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+                <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                  {!selectedFolder && (
+                    <Button
+                      variant={rootOnly ? "secondary" : "ghost"}
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setRootOnly((v) => !v)}
+                      title={rootOnly ? "Showing root-level videos only" : "Showing all videos including subfolders"}
                     >
-                      {project}
-                    </button>
-                    {selectedFolder && (
-                      <>
-                        {selectedFolder.split("/").map((segment, i, arr) => {
-                          const path = arr.slice(0, i + 1).join("/");
-                          const isLast = i === arr.length - 1;
-                          return (
-                            <span key={path} className="flex items-center gap-1">
-                              <span>/</span>
-                              {isLast ? (
-                                <span className="text-foreground font-medium">{segment}</span>
-                              ) : (
-                                <button
-                                  className="hover:text-foreground"
-                                  onClick={() => setSelectedFolder(path)}
-                                >
-                                  {segment}
-                                </button>
-                              )}
-                            </span>
-                          );
-                        })}
-                      </>
-                    )}
-                  </div>
-
-                  {/* Search */}
-                  <div className="ml-auto w-[200px] relative shrink-0">
+                      <FolderMinus className="h-3 w-3 mr-1" />
+                      {rootOnly ? "Root only" : "All folders"}
+                    </Button>
+                  )}
+                  {selectedFolder && (
+                    <Button
+                      variant={showTimeline ? "secondary" : "ghost"}
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setShowTimeline((v) => !v)}
+                      title="Toggle timeline strip"
+                    >
+                      <FilmStrip className="h-3 w-3 mr-1" />
+                      Timeline
+                    </Button>
+                  )}
+                  <div className="w-full sm:w-[220px] relative">
                     <Search className="absolute left-2.5 top-1.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       value={search}
@@ -468,211 +533,194 @@ export function LibraryPage({
                       className="h-7 pl-9 text-xs"
                     />
                   </div>
-
-                  {/* Scope badges */}
-                  {!videosLoading && (
-                    <Badge variant="secondary" className="shrink-0 text-xs">
-                      {[
-                        videoCount > 0 ? `${videoCount} vid${videoCount !== 1 ? "s" : ""}` : null,
-                        imageCount > 0 ? `${imageCount} img${imageCount !== 1 ? "s" : ""}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(", ") || `${filteredVideos.length} items`}
-                    </Badge>
-                  )}
-
-                  {/* Selection controls */}
-                  {selectedPaths.size > 0 ? (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Badge className="text-xs">{selectedPaths.size} sel</Badge>
+                </div>
+                <Badge variant="secondary" className="shrink-0 text-xs">
+                  {[
+                    videoCount > 0 ? `${videoCount} vid${videoCount !== 1 ? "s" : ""}` : null,
+                    imageCount > 0 ? `${imageCount} img${imageCount !== 1 ? "s" : ""}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || `${filteredVideos.length} items`}
+                </Badge>
+                {selectedPaths.size > 0 ? (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Badge className="text-xs">{selectedPaths.size} sel</Badge>
+                    {selectedPaths.size < filteredVideos.length && (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="h-7 px-2 text-xs"
-                        onClick={() => setSelectedPaths(new Set())}
+                        onClick={() =>
+                          setSelectedPaths(new Set(filteredVideos.map((v) => v.rel_path)))
+                        }
                       >
-                        <X className="h-3 w-3" />
+                        <CheckSquare className="h-3 w-3 mr-1" />
+                        All
                       </Button>
-                    </div>
-                  ) : (
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 px-2 text-xs shrink-0"
-                      onClick={() =>
-                        setSelectedPaths(new Set(filteredVideos.map((v) => v.rel_path)))
-                      }
-                      disabled={filteredVideos.length === 0}
-                    >
-                      <CheckSquare className="h-3 w-3 mr-1" />
-                      All
-                    </Button>
-                  )}
-                  {selectedPaths.size > 0 && selectedPaths.size < filteredVideos.length && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs shrink-0"
-                      onClick={() =>
-                        setSelectedPaths(new Set(filteredVideos.map((v) => v.rel_path)))
-                      }
-                    >
-                      <CheckSquare className="h-3 w-3 mr-1" />
-                      All
-                    </Button>
-                  )}
-                  {selectedPaths.size > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs shrink-0"
+                      className="h-7 px-2 text-xs"
                       onClick={() => setSelectedPaths(new Set())}
                     >
                       <XSquare className="h-3 w-3 mr-1" />
                       None
                     </Button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs shrink-0"
+                    onClick={() =>
+                      setSelectedPaths(new Set(filteredVideos.map((v) => v.rel_path)))
+                    }
+                    disabled={filteredVideos.length === 0}
+                  >
+                    <CheckSquare className="h-3 w-3 mr-1" />
+                    All
+                  </Button>
+                )}
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Drop targets — only visible during drag */}
-            {project && dragRelPath !== null && selectedFolder && (
-              <div className="rounded-md border border-dashed border-primary/50 bg-primary/5 p-2">
-                <div className="text-[11px] text-muted-foreground mb-1">
-                  Drop into folder
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {siblingDropTargets.map((target) => (
-                    <button
-                      key={`drop-target-${target.path || "__root__"}`}
-                      className={`rounded-full border px-2.5 py-1 text-xs ${
-                        dragOverFolderPath === target.path
-                          ? "border-primary bg-primary/10 ring-2 ring-primary/60"
-                          : "hover:bg-accent/50"
-                      }`}
-                      onClick={() => {
-                        if (selectedPaths.size === 0) {
-                          toast("Select videos first, or drag onto a target");
-                          return;
-                        }
-                        void moveVideosToFolder(target.path, Array.from(selectedPaths));
-                      }}
-                      {...folderDropHandlers(target.path)}
-                    >
-                      {target.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Collapsible folder carousel */}
+          <div
+            className={`min-h-0 flex-1 flex flex-col gap-3 ${
+              project ? "lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-4" : ""
+            }`}
+          >
             {project && !detailLoading && !detailError && (
-              <Collapsible open={foldersOpen} onOpenChange={setFoldersOpen}>
-                <div className="flex items-center gap-2">
-                  <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium hover:text-foreground text-muted-foreground">
-                    {foldersOpen ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    )}
+              <div className="lg:hidden">
+                <Collapsible open={foldersOpen} onOpenChange={setFoldersOpen}>
+                  <div className="flex items-center gap-2">
+                    <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium hover:text-foreground text-muted-foreground">
+                      {foldersOpen ? (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      )}
+                      Folders ({folderCards.length})
+                    </CollapsibleTrigger>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      onClick={openNewFolderDialog}
+                      disabled={folderBusy}
+                    >
+                      <FolderPlus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <CollapsibleContent>
+                    <div className="flex items-start gap-3 overflow-x-auto overflow-y-hidden pb-2 mt-2 min-h-[92px]">
+                      {selectedFolder && (
+                        <button
+                          onClick={() => {
+                            const parts = selectedFolder.split("/").slice(0, -1);
+                            setSelectedFolder(parts.length ? parts.join("/") : undefined);
+                          }}
+                          className={`rounded border text-left p-1.5 w-[180px] shrink-0 ${
+                            dragOverFolderPath === (parentPath || "")
+                              ? "border-primary ring-2 ring-primary/60"
+                              : "hover:bg-accent/50"
+                          }`}
+                          {...folderDropHandlers(parentPath || "")}
+                        >
+                          <div className="text-sm font-semibold truncate mb-1 flex items-center gap-1">
+                            <ChevronUp className="h-3.5 w-3.5" />
+                            {selectedFolder.split("/").length > 1
+                              ? selectedFolder.split("/").slice(0, -1).pop()
+                              : project}
+                          </div>
+                          <FolderThumbMosaic thumbs={parentThumbs} label="Up one level" />
+                        </button>
+                      )}
+                      {folderCards.map((folder) => (
+                        <FolderContextMenu
+                          key={`ctx-mobile-${folder.key}`}
+                          folderPath={folder.path}
+                          folderLabel={folder.label}
+                          onNavigate={(path) => setSelectedFolder(path)}
+                          onRename={(path) => void renameFolder(path)}
+                          onMove={(path) => void moveFolder(path)}
+                          onDelete={(path) => void deleteFolder(path)}
+                          disabled={folderBusy}
+                        >
+                          <button
+                            onClick={() => setSelectedFolder(folder.path)}
+                            className={`rounded border text-left p-1.5 w-[180px] shrink-0 ${
+                              dragOverFolderPath === folder.path
+                                ? "border-primary ring-2 ring-primary/60"
+                                : selectedFolder === folder.path
+                                  ? "border-primary bg-primary/10"
+                                  : "hover:bg-accent/50"
+                            }`}
+                            title={folder.path}
+                            {...folderDropHandlers(folder.path)}
+                          >
+                            <div className="text-sm font-semibold truncate mb-1">
+                              {folder.label}
+                            </div>
+                            <FolderThumbMosaic thumbs={folder.thumbs} label={folder.label} />
+                          </button>
+                        </FolderContextMenu>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              </div>
+            )}
+
+            {project && (
+              <aside className="hidden lg:flex min-h-0 flex-col rounded-lg border bg-muted/10 p-2">
+                <div className="flex items-center gap-2 px-1">
+                  <span className="text-sm font-medium text-muted-foreground">
                     Folders ({folderCards.length})
-                  </CollapsibleTrigger>
+                  </span>
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-7 w-7 p-0"
+                    className="ml-auto h-7 w-7 p-0"
                     onClick={openNewFolderDialog}
                     disabled={folderBusy}
                   >
                     <FolderPlus className="h-3.5 w-3.5" />
                   </Button>
                 </div>
-                <CollapsibleContent>
-                  <div className="flex items-start gap-3 overflow-x-auto overflow-y-hidden pb-2 mt-2 min-h-[92px]">
+                {detailLoading && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground px-1 mt-2"><Loader2 className="h-3 w-3 animate-spin" />Loading folders...</span>
+                )}
+                {detailError && <div className="text-xs text-destructive px-1 mt-2">{detailError}</div>}
+                {!detailLoading && !detailError && (
+                  <div className="mt-2 min-h-0 flex-1 overflow-y-auto space-y-2 pr-1">
                     {selectedFolder && (
                       <button
                         onClick={() => {
                           const parts = selectedFolder.split("/").slice(0, -1);
                           setSelectedFolder(parts.length ? parts.join("/") : undefined);
                         }}
-                        className={`rounded border text-left p-1.5 w-[180px] shrink-0 ${
+                        className={`rounded border text-left p-2 w-full ${
                           dragOverFolderPath === (parentPath || "")
                             ? "border-primary ring-2 ring-primary/60"
                             : "hover:bg-accent/50"
                         }`}
                         {...folderDropHandlers(parentPath || "")}
-                      >
-                        <div className="text-sm font-semibold truncate mb-1 flex items-center gap-1">
-                          <ChevronUp className="h-3.5 w-3.5" />
-                          {selectedFolder.split("/").length > 1
-                            ? selectedFolder.split("/").slice(0, -1).pop()
-                            : project}
-                        </div>
-                        {parentThumbs.length > 0 ? (
-                          <div className="grid grid-cols-2 grid-rows-2 gap-1 h-18">
-                            {(parentThumbs.length >= 1 ? [parentThumbs[0]] : [null]).map(
-                              (thumb, i) =>
-                                thumb ? (
-                                  <img
-                                    key={`up-thumb-main-${i}`}
-                                    src={thumb}
-                                    alt="Up one level"
-                                    className="col-span-1 row-span-2 w-full h-full rounded object-cover"
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <div
-                                    key={`up-thumb-main-empty-${i}`}
-                                    className="col-span-1 row-span-2 rounded bg-muted"
-                                  />
-                                )
-                            )}
-                            {(parentThumbs.length >= 2 ? [parentThumbs[1]] : [null]).map(
-                              (thumb, i) =>
-                                thumb ? (
-                                  <img
-                                    key={`up-thumb-top-${i}`}
-                                    src={thumb}
-                                    alt="Up one level"
-                                    className="w-full h-full rounded object-cover"
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <div
-                                    key={`up-thumb-top-empty-${i}`}
-                                    className="rounded bg-muted"
-                                  />
-                                )
-                            )}
-                            {(parentThumbs.length >= 3 ? [parentThumbs[2]] : [null]).map(
-                              (thumb, i) =>
-                                thumb ? (
-                                  <img
-                                    key={`up-thumb-bottom-${i}`}
-                                    src={thumb}
-                                    alt="Up one level"
-                                    className="w-full h-full rounded object-cover"
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <div
-                                    key={`up-thumb-bottom-empty-${i}`}
-                                    className="rounded bg-muted"
-                                  />
-                                )
-                            )}
+                        >
+                          <div className="text-sm font-semibold truncate flex items-center gap-1">
+                            <ChevronUp className="h-3.5 w-3.5" />
+                            {selectedFolder.split("/").length > 1
+                              ? selectedFolder.split("/").slice(0, -1).pop()
+                              : project}
                           </div>
-                        ) : (
-                          <div className="h-18 rounded bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
-                            No preview
+                          <div className="mt-1.5">
+                            <FolderThumbMosaic thumbs={parentThumbs} label="Up one level" />
                           </div>
-                        )}
-                      </button>
-                    )}
+                        </button>
+                      )}
                     {folderCards.length === 0 && (
-                      <div className="text-xs text-muted-foreground min-w-[200px] flex items-center">
+                      <div className="text-xs text-muted-foreground px-1 py-2">
                         {selectedFolder
                           ? "No subfolders found."
                           : "No folders found in this project."}
@@ -680,7 +728,7 @@ export function LibraryPage({
                     )}
                     {folderCards.map((folder) => (
                       <FolderContextMenu
-                        key={`ctx-${folder.key}`}
+                        key={`ctx-desktop-${folder.key}`}
                         folderPath={folder.path}
                         folderLabel={folder.label}
                         onNavigate={(path) => setSelectedFolder(path)}
@@ -691,7 +739,7 @@ export function LibraryPage({
                       >
                         <button
                           onClick={() => setSelectedFolder(folder.path)}
-                          className={`rounded border text-left p-1.5 w-[180px] shrink-0 ${
+                          className={`rounded border text-left p-2 w-full ${
                             dragOverFolderPath === folder.path
                               ? "border-primary ring-2 ring-primary/60"
                               : selectedFolder === folder.path
@@ -701,120 +749,135 @@ export function LibraryPage({
                           title={folder.path}
                           {...folderDropHandlers(folder.path)}
                         >
-                          <div className="text-sm font-semibold truncate mb-1">
-                            {folder.label}
+                          <div className="text-sm font-semibold truncate">{folder.label}</div>
+                          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                            {folder.path}
                           </div>
-                          {folder.thumbs.length > 0 ? (
-                            <div className="grid grid-cols-2 grid-rows-2 gap-1 h-18">
-                              {(folder.thumbs.length >= 1 ? [folder.thumbs[0]] : [null]).map(
-                                (thumb, i) =>
-                                  thumb ? (
-                                    <img
-                                      key={`${folder.key}-thumb-main-${i}`}
-                                      src={thumb}
-                                      alt={folder.label}
-                                      className="col-span-1 row-span-2 w-full h-full rounded object-cover"
-                                      loading="lazy"
-                                    />
-                                  ) : (
-                                    <div
-                                      key={`${folder.key}-thumb-main-empty-${i}`}
-                                      className="col-span-1 row-span-2 rounded bg-muted"
-                                    />
-                                  )
-                              )}
-                              {(folder.thumbs.length >= 2 ? [folder.thumbs[1]] : [null]).map(
-                                (thumb, i) =>
-                                  thumb ? (
-                                    <img
-                                      key={`${folder.key}-thumb-top-${i}`}
-                                      src={thumb}
-                                      alt={folder.label}
-                                      className="w-full h-full rounded object-cover"
-                                      loading="lazy"
-                                    />
-                                  ) : (
-                                    <div
-                                      key={`${folder.key}-thumb-top-empty-${i}`}
-                                      className="rounded bg-muted"
-                                    />
-                                  )
-                              )}
-                              {(folder.thumbs.length >= 3 ? [folder.thumbs[2]] : [null]).map(
-                                (thumb, i) =>
-                                  thumb ? (
-                                    <img
-                                      key={`${folder.key}-thumb-bottom-${i}`}
-                                      src={thumb}
-                                      alt={folder.label}
-                                      className="w-full h-full rounded object-cover"
-                                      loading="lazy"
-                                    />
-                                  ) : (
-                                    <div
-                                      key={`${folder.key}-thumb-bottom-empty-${i}`}
-                                      className="rounded bg-muted"
-                                    />
-                                  )
-                              )}
-                            </div>
-                          ) : (
-                            <div className="h-18 rounded bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
-                              No preview
-                            </div>
-                          )}
+                          <div className="mt-1.5">
+                            <FolderThumbMosaic thumbs={folder.thumbs} label={folder.label} />
+                          </div>
                         </button>
                       </FolderContextMenu>
                     ))}
-                    {!selectedFolder && hasOutputs && onNavigate && (
-                      <button
-                        onClick={() => onNavigate("outputs")}
-                        className="rounded border text-left p-1.5 w-[180px] shrink-0 hover:bg-accent/50"
-                      >
-                        <div className="text-sm font-semibold truncate mb-1 flex items-center gap-1">
-                          <FolderOutput className="h-3.5 w-3.5" />
-                          Outputs
-                        </div>
-                        <div className="h-18 rounded bg-muted/50 flex items-center justify-center text-[10px] text-muted-foreground">
-                          View project outputs
-                        </div>
-                      </button>
-                    )}
                   </div>
-                </CollapsibleContent>
-              </Collapsible>
+                )}
+              </aside>
             )}
 
-            {project && detailLoading && (
-              <span className="text-xs text-muted-foreground">Loading folders...</span>
-            )}
-            {project && detailError && (
-              <div className="text-xs text-destructive">{detailError}</div>
-            )}
-
-            <LibraryActionPanel
-              selectedVideos={selectedVideos}
-              displayedVideos={filteredVideos}
-              currentProject={project}
-            />
-            <VideoGrid
-              videos={filteredVideos}
-              selectedPaths={selectedPaths}
-              onToggleSelect={toggleSelect}
-              onVideoClick={setEditorVideo}
-              onVideoDragStart={(video, event) => {
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", video.rel_path);
-                setDragRelPath(video.rel_path);
-              }}
-              onVideoDragEnd={() => {
-                setDragRelPath(null);
-                setDragOverFolderPath(null);
-              }}
-            />
+            <section className="min-h-0 flex flex-col gap-3">
+              {project && detailLoading && (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground lg:hidden"><Loader2 className="h-3 w-3 animate-spin" />Loading folders...</span>
+              )}
+              {project && detailError && (
+                <div className="text-xs text-destructive lg:hidden">{detailError}</div>
+              )}
+              {editorVideo ? (
+                <div className="min-h-0 flex-1 border rounded-lg overflow-hidden">
+                  <VideoEditor
+                    video={editorVideo}
+                    videos={orderedVideos}
+                    onBack={() => setEditorVideo(null)}
+                    onRemoveVideo={(relPath) => {
+                      removeVideo(relPath);
+                      setSelectedPaths((prev) => {
+                        const next = new Set(prev);
+                        next.delete(relPath);
+                        return next;
+                      });
+                    }}
+                  />
+                </div>
+              ) : previewMode ? (
+                <TimelinePreview
+                  videos={orderedVideos}
+                  onBack={() => setPreviewMode(false)}
+                />
+              ) : (
+                <>
+                  <LibraryActionPanel
+                    selectedVideos={selectedVideos}
+                    displayedVideos={orderedVideos}
+                    currentProject={project}
+                  />
+                  {selectedFolder && showTimeline && (
+                    <FolderTimeline
+                      videos={orderedVideos}
+                      onReorder={(newOrder) => void saveOrder(newOrder)}
+                      onPreview={() => setPreviewMode(true)}
+                    />
+                  )}
+                  <div ref={gridScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+                    <div className="space-y-3 pr-1 pb-2">
+                      {project && dragRelPath !== null && dropTargets.length > 0 && (
+                        <div className="sticky top-0 z-10 backdrop-blur rounded-md border border-dashed border-primary/50 bg-primary/5 p-2">
+                          <div className="text-[11px] text-muted-foreground mb-1">
+                            Drop into folder
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {dropTargets.map((target) => (
+                              <button
+                                key={`drop-target-${target.path || "__root__"}`}
+                                className={`rounded-full border px-2.5 py-1 text-xs ${
+                                  dragOverFolderPath === target.path
+                                    ? "border-primary bg-primary/10 ring-2 ring-primary/60"
+                                    : "hover:bg-accent/50"
+                                }`}
+                                onClick={() => {
+                                  if (selectedPaths.size === 0) {
+                                    toast("Select videos first, or drag onto a target");
+                                    return;
+                                  }
+                                  void moveVideosToFolder(target.path, Array.from(selectedPaths));
+                                }}
+                                {...folderDropHandlers(target.path)}
+                              >
+                                {target.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <VideoGrid
+                        videos={orderedVideos}
+                        selectedPaths={selectedPaths}
+                        onToggleSelect={toggleSelect}
+                        onVideoClick={setEditorVideo}
+                        onVideoDragStart={(video, event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", video.rel_path);
+                          setDragRelPath(video.rel_path);
+                          // Multi-drag badge
+                          const count = selectedPaths.has(video.rel_path) ? selectedPaths.size : 1;
+                          if (count > 1) {
+                            const badge = document.createElement("div");
+                            badge.textContent = `${count} items`;
+                            Object.assign(badge.style, {
+                              position: "fixed", top: "-9999px", left: "-9999px",
+                              display: "flex", alignItems: "center", gap: "6px",
+                              borderRadius: "8px", padding: "6px 12px",
+                              fontSize: "13px", fontWeight: "500",
+                              background: "hsl(var(--primary))", color: "hsl(var(--primary-foreground))",
+                            });
+                            document.body.appendChild(badge);
+                            event.dataTransfer.setDragImage(badge, 40, 20);
+                            requestAnimationFrame(() => badge.remove());
+                          }
+                        }}
+                        onVideoDragEnd={() => {
+                          setDragRelPath(null);
+                          setDragOverFolderPath(null);
+                        }}
+                        reorderEnabled={!!selectedFolder}
+                        onReorder={(newOrder) => void saveOrder(newOrder)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <Dialog
         open={newFolderOpen}
         onOpenChange={(open) => {
@@ -888,19 +951,6 @@ export function LibraryPage({
   );
 }
 
-function findScrollContainer(node: HTMLElement | null): HTMLElement | null {
-  let current = node?.parentElement ?? null;
-  while (current) {
-    const style = window.getComputedStyle(current);
-    const overflowY = style.overflowY;
-    if (overflowY === "auto" || overflowY === "scroll") {
-      return current;
-    }
-    current = current.parentElement;
-  }
-  return null;
-}
-
 function buildFolderCards(
   basePath: string,
   subfolders: string[] | undefined,
@@ -908,9 +958,7 @@ function buildFolderCards(
   project: string | undefined
 ) {
   if (!project) return [] as FolderCard[];
-  const folders = (subfolders ?? []).filter(
-    (folder) => !folder.split("/").includes("outputs")
-  );
+  const folders = subfolders ?? [];
   const unique = new Map<string, { path: string; label: string }>();
   const prefix = basePath ? `${basePath}/` : "";
 
@@ -975,3 +1023,60 @@ function buildFolderPreviewThumbs(
   });
   return candidates.slice(0, 4).map((v) => thumbUrl(v.rel_path));
 }
+
+const FolderThumbMosaic = memo(function FolderThumbMosaic({ thumbs, label }: { thumbs: string[]; label: string }) {
+  if (thumbs.length === 0) {
+    return (
+      <div className="h-18 rounded bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
+        No preview
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 grid-rows-2 gap-1 h-18">
+      {(thumbs.length >= 1 ? [thumbs[0]] : [null]).map((thumb, i) =>
+        thumb ? (
+          <img
+            key={`${label}-thumb-main-${i}`}
+            src={thumb}
+            alt={label}
+            className="col-span-1 row-span-2 w-full h-full rounded object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div
+            key={`${label}-thumb-main-empty-${i}`}
+            className="col-span-1 row-span-2 rounded bg-muted"
+          />
+        )
+      )}
+      {(thumbs.length >= 2 ? [thumbs[1]] : [null]).map((thumb, i) =>
+        thumb ? (
+          <img
+            key={`${label}-thumb-top-${i}`}
+            src={thumb}
+            alt={label}
+            className="w-full h-full rounded object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div key={`${label}-thumb-top-empty-${i}`} className="rounded bg-muted" />
+        )
+      )}
+      {(thumbs.length >= 3 ? [thumbs[2]] : [null]).map((thumb, i) =>
+        thumb ? (
+          <img
+            key={`${label}-thumb-bottom-${i}`}
+            src={thumb}
+            alt={label}
+            className="w-full h-full rounded object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div key={`${label}-thumb-bottom-empty-${i}`} className="rounded bg-muted" />
+        )
+      )}
+    </div>
+  );
+});

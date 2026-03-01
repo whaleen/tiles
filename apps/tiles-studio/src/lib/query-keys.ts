@@ -21,6 +21,10 @@ export const queryKeys = {
     running: ["actions", "running"] as const,
   },
   logs: ["logs"] as const,
+  folderOrder: {
+    get: (project: string, folder?: string) =>
+      ["folderOrder", { project, folder }] as const,
+  },
   settings: {
     project: (project?: string) => ["settings", project] as const,
     layouts: ["settings", "layouts"] as const,

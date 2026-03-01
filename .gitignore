@@ -38,3 +38,8 @@ models/
 *.m4b
 *.m4p
 *.m4v
+
+# cntx-ui
+.cntx
+.cntxignore
+.mcp.json

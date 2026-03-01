@@ -111,6 +111,9 @@ fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
                 args.push("--end".into());
                 args.push(format!("{v}").into());
             }
+            if params.get("no_audio").and_then(|v| v.as_bool()).unwrap_or(false) {
+                args.push("--no-audio".into());
+            }
         }
         "detect" => {
             if let Some(v) = params.get("threshold").and_then(|v| v.as_f64()) {

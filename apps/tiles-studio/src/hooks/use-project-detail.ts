@@ -6,7 +6,7 @@ import type { ProjectDetail } from "@/types";
 export function useProjectDetail(project?: string) {
   const queryClient = useQueryClient();
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: queryKeys.projects.detail(project ?? ""),
     queryFn: () =>
       apiGet<ProjectDetail>(
@@ -19,6 +19,7 @@ export function useProjectDetail(project?: string) {
   return {
     detail: data ?? null,
     loading: isLoading,
+    fetching: isFetching,
     error: error ? (error as Error).message : null,
     refresh: () => {
       if (project) {

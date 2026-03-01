@@ -5,12 +5,15 @@ import {
   Crop,
   Film,
   Gauge,
+  Monitor,
   Rows2,
   SplitSquareHorizontal,
   SplitSquareVertical,
   Timer,
   Trash2,
   Volume2,
+  VolumeOff,
+  Image,
 } from "lucide-react";
 import {
   ContextMenu,
@@ -136,6 +139,43 @@ function CropPinOverlay({
   );
 }
 
+function TileFooter({
+  folder,
+  tileIndex,
+  setting,
+  hasAudio,
+}: {
+  folder: string | undefined;
+  tileIndex: number;
+  setting: TileSettingEntry;
+  hasAudio: boolean;
+}) {
+  const icons: { icon: React.ElementType; title: string }[] = [];
+
+  if (hasAudio) icons.push({ icon: Volume2, title: "Audio enabled" });
+  else icons.push({ icon: VolumeOff, title: "Audio muted" });
+
+  if (setting.speed !== 1.0) icons.push({ icon: Gauge, title: `Speed ${setting.speed}x` });
+  if (setting.crop_position !== "center") icons.push({ icon: Crop, title: `Crop: ${setting.crop_position}` });
+  if (setting.trans_type !== "none") icons.push({ icon: Rows2, title: `Transition: ${setting.trans_type}` });
+  if (setting.mode === "image") icons.push({ icon: Image, title: "Image mode" });
+  if (setting.use_landscape) icons.push({ icon: Monitor, title: "Landscape" });
+  if (setting.max_duration != null) icons.push({ icon: Timer, title: `Max ${setting.max_duration}s` });
+
+  return (
+    <div className="absolute inset-x-0 bottom-0 bg-black/40 text-white text-[10px] px-1 py-0.5 flex items-center gap-1 min-w-0">
+      <span className="truncate">{folder || `Tile ${tileIndex + 1}`}</span>
+      {icons.length > 0 && (
+        <span className="ml-auto flex items-center gap-0.5 shrink-0">
+          {icons.map(({ icon: Icon, title }) => (
+            <Icon key={title} className="h-2.5 w-2.5 opacity-70" title={title} />
+          ))}
+        </span>
+      )}
+    </div>
+  );
+}
+
 type CropTileWrapperProps = React.ComponentPropsWithoutRef<"div"> & {
   tileIndex: number;
   cropPosition: string;
@@ -213,12 +253,12 @@ export function TileGridPreview({
   const fit = cropMode === "stretch" ? "fill" : cropMode === "pad" ? "contain" : "cover";
   const getTileSetting = (tileIndex: number) =>
     tileSettings?.[tileIndex] || defaultSetting;
-  // Horizontal gutter resolves against flex container width; vertical against height.
-  // Compute separately so vertical splits get the correct pixel size.
-  const gutterHPct = padding > 0 ? `${(padding / canvasWidth) * 100}%` : undefined;
-  const gutterVPct = padding > 0 ? `${(padding / canvasHeight) * 100}%` : undefined;
-  // CSS padding-% is always width-relative, so a single value works for all sides.
-  const edgePct = padding > 0 ? `${(padding / canvasWidth) * 50}%` : undefined;
+
+  // The new model treats 'padding' as an inset for each tile.
+  // We use standard CSS px for the grid/editor.
+  const gapPx = `${padding}px`;
+  const edgePx = `${padding}px`;
+
   const dividerClassName =
     padding > 0
       ? undefined
@@ -293,18 +333,16 @@ export function TileGridPreview({
           }
           getTileSetting={getTileSetting}
           getAudioEnabled={audioEnabled}
-          edgePadding={edgePct}
-          gutterHSize={gutterHPct}
-          gutterVSize={gutterVPct}
+          edgePadding={edgePx}
+          gutterHSize={gapPx}
+          gutterVSize={gapPx}
           dividerClassName={dividerClassName}
           renderTile={(tileIndex) => {
-            const { folder, node } = renderTileContent(tileIndex);
+            const { folder, node, setting } = renderTileContent(tileIndex);
             return (
               <div className="relative w-full h-full group">
                 {node}
-                <div className="absolute inset-x-0 bottom-0 bg-black/40 text-white text-[10px] px-1 py-0.5 truncate">
-                  {folder || `Tile ${tileIndex + 1}`}
-                </div>
+                <TileFooter folder={folder} tileIndex={tileIndex} setting={setting} hasAudio={audioEnabled(tileIndex)} />
               </div>
             );
           }}
@@ -317,9 +355,9 @@ export function TileGridPreview({
             display: "grid",
             gridTemplateColumns: grid.cols,
             gridTemplateRows: grid.rows,
-            columnGap: gutterHPct ?? "0px",
-            rowGap: gutterVPct ?? "0px",
-            padding: edgePct,
+            columnGap: gapPx,
+            rowGap: gapPx,
+            padding: edgePx,
             backgroundColor: `#${bgColor || "000000"}`,
           }}
         >
@@ -336,9 +374,7 @@ export function TileGridPreview({
                 onSetCropPosition={onSetCropPosition}
               >
                 {node}
-                <div className="absolute inset-x-0 bottom-0 bg-black/40 text-white text-[10px] px-1 py-0.5 truncate">
-                  {folder || `Tile ${i + 1}`}
-                </div>
+                <TileFooter folder={folder} tileIndex={i} setting={setting} hasAudio={audioEnabled(i)} />
               </CropTileWrapper>
             );
 

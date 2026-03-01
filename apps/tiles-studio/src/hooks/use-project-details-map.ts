@@ -16,12 +16,16 @@ export function useProjectDetailsMap(projectNames: string[]) {
     })),
   });
 
-  return useMemo(() => {
-    const map: Record<string, ProjectDetail> = {};
+  const map = useMemo(() => {
+    const m: Record<string, ProjectDetail> = {};
     for (let i = 0; i < projectNames.length; i++) {
       const r = results[i];
-      if (r.data) map[projectNames[i]] = r.data;
+      if (r.data) m[projectNames[i]] = r.data;
     }
-    return map;
+    return m;
   }, [projectNames, results]);
+
+  const loading = results.some((r) => r.isLoading);
+
+  return { map, loading };
 }

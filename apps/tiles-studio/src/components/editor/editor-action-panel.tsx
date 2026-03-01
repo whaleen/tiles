@@ -12,8 +12,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { DetectForm } from "@/components/actions/detect-form";
 import { SplitDetectForm } from "@/components/actions/split-detect-form";
 import { StripAudioForm } from "@/components/actions/strip-audio-form";
-import { DoctorReencodeForm } from "@/components/actions/doctor-reencode-form";
-import { DoctorTrimForm } from "@/components/actions/doctor-trim-form";
 import { TranscribeForm } from "@/components/actions/transcribe-form";
 import { ChopForm } from "@/components/actions/chop-form";
 import { VisualTrimForm } from "./tools/visual-trim-form";
@@ -87,8 +85,6 @@ export function EditorActionPanel({
     "split-detect": <SplitDetectForm {...formProps} />,
     "strip-audio": <StripAudioForm {...formProps} />,
     transcribe: <TranscribeForm {...formProps} />,
-    "doctor-reencode": <DoctorReencodeForm {...formProps} />,
-    "doctor-trim-start": <DoctorTrimForm {...formProps} />,
     slowmo: <VisualSlowmoForm video={video} videoRef={videoRef} />,
     chop: <ChopForm {...formProps} />,
     loop: (

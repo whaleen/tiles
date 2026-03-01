@@ -223,6 +223,14 @@ pub struct RunningAction {
     pub targets: Vec<String>,
 }
 
+// --- Folder Order ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FolderOrder {
+    #[serde(default)]
+    pub video_order: Vec<String>,
+}
+
 // --- Health ---
 
 #[derive(Debug, Serialize)]

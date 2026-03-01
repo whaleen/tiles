@@ -125,6 +125,7 @@ export function buildTileTimeline({
   distributionMode,
   globalMaxDuration,
   maxTotalDuration,
+  folderOrders,
 }: {
   tileCount: number;
   folders: string[];
@@ -136,6 +137,7 @@ export function buildTileTimeline({
   distributionMode?: string | null;
   globalMaxDuration?: number | null;
   maxTotalDuration?: number | null;
+  folderOrders?: Record<string, string[]>;
 }): TileTimeline {
   const cappedTotal = asPositiveNumber(maxTotalDuration);
   const previewLimit =
@@ -158,7 +160,7 @@ export function buildTileTimeline({
     const firstTileMax =
       asPositiveNumber(normalizedSettings[0]?.max_duration) ??
       asPositiveNumber(globalMaxDuration);
-    const sharedVideoFiles = listFolderFiles(videos, folders[0], "video");
+    const sharedVideoFiles = listFolderFiles(videos, folders[0], "video", folderOrders?.[folders[0]]);
     const filtered = filterVideosWithTrimFallback(sharedVideoFiles, firstTileMax);
     distributedTrimDuration = filtered.trimDuration;
     distributedVideoGroups = distributeFiles(
@@ -192,7 +194,7 @@ export function buildTileTimeline({
         const baseFolder = hasFolderFiles(videos, `${folder}/images`, "image")
           ? `${folder}/images`
           : folder;
-        let images = listFolderFiles(videos, baseFolder, "image");
+        let images = listFolderFiles(videos, baseFolder, "image", folderOrders?.[folder]);
         images = orderFiles(images, distribution, `${folder}::img::${tileIndex}`);
         images = applySourceRepeatPolicy(images, sourceRepeatPolicy, usedGlobal);
         images = limitImagesByDuration(images, cappedTotal, imageSeconds);
@@ -216,7 +218,7 @@ export function buildTileTimeline({
               ? `${folder}/landscape`
               : folder;
           const filtered = filterVideosWithTrimFallback(
-            listFolderFiles(videos, sourceFolder, "video"),
+            listFolderFiles(videos, sourceFolder, "video", folderOrders?.[folder]),
             clipLimit
           );
           videoFiles = filtered.files;
@@ -345,7 +347,8 @@ export function asPositiveNumber(value?: number | null) {
 function listFolderFiles(
   videos: VideoEntry[],
   folder: string,
-  kind: "video" | "image"
+  kind: "video" | "image",
+  orderArray?: string[]
 ): TimelineFile[] {
   const items = videos
     .filter(
@@ -359,7 +362,22 @@ function listFolderFiles(
       duration: asPositiveNumber(v.duration),
     }));
 
-  items.sort((a, b) => a.relPath.localeCompare(b.relPath));
+  if (orderArray && orderArray.length > 0) {
+    const orderIndex = new Map(orderArray.map((name, i) => [name, i]));
+    items.sort((a, b) => {
+      const aName = a.relPath.split("/").pop() ?? a.relPath;
+      const bName = b.relPath.split("/").pop() ?? b.relPath;
+      const ai = orderIndex.get(aName);
+      const bi = orderIndex.get(bName);
+      if (ai !== undefined && bi !== undefined) return ai - bi;
+      if (ai !== undefined) return -1;
+      if (bi !== undefined) return 1;
+      return a.relPath.localeCompare(b.relPath);
+    });
+  } else {
+    items.sort((a, b) => a.relPath.localeCompare(b.relPath));
+  }
+
   return items;
 }
 

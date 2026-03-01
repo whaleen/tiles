@@ -10,7 +10,7 @@ import "./index.css"
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="dark">
+      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
         <App />
       </ThemeProvider>
       <ReactQueryDevtools initialIsOpen={false} />

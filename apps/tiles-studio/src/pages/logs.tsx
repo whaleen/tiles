@@ -3,7 +3,7 @@ import { useLogs } from "@/hooks/use-logs";
 import { apiGetText } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, Search, Copy } from "lucide-react";
+import { Loader2, RefreshCw, Search, Copy } from "lucide-react";
 
 export function LogsPage() {
   const { logs, loading, error, refresh } = useLogs();
@@ -80,7 +80,12 @@ export function LogsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1 border rounded-lg p-4 bg-muted/20 space-y-3">
           <div className="text-sm font-semibold">Tools</div>
-          {loading && <div className="text-xs text-muted-foreground">Loading...</div>}
+          {loading && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading...
+            </div>
+          )}
           {error && !loading && (
             <div className="text-xs text-destructive">{error}</div>
           )}

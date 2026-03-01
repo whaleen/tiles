@@ -128,6 +128,7 @@ async fn main() {
         .route("/api/folders/move", post(routes::folders::move_folder))
         .route("/api/folders/delete", post(routes::folders::delete_folder))
         .route("/api/folders/move-videos", post(routes::folders::move_videos))
+        .route("/api/folders/order", get(routes::folders::get_folder_order).put(routes::folders::put_folder_order))
         // Videos
         .route("/api/videos", get(routes::videos::list_videos))
         .route("/api/videos/{*path}", delete(routes::videos::delete_video))

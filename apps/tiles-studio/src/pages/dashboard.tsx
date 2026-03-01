@@ -44,6 +44,9 @@ import {
   Film,
   FolderOpen,
   FolderOutput,
+  Grid3X3,
+  Import,
+  Loader2,
   Search,
   Settings2,
 } from "lucide-react";
@@ -82,8 +85,8 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
   const { running } = useRunningActions();
 
   const projectNames = useMemo(() => projects.map((p) => p.name), [projects]);
-  const details = useProjectDetailsMap(projectNames);
-  const metas = useProjectMetasMap(projectNames);
+  const { map: details } = useProjectDetailsMap(projectNames);
+  const { map: metas } = useProjectMetasMap(projectNames);
 
   const [search, setSearch] = useState("");
 
@@ -251,8 +254,8 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
 
   if (projectsLoading) {
     return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-        Loading projects…
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     );
   }
@@ -318,8 +321,8 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
                       loading="lazy"
                     />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                      No thumbnail
+                    <div className="flex h-full items-center justify-center bg-muted/60">
+                      <Film className="h-8 w-8 text-muted-foreground/40" />
                     </div>
                   )}
                 </div>
@@ -349,11 +352,11 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="secondary">
                       <Film className="h-3 w-3" />
-                      {detail ? `${detail.video_count} videos` : "…"}
+                      {detail ? `${detail.video_count} videos` : <Loader2 className="h-3 w-3 animate-spin" />}
                     </Badge>
                     <Badge variant="secondary">
                       <FolderOpen className="h-3 w-3" />
-                      {detail ? `${detail.subfolders.length} folders` : "…"}
+                      {detail ? `${detail.subfolders.length} folders` : <Loader2 className="h-3 w-3 animate-spin" />}
                     </Badge>
                   </div>
                   <div className="text-xs text-muted-foreground flex items-center gap-1">
@@ -381,41 +384,33 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
                       </span>
                     </div>
                   )}
-                  {projectRunning.length > 0 && (
-                    <div className="text-[11px] text-muted-foreground">
-                      {projectRunning.length} running · oldest {timeAgo(
-                        Math.min(...projectRunning.map((r) => r.started_epoch))
-                      )}
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="flex items-center gap-1 pt-1">
                     <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(event) => handleOpenProjectTab(event, p.name, "library")}
-                    >
-                      Library
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title="Tile Builder"
                       onClick={(event) => handleOpenProjectTab(event, p.name, "tile-builder")}
                     >
-                      Tile Builder
+                      <Grid3X3 className="h-3.5 w-3.5" />
                     </Button>
                     <Button
-                      size="sm"
-                      variant="outline"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title="Import"
                       onClick={(event) => handleOpenProjectTab(event, p.name, "import")}
                     >
-                      Import
+                      <Import className="h-3.5 w-3.5" />
                     </Button>
                     <Button
-                      size="sm"
-                      variant="outline"
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title="Outputs"
                       onClick={(event) => handleOpenProjectTab(event, p.name, "outputs")}
                     >
-                      Outputs
+                      <FolderOutput className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </CardContent>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSettings } from "@/hooks/use-settings";
 import { useVideos } from "@/hooks/use-videos";
+import { useFolderOrders } from "@/hooks/use-folder-orders";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import { useOutputs } from "@/hooks/use-outputs";
 import { TileGridPreview, type LayoutNode } from "@/components/tile-builder/tile-grid-preview";
@@ -12,6 +13,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type {
   TileSettings,
@@ -42,7 +44,7 @@ import {
 
 export function TileBuilderPage({ project }: { project?: string }) {
   const { settings, layouts, loading, saveSettings } = useSettings(project);
-  const { videos } = useVideos(project);
+  const { videos, loading: videosLoading } = useVideos(project);
   const runnerScope = project ?? "__all-projects__";
   const { running, runAction } = useActionRunner(runnerScope);
   const [renderMode, setRenderMode] = useState("preview");
@@ -81,6 +83,8 @@ export function TileBuilderPage({ project }: { project?: string }) {
     output_length_policy: null,
     source_repeat_policy: null,
   };
+
+  const { orders: folderOrders } = useFolderOrders(safeSettings.tile_folders);
 
   // --- Sync settings to local state ---
 
@@ -448,6 +452,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
         distributionMode: safeSettings.distribution_mode,
         globalMaxDuration: safeSettings.max_duration,
         maxTotalDuration: safeSettings.max_total_duration,
+        folderOrders,
       }),
     [
       effectiveTileCount,
@@ -459,13 +464,18 @@ export function TileBuilderPage({ project }: { project?: string }) {
       safeSettings.max_duration,
       safeSettings.max_total_duration,
       videos,
+      folderOrders,
     ]
   );
 
   // --- Render ---
 
-  if (loading || !settings) {
-    return <div className="text-muted-foreground text-sm">Loading...</div>;
+  if (loading || videosLoading || !settings) {
+    return (
+      <div className="flex items-center justify-center h-64 text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
+    );
   }
 
   return (

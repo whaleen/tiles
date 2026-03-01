@@ -157,6 +157,10 @@ export interface FolderPathResponse {
   path: string;
 }
 
+export interface FolderOrder {
+  video_order: string[];
+}
+
 export interface MoveVideosResponse {
   moved: number;
   moved_paths: {

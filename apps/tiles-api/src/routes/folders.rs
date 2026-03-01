@@ -1,10 +1,11 @@
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::models::FolderOrder;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -233,6 +234,72 @@ pub async fn move_videos(
     Ok(Json(MoveVideosResponse { moved, moved_paths }))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FolderOrderQuery {
+    pub project: String,
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+pub async fn get_folder_order(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<FolderOrderQuery>,
+) -> Result<Json<FolderOrder>, StatusCode> {
+    let project_dir = get_project_dir(&state.root, &query.project)?;
+    let folder_dir = match query.folder.as_deref() {
+        Some(f) => {
+            let rel = normalize_rel(f);
+            if !is_valid_rel_folder(&rel, true) {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            if rel.is_empty() {
+                project_dir
+            } else {
+                project_dir.join(&rel)
+            }
+        }
+        None => project_dir,
+    };
+    let path = folder_dir.join(".tiles-folder.json");
+    if !path.exists() {
+        return Ok(Json(FolderOrder {
+            video_order: Vec::new(),
+        }));
+    }
+    let content = std::fs::read_to_string(&path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let order: FolderOrder =
+        serde_json::from_str(&content).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(order))
+}
+
+pub async fn put_folder_order(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<FolderOrderQuery>,
+    Json(order): Json<FolderOrder>,
+) -> Result<StatusCode, StatusCode> {
+    let project_dir = get_project_dir(&state.root, &query.project)?;
+    let folder_dir = match query.folder.as_deref() {
+        Some(f) => {
+            let rel = normalize_rel(f);
+            if !is_valid_rel_folder(&rel, true) {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+            if rel.is_empty() {
+                project_dir
+            } else {
+                project_dir.join(&rel)
+            }
+        }
+        None => project_dir,
+    };
+    std::fs::create_dir_all(&folder_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let path = folder_dir.join(".tiles-folder.json");
+    let json =
+        serde_json::to_string_pretty(&order).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    std::fs::write(&path, json).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::OK)
+}
+
 fn get_project_dir(root: &Path, project: &str) -> Result<PathBuf, StatusCode> {
     if !is_valid_project_name(project) {
         return Err(StatusCode::BAD_REQUEST);
@@ -280,9 +347,6 @@ fn is_valid_rel_folder(path: &str, allow_empty: bool) -> bool {
     if parts.iter().any(|seg| seg.is_empty() || *seg == "." || *seg == "..") {
         return false;
     }
-    if parts.iter().any(|seg| *seg == "outputs") {
-        return false;
-    }
     true
 }
 
@@ -297,7 +361,7 @@ fn is_valid_rel_video(path: &str, project: &str) -> bool {
     if project_part != project {
         return false;
     }
-    !path.split('/').any(|seg| seg == "outputs")
+    true
 }
 
 fn join_rel(parent: &str, leaf: &str) -> String {

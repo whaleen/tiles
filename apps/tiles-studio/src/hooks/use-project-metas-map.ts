@@ -32,12 +32,16 @@ export function useProjectMetasMap(projectNames: string[]) {
     })),
   });
 
-  return useMemo(() => {
-    const map: Record<string, ProjectMeta> = {};
+  const map = useMemo(() => {
+    const m: Record<string, ProjectMeta> = {};
     for (let i = 0; i < projectNames.length; i++) {
       const r = results[i];
-      map[projectNames[i]] = r.data ? normalizeMeta(r.data) : EMPTY_META;
+      m[projectNames[i]] = r.data ? normalizeMeta(r.data) : EMPTY_META;
     }
-    return map;
+    return m;
   }, [projectNames, results]);
+
+  const loading = results.some((r) => r.isLoading);
+
+  return { map, loading };
 }

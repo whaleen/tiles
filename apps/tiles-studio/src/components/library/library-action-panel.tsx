@@ -16,8 +16,6 @@ import { DetectForm } from "@/components/actions/detect-form";
 import { SplitDetectForm } from "@/components/actions/split-detect-form";
 import { StripAudioForm } from "@/components/actions/strip-audio-form";
 import { CleanForm } from "@/components/actions/clean-form";
-import { DoctorReencodeForm } from "@/components/actions/doctor-reencode-form";
-import { DoctorTrimForm } from "@/components/actions/doctor-trim-form";
 import { SlowmoForm } from "@/components/actions/slowmo-form";
 import { OrganizeLandscapeForm } from "@/components/actions/organize-landscape-form";
 import { YtImportForm } from "@/components/actions/yt-import-form";
@@ -121,8 +119,6 @@ export function LibraryActionPanel({
     "strip-audio": <StripAudioForm {...formProps} {...caps} />,
     transcribe: <TranscribeForm {...formProps} {...caps} />,
     clean: <CleanForm {...formProps} {...caps} />,
-    "doctor-reencode": <DoctorReencodeForm {...formProps} {...caps} />,
-    "doctor-trim-start": <DoctorTrimForm {...formProps} {...caps} />,
     slowmo: <SlowmoForm {...formProps} {...caps} />,
     "organize-landscape": <OrganizeLandscapeForm {...formProps} {...caps} />,
     chop: <ChopForm {...formProps} {...caps} />,

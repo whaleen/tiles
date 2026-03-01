@@ -6,7 +6,7 @@ import type { OutputRun } from "@/types";
 export function useOutputs(project?: string, action?: string) {
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: queryKeys.outputs.list(project, action),
     queryFn: () => {
       const params = new URLSearchParams();
@@ -21,6 +21,7 @@ export function useOutputs(project?: string, action?: string) {
   return {
     outputs: data ?? [],
     loading: isLoading,
+    fetching: isFetching,
     refresh: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.outputs.all }),
   };

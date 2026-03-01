@@ -52,9 +52,6 @@ pub async fn delete_video(
     if rel.contains("..") || Path::new(&rel).is_absolute() {
         return Err(StatusCode::BAD_REQUEST);
     }
-    if rel.split('/').any(|seg| seg == "outputs") {
-        return Err(StatusCode::FORBIDDEN);
-    }
     let full = state.root.join("src").join(&rel);
     if !full.exists() || !full.is_file() {
         return Err(StatusCode::NOT_FOUND);

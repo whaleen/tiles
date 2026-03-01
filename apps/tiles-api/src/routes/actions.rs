@@ -77,12 +77,6 @@ pub async fn list_actions() -> Json<Vec<ActionInfo>> {
             target_type: "folders_or_videos".to_string(),
         },
         ActionInfo {
-            name: "doctor-trim-start".to_string(),
-            label: "Trim Start (Doctor)".to_string(),
-            description: "Remove a number of seconds from the beginning of each video. Fixes black or corrupted first frames.".to_string(),
-            target_type: "folders_or_videos".to_string(),
-        },
-        ActionInfo {
             name: "slowmo".to_string(),
             label: "Slow Motion".to_string(),
             description: "Slow videos down by a chosen factor. A 2x slowdown makes a 10-second clip last 20 seconds.".to_string(),

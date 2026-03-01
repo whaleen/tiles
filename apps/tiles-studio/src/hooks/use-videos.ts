@@ -8,7 +8,7 @@ export function useVideos(project?: string, search?: string) {
   const queryClient = useQueryClient();
   const key = queryKeys.videos.list(project, search);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching } = useQuery({
     queryKey: key,
     queryFn: () => {
       const params = new URLSearchParams();
@@ -32,6 +32,7 @@ export function useVideos(project?: string, search?: string) {
   return {
     videos: data ?? [],
     loading: isLoading,
+    fetching: isFetching,
     refresh: () =>
       queryClient.invalidateQueries({ queryKey: queryKeys.videos.all }),
     removeVideo,

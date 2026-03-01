@@ -30,13 +30,18 @@ pub async fn list_outputs(
 #[derive(Deserialize)]
 pub struct OutputsTreeQuery {
     pub path: Option<String>,
+    pub recursive: Option<bool>,
 }
 
 pub async fn list_output_tree(
     State(state): State<Arc<AppState>>,
     Query(query): Query<OutputsTreeQuery>,
 ) -> Json<Vec<OutputEntry>> {
-    let entries = fs_scanner::list_output_entries(&state.root, query.path.as_deref());
+    let entries = if query.recursive.unwrap_or(false) {
+        fs_scanner::list_all_videos_recursive(&state.root, query.path.as_deref().unwrap_or("outputs"))
+    } else {
+        fs_scanner::list_output_entries(&state.root, query.path.as_deref())
+    };
     Json(entries)
 }
 

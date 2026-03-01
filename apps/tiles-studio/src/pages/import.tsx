@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -251,7 +251,10 @@ export function ImportPage({ project }: { project?: string }) {
         <div className="space-y-2">
           <Label className="text-xs">Imports</Label>
           {ytImportsLoading && (
-            <div className="text-xs text-muted-foreground">Loading imports...</div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading imports...
+            </div>
           )}
           {!ytImportsLoading && importRuns.length === 0 && (
             <div className="text-xs text-muted-foreground">No imports yet.</div>
@@ -277,7 +280,10 @@ export function ImportPage({ project }: { project?: string }) {
         <div className="space-y-2">
           <Label className="text-xs">Transcript</Label>
           {ytImportFilesLoading && (
-            <div className="text-xs text-muted-foreground">Loading transcript...</div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading transcript...
+            </div>
           )}
           {transcriptError && (
             <div className="text-xs text-destructive">{transcriptError}</div>

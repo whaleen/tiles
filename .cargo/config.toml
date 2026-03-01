@@ -1,0 +1,3 @@
+[alias]
+api = "run -p tiles-api"
+tui = "run -p tiles-tui --bin tiles"

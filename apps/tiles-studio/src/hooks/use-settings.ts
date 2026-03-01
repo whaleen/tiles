@@ -6,7 +6,7 @@ import type { TileSettings, LayoutInfo } from "@/types";
 export function useSettings(project?: string) {
   const queryClient = useQueryClient();
 
-  const { data: settings, isLoading: settingsLoading } = useQuery({
+  const { data: settings, isLoading: settingsLoading, isFetching: settingsFetching } = useQuery({
     queryKey: queryKeys.settings.project(project),
     queryFn: () => {
       const qs = project ? `?project=${encodeURIComponent(project)}` : "";
@@ -15,7 +15,7 @@ export function useSettings(project?: string) {
     staleTime: 60_000,
   });
 
-  const { data: layouts, isLoading: layoutsLoading } = useQuery({
+  const { data: layouts, isLoading: layoutsLoading, isFetching: layoutsFetching } = useQuery({
     queryKey: queryKeys.settings.layouts,
     queryFn: () => apiGet<LayoutInfo[]>("/api/settings/layouts"),
     staleTime: 5 * 60_000,
@@ -37,6 +37,7 @@ export function useSettings(project?: string) {
     settings: settings ?? null,
     layouts: layouts ?? [],
     loading: settingsLoading || layoutsLoading,
+    fetching: settingsFetching || layoutsFetching,
     saveSettings,
     refresh: () =>
       queryClient.invalidateQueries({
