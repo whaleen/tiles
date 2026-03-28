@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/tiles-tauri/package-lock.json
+          cache-dependency-path: ./package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -30,11 +30,9 @@ jobs:
           workspaces: .
 
       - name: Install frontend dependencies
-        working-directory: apps/tiles-tauri
         run: npm install
 
       - name: Build (app bundle only, no DMG)
-        working-directory: apps/tiles-tauri
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -69,7 +67,7 @@ jobs:
           MACOS="$GITHUB_WORKSPACE/target/universal-apple-darwin/release/bundle/macos"
           tar czf /tmp/tiles.app.tar.gz -C "$MACOS" tiles.app
           cp /tmp/tiles.app.tar.gz "$MACOS/tiles.app.tar.gz"
-          cd apps/tiles-tauri && npm run tauri -- signer sign \
+          npm run tauri -- signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
             "$MACOS/tiles.app.tar.gz"
