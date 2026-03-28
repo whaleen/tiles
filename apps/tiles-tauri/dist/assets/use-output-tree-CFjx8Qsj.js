@@ -1,0 +1,1 @@
+import{u as o,y as l,q as u,i as y}from"./index-DUNUVEKY.js";function f(e,t=!1){const s=o(),{data:i,isLoading:n,isFetching:a,error:r}=l({queryKey:[...u.outputs.tree(e),t],queryFn:()=>y("list_output_tree",{path:e,recursive:t}),staleTime:1e4});return{entries:i??[],loading:n,fetching:a,error:r?r.message:null,refresh:()=>s.invalidateQueries({queryKey:u.outputs.all})}}export{f as u};

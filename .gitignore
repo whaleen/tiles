@@ -43,3 +43,13 @@ models/
 .cntx
 .cntxignore
 .mcp.json
+
+# Agent dirs
+.agents/
+.claude/
+.kiro/
+.vite-hooks/
+skills-lock.json
+CLAUDE.md
+GEMINI.md
+.memory/
