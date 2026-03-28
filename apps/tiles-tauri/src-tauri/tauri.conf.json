@@ -22,6 +22,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI2QUYyQUYyOTA0Q0NGNTIKUldSU3oweVE4aXF2SmlkU3VSOSt1RU9qNkYxb3dEdWZYZlJ1dnNOMjQyMW9weERaWklJZUx0cVoK",
+      "endpoints": [
+        "https://raw.githubusercontent.com/whaleen/homebrew-tap/main/tiles-latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
