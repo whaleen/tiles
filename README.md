@@ -44,17 +44,14 @@ When a new version is available, tiles will show a banner in the top of the app 
 
 ```text
 .
-├── apps/
-│   └── tiles-tauri/      # Tauri desktop app (React + Rust)
-│       ├── src/           # React frontend
-│       └── src-tauri/     # Rust backend + Tauri config
-└── _local/               # Local reference snapshots (gitignored)
+├── src/          # React frontend
+├── src-tauri/    # Rust backend + Tauri config
+└── docs/         # Project documentation
 ```
 
 ## Development
 
 ```bash
-cd apps/tiles-tauri
 npm install
 npm run dev
 ```
