@@ -102,25 +102,8 @@ jobs:
               }
             }' > tiles-latest.json
 
-          cat > Casks/tiles.rb << CASKEOF
-cask "tiles" do
-  version "${VERSION}"
-  sha256 "${SHA256}"
-
-  url "https://github.com/whaleen/tiles/releases/download/v#{version}/tiles_#{version}_universal.dmg"
-  name "tiles"
-  desc "Video tile manager and sequencer"
-  homepage "https://github.com/whaleen/tiles"
-
-  app "tiles.app"
-
-  zap trash: [
-    "~/Library/Application Support/com.whaleen.tiles",
-    "~/Library/Preferences/com.whaleen.tiles.plist",
-    "~/Library/Saved Application State/com.whaleen.tiles.savedState",
-  ]
-end
-CASKEOF
+          sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Casks/tiles.rb
+          sed -i '' "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Casks/tiles.rb
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
