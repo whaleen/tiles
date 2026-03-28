@@ -92,6 +92,7 @@ pub fn run() {
             commands::logs::get_log,
             // workspace
             commands::workspace::get_workspace,
+            commands::workspace::default_workspace_path,
             commands::workspace::pick_workspace,
             commands::workspace::set_workspace,
         ])

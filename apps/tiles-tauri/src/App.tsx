@@ -6,14 +6,14 @@ import { useWorkspace } from "@/hooks/use-workspace";
 
 function App() {
   const { state: updateState, install, relaunchApp } = useUpdater();
-  const { state: workspaceState, pickWorkspace } = useWorkspace();
+  const { state: workspaceState, pickWorkspace, confirmWorkspace } = useWorkspace();
 
   if (workspaceState.status === "loading") {
     return <div className="flex h-screen items-center justify-center bg-background" />;
   }
 
   if (workspaceState.status === "none") {
-    return <WorkspaceSetup onPick={pickWorkspace} />;
+    return <WorkspaceSetup onPick={pickWorkspace} onSet={confirmWorkspace} />;
   }
 
   return (

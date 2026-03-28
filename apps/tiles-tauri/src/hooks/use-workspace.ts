@@ -24,5 +24,9 @@ export function useWorkspace() {
     }
   }, []);
 
-  return { state, pickWorkspace };
+  const confirmWorkspace = useCallback((path: string) => {
+    setState({ status: "ready", path });
+  }, []);
+
+  return { state, pickWorkspace, confirmWorkspace };
 }

@@ -1,7 +1,15 @@
 use std::path::PathBuf;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::state::AppState;
+
+#[tauri::command]
+pub fn default_workspace_path(app: tauri::AppHandle) -> String {
+    app.path()
+        .home_dir()
+        .map(|h| h.join("Movies").join("tiles").to_string_lossy().to_string())
+        .unwrap_or_else(|_| "~/Movies/tiles".to_string())
+}
 
 #[tauri::command]
 pub fn get_workspace(state: State<AppState>) -> Option<String> {
