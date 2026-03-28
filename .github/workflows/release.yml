@@ -47,7 +47,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle/macos"
-          tar czf "$BUNDLE/tiles.app.tar.gz" -C "$BUNDLE" tiles.app
+          tar czf /tmp/tiles.app.tar.gz -C "$BUNDLE" tiles.app
+          cp /tmp/tiles.app.tar.gz "$BUNDLE/tiles.app.tar.gz"
           npm run tauri -- signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
