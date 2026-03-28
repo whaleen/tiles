@@ -7,17 +7,20 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Vec<ProjectSummary> {
-    fs_scanner::list_projects(&state.root)
+    let root = state.root.read().unwrap().clone();
+    fs_scanner::list_projects(&root)
 }
 
 #[tauri::command]
 pub fn get_project(state: State<AppState>, name: String) -> Result<ProjectDetail, String> {
-    fs_scanner::get_project_detail(&state.root, &name)
+    let root = state.root.read().unwrap().clone();
+    fs_scanner::get_project_detail(&root, &name)
         .ok_or_else(|| "not found".to_string())
 }
 
 #[tauri::command]
 pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSummary, String> {
+    let root = state.root.read().unwrap().clone();
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err("name is required".to_string());
@@ -25,7 +28,7 @@ pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSum
     if !is_valid_project_name(&name) {
         return Err("invalid project name".to_string());
     }
-    let dest = state.root.join("src").join(&name);
+    let dest = root.join("src").join(&name);
     if dest.exists() {
         return Err("project already exists".to_string());
     }
@@ -39,11 +42,12 @@ pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSum
 
 #[tauri::command]
 pub fn get_project_meta(state: State<AppState>, name: String) -> Result<ProjectMeta, String> {
-    let project_dir = state.root.join("src").join(&name);
+    let root = state.root.read().unwrap().clone();
+    let project_dir = root.join("src").join(&name);
     if !project_dir.exists() || !project_dir.is_dir() {
         return Err("not found".to_string());
     }
-    Ok(read_project_meta(&state.root, &name))
+    Ok(read_project_meta(&root, &name))
 }
 
 #[tauri::command]
@@ -52,7 +56,8 @@ pub fn put_project_meta(
     name: String,
     meta: ProjectMeta,
 ) -> Result<(), String> {
-    let project_dir = state.root.join("src").join(&name);
+    let root = state.root.read().unwrap().clone();
+    let project_dir = root.join("src").join(&name);
     if !project_dir.exists() || !project_dir.is_dir() {
         return Err("not found".to_string());
     }
@@ -79,7 +84,7 @@ pub fn put_project_meta(
         description,
         tags,
     };
-    write_project_meta(&state.root, &name, &updated)
+    write_project_meta(&root, &name, &updated)
 }
 
 fn is_valid_project_name(name: &str) -> bool {

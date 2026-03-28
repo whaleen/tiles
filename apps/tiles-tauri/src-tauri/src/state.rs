@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use crate::models::{RunningAction, VideoEntry};
@@ -13,7 +13,7 @@ struct CachedVideoList {
 
 pub struct AppState {
     /// Project root directory (contains src/, outputs/, configs/)
-    pub root: PathBuf,
+    pub root: Arc<RwLock<PathBuf>>,
     /// Path to the `tiles` CLI binary
     pub tiles_bin: PathBuf,
     /// Active actions currently running
@@ -26,7 +26,7 @@ pub struct AppState {
 const VIDEO_CACHE_TTL_SECS: u64 = 30;
 
 impl AppState {
-    pub fn new(root: PathBuf, tiles_bin: PathBuf) -> Self {
+    pub fn new(root: Arc<RwLock<PathBuf>>, tiles_bin: PathBuf) -> Self {
         Self {
             root,
             tiles_bin,
@@ -41,6 +41,7 @@ impl AppState {
         project: Option<&str>,
         search: Option<&str>,
     ) -> Vec<VideoEntry> {
+        let root = self.root.read().unwrap().clone();
         let key = (project.map(String::from), search.map(String::from));
         {
             if let Ok(cache) = self.video_cache.lock() {
@@ -52,8 +53,7 @@ impl AppState {
             }
         }
 
-        let videos =
-            crate::services::fs_scanner::list_videos(&self.root, project, search);
+        let videos = crate::services::fs_scanner::list_videos(&root, project, search);
 
         if let Ok(mut cache) = self.video_cache.lock() {
             cache.insert(

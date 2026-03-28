@@ -1,9 +1,20 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { Toaster } from "@/components/ui/sonner";
+import { WorkspaceSetup } from "@/components/workspace-setup";
 import { useUpdater } from "@/hooks/use-updater";
+import { useWorkspace } from "@/hooks/use-workspace";
 
 function App() {
   const { state: updateState, install, relaunchApp } = useUpdater();
+  const { state: workspaceState, pickWorkspace } = useWorkspace();
+
+  if (workspaceState.status === "loading") {
+    return <div className="flex h-screen items-center justify-center bg-background" />;
+  }
+
+  if (workspaceState.status === "none") {
+    return <WorkspaceSetup onPick={pickWorkspace} />;
+  }
 
   return (
     <div>

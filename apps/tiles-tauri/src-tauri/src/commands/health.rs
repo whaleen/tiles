@@ -10,7 +10,7 @@ pub fn get_health(state: State<AppState>) -> HealthStatus {
         ok: ffprobe::check_ffmpeg() && ffprobe::check_ffprobe(),
         ffmpeg: ffprobe::check_ffmpeg(),
         ffprobe: ffprobe::check_ffprobe(),
-        root: state.root.display().to_string(),
+        root: state.root.read().unwrap().display().to_string(),
         tiles_bin: state.tiles_bin.display().to_string(),
     }
 }

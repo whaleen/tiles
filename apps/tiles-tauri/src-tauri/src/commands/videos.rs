@@ -16,22 +16,24 @@ pub fn list_videos(
 
 #[tauri::command]
 pub fn get_video_info(state: State<AppState>, path: String) -> Result<VideoInfo, String> {
+    let root = state.root.read().unwrap().clone();
     if path.contains("..") || Path::new(&path).is_absolute() {
         return Err("invalid path".to_string());
     }
-    let full = state.root.join("src").join(&path);
+    let full = root.join("src").join(&path);
     if !full.exists() || !full.is_file() {
         return Err("not found".to_string());
     }
-    ffprobe::get_video_info(&full, &state.root).ok_or_else(|| "ffprobe failed".to_string())
+    ffprobe::get_video_info(&full, &root).ok_or_else(|| "ffprobe failed".to_string())
 }
 
 #[tauri::command]
 pub fn delete_video(state: State<AppState>, path: String) -> Result<(), String> {
+    let root = state.root.read().unwrap().clone();
     if path.contains("..") || Path::new(&path).is_absolute() {
         return Err("invalid path".to_string());
     }
-    let full = state.root.join("src").join(&path);
+    let full = root.join("src").join(&path);
     if !full.exists() || !full.is_file() {
         return Err("not found".to_string());
     }

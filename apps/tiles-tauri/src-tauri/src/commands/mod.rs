@@ -6,3 +6,4 @@ pub mod outputs;
 pub mod projects;
 pub mod settings;
 pub mod videos;
+pub mod workspace;

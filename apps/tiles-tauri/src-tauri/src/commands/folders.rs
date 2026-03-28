@@ -63,7 +63,8 @@ pub fn create_folder(
     parent: Option<String>,
     name: String,
 ) -> Result<FolderPathResponse, String> {
-    let project_dir = get_project_dir(&state.root, &project)?;
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
     let parent_norm = normalize_rel(parent.as_deref().unwrap_or(""));
     if !is_valid_rel_folder(&parent_norm, true) {
         return Err("invalid parent".to_string());
@@ -91,7 +92,8 @@ pub fn rename_folder(
     path: String,
     new_name: String,
 ) -> Result<FolderPathResponse, String> {
-    let project_dir = get_project_dir(&state.root, &project)?;
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
     let from_rel = normalize_rel(&path);
     if !is_valid_rel_folder(&from_rel, false) {
         return Err("invalid path".to_string());
@@ -129,7 +131,8 @@ pub fn move_folder(
     path: String,
     target_parent: Option<String>,
 ) -> Result<FolderPathResponse, String> {
-    let project_dir = get_project_dir(&state.root, &project)?;
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
     let from_rel = normalize_rel(&path);
     if !is_valid_rel_folder(&from_rel, false) {
         return Err("invalid path".to_string());
@@ -173,7 +176,8 @@ pub fn delete_folder(
     project: String,
     path: String,
 ) -> Result<(), String> {
-    let project_dir = get_project_dir(&state.root, &project)?;
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
     let rel = normalize_rel(&path);
     if !is_valid_rel_folder(&rel, false) {
         return Err("invalid path".to_string());
@@ -194,7 +198,8 @@ pub fn move_videos(
     video_paths: Vec<String>,
     target_folder: String,
 ) -> Result<MoveVideosResponse, String> {
-    let project_dir = get_project_dir(&state.root, &project)?;
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
     let target_rel = normalize_rel(&target_folder);
     if !is_valid_rel_folder(&target_rel, true) {
         return Err("invalid target_folder".to_string());
@@ -215,7 +220,7 @@ pub fn move_videos(
         if !is_valid_rel_video(&rel_path_norm, &project) {
             return Err("invalid video path".to_string());
         }
-        let src_full = state.root.join("src").join(&rel_path_norm);
+        let src_full = root.join("src").join(&rel_path_norm);
         if !src_full.exists() || !src_full.is_file() {
             continue;
         }
@@ -232,7 +237,7 @@ pub fn move_videos(
             .ok_or_else(|| "invalid file name".to_string())?;
         let dest_full = unique_destination(&target_dir, file_name);
         let dest_rel = dest_full
-            .strip_prefix(state.root.join("src"))
+            .strip_prefix(root.join("src"))
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .map_err(|_| "path error".to_string())?;
         std::fs::rename(&src_full, &dest_full).map_err(|e| e.to_string())?;
@@ -253,7 +258,8 @@ pub fn get_folder_order(
     project: String,
     folder: Option<String>,
 ) -> Result<FolderOrder, String> {
-    let project_dir = get_project_dir(&state.root, &project)?;
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
     let folder_dir = match folder.as_deref() {
         Some(f) => {
             let rel = normalize_rel(f);
@@ -286,7 +292,8 @@ pub fn put_folder_order(
     folder: Option<String>,
     order: FolderOrder,
 ) -> Result<(), String> {
-    let project_dir = get_project_dir(&state.root, &project)?;
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
     let folder_dir = match folder.as_deref() {
         Some(f) => {
             let rel = normalize_rel(f);

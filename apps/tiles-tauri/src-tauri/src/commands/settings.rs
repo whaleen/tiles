@@ -5,7 +5,8 @@ use crate::state::AppState;
 
 #[tauri::command]
 pub fn get_settings(state: State<AppState>, project: Option<String>) -> Result<TileSettings, String> {
-    let path = settings_path(&state.root, project.as_deref());
+    let root = state.root.read().unwrap().clone();
+    let path = settings_path(&root, project.as_deref());
     if !path.exists() {
         return Ok(TileSettings {
             layout_code: Some("2x1".to_string()),
@@ -46,7 +47,8 @@ pub fn put_settings(
     project: Option<String>,
     settings: TileSettings,
 ) -> Result<(), String> {
-    let path = settings_path(&state.root, project.as_deref());
+    let root = state.root.read().unwrap().clone();
+    let path = settings_path(&root, project.as_deref());
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

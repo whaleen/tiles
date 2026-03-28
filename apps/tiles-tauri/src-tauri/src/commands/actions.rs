@@ -138,7 +138,7 @@ pub async fn run_action(
         guard.push(running);
     }
 
-    let root = state.root.clone();
+    let root = state.root.read().unwrap().clone();
     let tiles_bin = state.tiles_bin.clone();
     let result = tokio::task::spawn_blocking(move || runner::run_action(&root, &tiles_bin, &req))
         .await

@@ -11,7 +11,8 @@ pub fn list_outputs(
     project: Option<String>,
     action: Option<String>,
 ) -> Vec<OutputRun> {
-    fs_scanner::list_output_runs(&state.root, project.as_deref(), action.as_deref())
+    let root = state.root.read().unwrap().clone();
+    fs_scanner::list_output_runs(&root, project.as_deref(), action.as_deref())
 }
 
 #[tauri::command]
@@ -20,18 +21,20 @@ pub fn list_output_tree(
     path: Option<String>,
     recursive: Option<bool>,
 ) -> Vec<OutputEntry> {
+    let root = state.root.read().unwrap().clone();
     if recursive.unwrap_or(false) {
         fs_scanner::list_all_videos_recursive(
-            &state.root,
+            &root,
             path.as_deref().unwrap_or("outputs"),
         )
     } else {
-        fs_scanner::list_output_entries(&state.root, path.as_deref())
+        fs_scanner::list_output_entries(&root, path.as_deref())
     }
 }
 
 #[tauri::command]
 pub fn delete_output(state: State<AppState>, path: String) -> Result<(), String> {
+    let root = state.root.read().unwrap().clone();
     if path.contains("..") || Path::new(&path).is_absolute() {
         return Err("invalid path".to_string());
     }
@@ -53,7 +56,7 @@ pub fn delete_output(state: State<AppState>, path: String) -> Result<(), String>
         return Err("forbidden".to_string());
     }
 
-    let full = state.root.join(rel_norm);
+    let full = root.join(rel_norm);
     if !full.exists() {
         return Err("not found".to_string());
     }

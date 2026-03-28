@@ -3,11 +3,10 @@ use axum::extract::Request;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::routing::get;
-use axum::Router;
 use std::io::SeekFrom;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 pub fn pick_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
@@ -17,38 +16,39 @@ pub fn pick_port() -> u16 {
         .port()
 }
 
-pub async fn start(port: u16, root: PathBuf) {
-    let root = Arc::new(root);
-    let r = root.clone();
-    let router = Router::new()
-        .route("/files/{*path}", {
-            let root = r.clone();
-            get(move |req: Request| {
-                let root = root.clone();
-                async move { serve_src(root, req).await }
+pub async fn start(port: u16, root: Arc<RwLock<PathBuf>>) {
+    let router = {
+        let r = root.clone();
+        axum::Router::new()
+            .route("/files/{*path}", {
+                let root = r.clone();
+                get(move |req: Request| {
+                    let root = root.clone();
+                    async move { serve_src(root, req).await }
+                })
             })
-        })
-        .route("/thumbs/{*path}", {
-            let root = r.clone();
-            get(move |req: Request| {
-                let root = root.clone();
-                async move { serve_src_thumb(root, req).await }
+            .route("/thumbs/{*path}", {
+                let root = r.clone();
+                get(move |req: Request| {
+                    let root = root.clone();
+                    async move { serve_src_thumb(root, req).await }
+                })
             })
-        })
-        .route("/outfiles/{*path}", {
-            let root = r.clone();
-            get(move |req: Request| {
-                let root = root.clone();
-                async move { serve_out(root, req).await }
+            .route("/outfiles/{*path}", {
+                let root = r.clone();
+                get(move |req: Request| {
+                    let root = root.clone();
+                    async move { serve_out(root, req).await }
+                })
             })
-        })
-        .route("/outthumbs/{*path}", {
-            let root = r.clone();
-            get(move |req: Request| {
-                let root = root.clone();
-                async move { serve_out_thumb(root, req).await }
+            .route("/outthumbs/{*path}", {
+                let root = r.clone();
+                get(move |req: Request| {
+                    let root = root.clone();
+                    async move { serve_out_thumb(root, req).await }
+                })
             })
-        });
+    };
 
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
         .await
@@ -56,44 +56,48 @@ pub async fn start(port: u16, root: PathBuf) {
     axum::serve(listener, router).await.unwrap();
 }
 
-async fn serve_src(root: Arc<PathBuf>, req: Request) -> Result<Response, StatusCode> {
+async fn serve_src(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {
+    let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/files");
-    let path = root.join("src").join(rel.trim_start_matches('/'));
+    let path = root_path.join("src").join(rel.trim_start_matches('/'));
     if !path.exists() || !path.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
     serve_with_range(&path, req.headers()).await
 }
 
-async fn serve_src_thumb(root: Arc<PathBuf>, req: Request) -> Result<Response, StatusCode> {
+async fn serve_src_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {
+    let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/thumbs");
     let decoded = url_decode(rel.trim_start_matches('/'));
-    let src = root.join("src").join(&decoded);
+    let src = root_path.join("src").join(&decoded);
     if !src.exists() || !src.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
-    let thumb = crate::services::thumbnail::ensure_thumbnail(&root, &src, &decoded)
+    let thumb = crate::services::thumbnail::ensure_thumbnail(&root_path, &src, &decoded)
         .ok_or(StatusCode::NOT_FOUND)?;
     serve_static(&thumb).await
 }
 
-async fn serve_out(root: Arc<PathBuf>, req: Request) -> Result<Response, StatusCode> {
+async fn serve_out(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {
+    let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/outfiles");
-    let path = root.join(rel.trim_start_matches('/'));
+    let path = root_path.join(rel.trim_start_matches('/'));
     if !path.exists() || !path.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
     serve_with_range(&path, req.headers()).await
 }
 
-async fn serve_out_thumb(root: Arc<PathBuf>, req: Request) -> Result<Response, StatusCode> {
+async fn serve_out_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {
+    let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/outthumbs");
     let decoded = url_decode(rel.trim_start_matches('/'));
-    let src = root.join(&decoded);
+    let src = root_path.join(&decoded);
     if !src.exists() || !src.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
-    let thumb = crate::services::thumbnail::ensure_thumbnail(&root, &src, &decoded)
+    let thumb = crate::services::thumbnail::ensure_thumbnail(&root_path, &src, &decoded)
         .ok_or(StatusCode::NOT_FOUND)?;
     serve_static(&thumb).await
 }
