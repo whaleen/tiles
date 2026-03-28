@@ -66,7 +66,7 @@ export function AppShell() {
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem className="hidden md:block">
-                  <BreadcrumbLink href="#">Tiles Studio</BreadcrumbLink>
+                  <BreadcrumbLink href="#">tiles</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
@@ -80,15 +80,15 @@ export function AppShell() {
             </Breadcrumb>
           </div>
         </header>
-        <div className="flex min-w-0 flex-1 min-h-0 flex-col gap-4 overflow-hidden p-4 pt-0">
+        <div className="flex min-w-0 flex-1 min-h-0 flex-col gap-4 overflow-y-auto p-4 pt-0">
           <Suspense fallback={<PageFallback />}>
             {activeTab === "dashboard" && (
               <DashboardPage onNavigate={setActiveTab} onProjectChange={setProject} />
             )}
-            {activeTab === "library" && <LibraryPage project={project} />}
-            {activeTab === "tile-builder" && <TileBuilderPage project={project} />}
-            {activeTab === "import" && <ImportPage project={project} />}
-            {activeTab === "outputs" && <OutputsPage project={project} />}
+            {activeTab === "library" && <LibraryPage key={project ?? "__all__"} project={project} />}
+            {activeTab === "tile-builder" && <TileBuilderPage key={project ?? "__all__"} project={project} />}
+            {activeTab === "import" && <ImportPage key={project ?? "__all__"} project={project} />}
+            {activeTab === "outputs" && <OutputsPage key={project ?? "__all__"} project={project} />}
             {activeTab === "logs" && <LogsPage />}
           </Suspense>
         </div>

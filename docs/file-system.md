@@ -1,63 +1,80 @@
 # File System Reference
 
-Canonical directory structure and output paths used by CLI, TUI, and Tiles Studio.
+Workspace layout and output paths used by tiles.
 
-## Project Structure
+## Workspace Structure
+
+The workspace is a folder the user picks on first launch (default: `~/Movies/tiles`). All project files, outputs, and configs live here — separate from the app itself.
 
 ```text
-.
-├── apps/
-│   ├── tiles-api/          # Axum REST API (serves Studio frontend)
-│   ├── tiles-studio/       # React + Vite web UI
-│   └── tiles-tui/          # Native Rust CLI and TUI
+~/Movies/tiles/              # workspace root (user-configured)
+├── src/                     # source media root
+│   ├── project-a/           # a project folder
+│   │   ├── video1.mp4
+│   │   ├── subfolder/
+│   │   │   └── clip.mp4
+│   │   └── outputs/         # per-project outputs (source mode)
+│   └── project-b/
+├── outputs/                 # global output root
+│   ├── tui-logs/            # action run logs
+│   └── tui-thumbs/          # cached video thumbnails (hash-named JPEGs)
 ├── configs/
-│   └── tile_videos_settings.json   # Saved tile builder settings
-├── docs/                   # Documentation
-├── outputs/                # Global output root
-│   ├── tui-logs/           # Run logs from TUI and Studio
-│   └── tui-thumbs/         # Cached video thumbnails
-└── src/                    # Source media root
-    ├── project-a/          # A project folder
-    │   ├── video1.mp4
-    │   ├── subfolder/
-    │   │   └── clip.mp4
-    │   └── outputs/        # Per-project outputs (source mode)
-    └── project-b/
+│   └── tile_videos_settings.json   # saved tile builder settings
+├── models/                  # Whisper models (auto-downloaded on first transcribe)
+│   └── ggml-base.bin
+└── apps/tiles-tui/          # workspace marker required by the tiles CLI
+    └── Cargo.toml
+```
+
+The workspace path is persisted to:
+
+```text
+~/Library/Application Support/com.whaleen.tiles/prefs.json
+```
+
+To reset the workspace (pick a new folder on next launch):
+
+```bash
+rm ~/Library/Application\ Support/com.whaleen.tiles/prefs.json
 ```
 
 ## Terms
 
 - **Project**: A top-level folder under `src/` that contains source media.
 - **Source output**: Output stored alongside a project inside `src/<project>/outputs/`.
-- **Global output**: Output stored under the repo-level `outputs/` folder.
+- **Global output**: Output stored under `outputs/` in the workspace root.
 - **Overwrite**: Replace original files in place (no output folder created).
 
 ## Output Modes
 
-All three surfaces (CLI, TUI, Studio) support the same output modes:
+| Mode | Behavior |
+| --- | --- |
+| Source | Creates `src/<project>/outputs/<action>/` next to source files |
+| Global | Writes to `outputs/<action>/` at workspace root |
+| Alongside | Saves next to the original files (same directory) |
+| Custom | User-specified relative path |
+| Overwrite | Replaces original files in place |
 
-| Mode | CLI | TUI | Studio | Behavior |
-| --- | --- | --- | --- | --- |
-| Source | `--output __source_outputs__` | "source/outputs" picker | "Save alongside originals" | Creates `src/<project>/outputs/` next to source files |
-| Global | _(default, no flag)_ | "outputs/..." picker | "Save to project outputs folder" | Writes to `outputs/` at project root |
-| Custom | `--output <path>` | "custom..." picker | "Custom path" | User-specified path, resolved relative to project root |
-| Overwrite | `--overwrite` | "overwrite" picker | "Overwrite originals" | Replaces original files in place |
+## Default Output Directories
 
-## CLI Default Output Directories
-
-When no `--output` flag is given, each CLI action writes to a default folder under `outputs/`:
+When using global mode, each action writes to a folder under `outputs/`:
 
 | Action | Default output |
 | --- | --- |
-| `concat` | `outputs/concatenated/` |
-| `trim` | `outputs/trimmed/` |
-| `detect` | `outputs/scenes/` |
+| `concat` | `outputs/concat/` |
+| `trim` | `outputs/trim/` |
+| `detect` | `outputs/detect/` |
+| `split-detect` | `outputs/split-detect/` |
+| `yt-import` | `outputs/yt-import/` |
 | `strip-audio` | `outputs/strip-audio/` |
-| `tile` | `outputs/tiled/<auto>.mp4` |
-| `clean` | _(operates in-place on filenames, no output folder)_ |
-| `doctor-reencode` | `outputs/doctor-reencode/` |
-| `doctor-trim-start` | `outputs/doctor-trim-start/` |
+| `chop` | `outputs/chop/` |
+| `transcribe` | `outputs/transcribe/` |
+| `tile` | `outputs/tile/` |
 | `slowmo` | `outputs/slowmo/` |
+| `loop` | `outputs/loop/` |
+| `crop` | `outputs/crop/` |
+| `doctor-reencode` | `outputs/doctor-reencode/` |
+| `clean` | _(renames files in place, no output folder)_ |
 | `organize-landscape` | _(moves files into subfolders in place)_ |
 
 ## Source Output Paths
@@ -65,43 +82,44 @@ When no `--output` flag is given, each CLI action writes to a default folder und
 When using source mode, each action creates a timestamped run folder under the project's outputs directory:
 
 ```text
-src/<project>/outputs/<action>/run_<timestamp>/
+src/<project>/outputs/<action>/
 ```
 
-For example, concat on a project called "ready":
+## Log Paths
 
-```text
-src/ready/outputs/concat/run_1708300000/ready_concatenated/output.mp4
-```
-
-## TUI and Studio Log Paths
-
-Both the TUI and Studio write command logs to:
+Action run logs are written to:
 
 ```text
 outputs/tui-logs/
-├── tui_concat_run_1708300000.log      # TUI runs
-├── studio_concat_run_1708300001.log   # Studio runs
+├── studio_concat_run_1708300000.log
+├── studio_trim_run_1708300001.log
 └── ...
 ```
 
 ## Thumbnail Cache
 
-Studio generates mid-frame video thumbnails on demand:
+The embedded media server generates mid-frame video thumbnails on demand and caches them as hash-named JPEGs:
 
 ```text
 outputs/tui-thumbs/
-├── project-a/video1.mp4.jpg
-└── project-b/subfolder/clip.mp4.jpg
+├── a3f2c1d4e5b6.jpg
+├── 9b8a7c6d5e4f.jpg
+└── ...
 ```
 
-## Folder Resolution
+Thumbnails are keyed by the video's relative path and modification time. Stale thumbnails are regenerated automatically when the source file changes.
 
-- Bare folder names (no `/`) are resolved under `src/` when it exists. `ready` becomes `src/ready/`.
-- Paths starting with `./`, `../`, or `/` are used as-is.
-- The project root is auto-detected by walking up from the working directory.
+## Workspace Marker
 
-## Environment Variables
+The `apps/tiles-tui/Cargo.toml` file is a required marker for the `tiles` CLI binary. The binary locates the workspace root by walking up from its current working directory looking for this file. It is created automatically when you set or pick a workspace.
 
-- `VIDEO_TILING_SETTINGS_PATH` — Override the default tile settings path (`configs/tile_videos_settings.json`).
-- `VIDEO_TILING_NO_OVERWRITE=1` — Enable no-overwrite behavior by default for tile runs.
+## App Layout (Repo)
+
+The repo only contains the app code — no source media or outputs are stored here.
+
+```text
+apps/
+  tiles-tauri/
+    src/           # React frontend
+    src-tauri/     # Rust backend + Tauri config
+```

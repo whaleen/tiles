@@ -2,6 +2,7 @@ mod commands;
 mod media;
 mod models;
 mod prefs;
+mod protocol;
 mod services;
 mod state;
 
@@ -9,6 +10,42 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
 use state::AppState;
+
+/// Resolve the path to the `tiles` CLI binary.
+///
+/// macOS apps launched from the Dock/Finder don't inherit the user's shell
+/// PATH, so `Command::new("tiles")` fails. Check the standard Homebrew
+/// locations first, then fall back to a bare name for development.
+fn find_tiles_bin() -> PathBuf {
+    // First choice: bundled sidecar sitting next to the app executable.
+    // Inside the .app bundle this is tiles.app/Contents/MacOS/tiles-cli.
+    // In dev (target/debug/) the sidecar is copied there by Tauri at build time.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sidecar = dir.join("tiles-cli");
+            if sidecar.exists() {
+                return sidecar;
+            }
+        }
+    }
+
+    // Fallback: well-known installed locations (Homebrew, manual installs).
+    // macOS apps don't inherit the user's shell PATH, so check explicitly.
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates: &[&str] = &[
+        "/opt/homebrew/bin/tiles",         // Apple Silicon Homebrew
+        "/usr/local/bin/tiles",            // Intel Homebrew / manual install
+        &format!("{home}/.cargo/bin/tiles"),
+        &format!("{home}/.local/bin/tiles"),
+    ];
+    for path in candidates {
+        if std::path::Path::new(path).exists() {
+            return PathBuf::from(path);
+        }
+    }
+
+    PathBuf::from("tiles")
+}
 
 /// Shared state for the embedded media server port.
 pub struct MediaPort(pub Mutex<u16>);
@@ -25,11 +62,15 @@ pub fn run() {
     let shared_root: Arc<RwLock<PathBuf>> = Arc::new(RwLock::new(PathBuf::new()));
 
     tauri::Builder::default()
+        .register_uri_scheme_protocol("streamfile", {
+            let root = shared_root.clone();
+            move |_app, request| protocol::handle(&root, request)
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(AppState::new(shared_root.clone(), PathBuf::from("tiles")))
+        .manage(AppState::new(shared_root.clone(), find_tiles_bin()))
         .manage(MediaPort(Mutex::new(media_port_num)))
         .setup(move |app| {
             use tauri::Manager;

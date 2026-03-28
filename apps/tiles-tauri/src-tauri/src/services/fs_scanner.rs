@@ -42,11 +42,16 @@ pub fn list_projects(root: &Path) -> Vec<ProjectSummary> {
         Ok(v) => v,
         Err(_) => return Vec::new(),
     };
+    const RESERVED: &[&str] = &["src", "outputs", "configs", "logs"];
+
     let mut projects: Vec<ProjectSummary> = entries
         .flatten()
         .filter(|e| e.path().is_dir())
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || RESERVED.contains(&name.as_str()) {
+                return None;
+            }
             Some(ProjectSummary {
                 path: name.clone(),
                 name,

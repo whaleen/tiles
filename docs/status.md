@@ -1,59 +1,65 @@
 # Feature Status
 
-This document tracks the current feature surface for the CLI, TUI, and Tiles Studio web UI.
+Current feature surface for the tiles desktop app.
 
-## CLI
+## App Pages
 
-- Commands: `tile`, `run`, `yolo`, `concat`, `trim`, `detect`, `strip-audio`, `clean`, `doctor-reencode`, `doctor-trim-start`, `slowmo`, `organize-landscape`.
-- Default outputs land under `outputs/<tool>/` unless a custom `--output` is provided. See `docs/file-system.md` for exact paths per action.
-- `--overwrite` replaces originals in place (supported by trim and strip-audio; other actions pass through silently).
-- Doctor and slowmo actions support `--no-audio` to strip audio during processing.
-- Tile/run actions support `--no-overwrite` (skip if output exists) and `--force-cfr`.
+### Library
 
-## TUI
+Browse all projects and videos in the workspace `src/` folder. Thumbnail grid with search and filter. Select individual videos or entire folders to run actions. Drag-and-drop folder reordering, timeline strip view, and a full video editor with per-video actions (trim, slowmo, crop, etc.).
 
-- Launch: `tiles tui`.
-- Folder/video selection from `src/` with interactive prompts.
-- Output choices: source outputs (per-folder), global outputs, or custom paths.
-- Logs: menu runs write to `outputs/tui-logs/`.
+### Tile Builder
 
-## Tiles Studio (web)
+Visual layout picker — choose a grid (`2x1`, `1x2`, `2x2`, `3x1`, `1x3`, `3x3`) or composition (`pip`, `1+2`, `2+1`, `1+3`). Assign workspace folders to each tile slot. Configure per-tile settings (transitions, crop position, speed, mode) and global settings (crop mode, distribution mode, audio, duration limits). Render in preview or full mode.
 
-- Launch: `cargo run -p tiles-api` (starts the axum API server which serves the React frontend).
-- Note: `tiles web` runs a separate minimal embedded UI in tiles-tui, not the Studio.
-- Full CLI parity: every CLI command is available as a studio action with a dedicated form.
+Settings are saved to `configs/tile_videos_settings.json` in the workspace.
 
-### Pages
+### Actions
 
-- **Library**: Browse projects and videos with thumbnail grid, search/filter, multi-select individual videos or folders, then run actions on the selection. Settings-based actions (tile/run/yolo) are not shown here since they don't operate on selections.
-- **Actions**: All actions as cards with human-readable labels and descriptions. Click to open a form with folder selection chips, parameters, and output mode picker.
-- **Tile Builder**: Visual layout picker, folder assignment via dropdowns, per-tile settings (transitions, crop position, speed, mode), global settings (crop mode, distribution mode, audio controls, duration limits), and render with preview/full modes.
-- **Outputs**: Browse and preview all generated outputs. Includes an integrated log viewer for reviewing command stdout/stderr from any studio run.
+All video actions as cards. Click to open a form with folder/video selection, parameters, and output mode. See [actions.md](actions.md) for the full action list.
 
-### Studio Actions
+### Outputs
 
-| Action | Label | Target | Description |
-| --- | --- | --- | --- |
-| `concat` | Concatenate | Folders | Join all videos in a folder into one file with optional transitions (cut, fade, fade to black) |
-| `trim` | Trim | Folders or videos | Cut a percentage off the start and/or end of each video |
-| `detect` | Detect Scenes | Folders or videos | Find scene boundaries and split videos at each cut point |
-| `strip-audio` | Strip Audio | Folders or videos | Remove the audio track, producing silent video files |
-| `tile` | Tile | Settings | Render a tiled composition from saved Tile Builder settings |
-| `run` | Run Saved Settings | Settings | Quick re-render from saved settings without opening the builder |
-| `yolo` | YOLO | Settings | Random layout and folder assignment for a surprise composition |
-| `clean` | Clean Filenames | Folders | Remove duplicates (by content hash) and/or rename to numbered sequence |
-| `doctor-reencode` | Re-encode (Doctor) | Folders or videos | Re-encode to constant frame rate with configurable FPS |
-| `doctor-trim-start` | Trim Start (Doctor) | Folders or videos | Remove N seconds from the beginning of each video |
-| `slowmo` | Slow Motion | Folders or videos | Slow videos by a chosen factor (2x, 4x, etc.) |
-| `organize-landscape` | Organize by Orientation | Folders | Sort videos into landscape/ and portrait/ subfolders |
+Browse all generated outputs in the workspace `outputs/` folder. Includes a log viewer for reviewing stdout/stderr from any action run.
+
+### Import
+
+YouTube import flow — paste a URL, configure quality and tiling settings, download and process via `yt-import`.
+
+## Actions
+
+See [actions.md](actions.md) for descriptions and parameters.
+
+| Action | Target |
+| --- | --- |
+| `concat` | Folders |
+| `trim` | Folders or videos |
+| `detect` | Folders or videos |
+| `split-detect` | Folders or videos |
+| `yt-import` | URL |
+| `strip-audio` | Folders or videos |
+| `chop` | Folders or videos |
+| `transcribe` | Folders or videos |
+| `tile` | Settings (tile builder) |
+| `run` | Settings (re-render saved config) |
+| `yolo` | Settings (random layout) |
+| `clean` | Folders |
+| `doctor-reencode` | Folders or videos |
+| `slowmo` | Folders or videos |
+| `loop` | Folders or videos |
+| `crop` | Folders or videos |
+| `organize-landscape` | Folders |
 
 ## Output Modes
 
-All surfaces support the same four output modes. See `docs/file-system.md` for the full reference.
-
-| Mode | CLI | Studio Label |
+| Mode | Label | Behavior |
 | --- | --- | --- |
-| Source | `--output __source_outputs__` | Save alongside originals |
-| Global | _(default)_ | Save to project outputs folder |
-| Custom | `--output <path>` | Custom path |
-| Overwrite | `--overwrite` | Overwrite originals |
+| `source` | Save alongside originals | `src/<project>/outputs/<action>/` |
+| `global` | Save to outputs folder | `outputs/<action>/` |
+| `alongside` | Save next to originals | Same directory as source files |
+| `custom` | Custom path | User-specified relative path |
+| `overwrite` | Overwrite originals | Replaces source files in place |
+
+## In-App Updates
+
+When a new version is published, a banner appears at the top of the app. Click **Install update** to download, then **Relaunch** when ready. The update manifest is hosted at `tiles-latest.json` in the Homebrew tap.

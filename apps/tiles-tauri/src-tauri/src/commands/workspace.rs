@@ -69,6 +69,17 @@ fn apply_workspace(
         std::fs::create_dir_all(path.join(subdir)).map_err(|e| e.to_string())?;
     }
 
+    // The tiles CLI binary locates the workspace root by walking up from cwd
+    // looking for apps/tiles-tui/Cargo.toml. Create that marker so it works
+    // from any workspace, not just the original source repo.
+    let marker_dir = path.join("apps").join("tiles-tui");
+    std::fs::create_dir_all(&marker_dir).map_err(|e| e.to_string())?;
+    let marker = marker_dir.join("Cargo.toml");
+    if !marker.exists() {
+        std::fs::write(&marker, "[package]\nname = \"tiles-tui\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+            .map_err(|e| e.to_string())?;
+    }
+
     let prefs = crate::prefs::Prefs {
         workspace: Some(path.to_string_lossy().to_string()),
     };

@@ -36,7 +36,12 @@ export function thumbUrl(relPath: string): string {
 }
 
 export function videoUrl(relPath: string): string {
-  return withCache(`${_mediaBase}/files/${encodePath(relPath)}`);
+  // Use the custom streamfile:// protocol instead of HTTP.
+  // In production, Tauri serves pages from tauri://localhost (a secure context).
+  // WKWebView blocks video/audio loaded over plain HTTP as mixed content,
+  // while images (<img>) get through. The custom scheme is same-origin with
+  // tauri:// and has no mixed-content restrictions.
+  return withCache(`streamfile://localhost/${encodePath(relPath)}`);
 }
 
 export function outThumbUrl(relPath: string): string {

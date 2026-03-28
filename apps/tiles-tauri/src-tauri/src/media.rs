@@ -59,7 +59,8 @@ pub async fn start(port: u16, root: Arc<RwLock<PathBuf>>) {
 async fn serve_src(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {
     let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/files");
-    let path = root_path.join("src").join(rel.trim_start_matches('/'));
+    let decoded = url_decode(rel.trim_start_matches('/'));
+    let path = root_path.join("src").join(&decoded);
     if !path.exists() || !path.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
