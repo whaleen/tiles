@@ -16,33 +16,32 @@ tiles is a macOS desktop app for video tile layouts and batch video processing. 
 ## Repo Layout
 
 ```text
-apps/
-  tiles-tauri/
-    src/                    # React frontend
-      components/           # UI components
-      hooks/                # React hooks (use-updater, use-workspace, etc.)
-      pages/                # Page-level components
-    src-tauri/
-      src/
-        commands/           # Tauri command handlers (one file per domain)
-          actions.rs        # run_action, list_actions, list_running_actions
-          folders.rs        # create/rename/move/delete folders, video moves
-          health.rs         # get_health
-          logs.rs           # list_logs, get_log
-          outputs.rs        # list_outputs, list_output_tree, delete_output
-          projects.rs       # list/get/create projects, project meta
-          settings.rs       # get/put settings, list layouts
-          videos.rs         # list_videos, get_video_info, delete_video
-          workspace.rs      # get/set/pick workspace, default path
-        media.rs            # Embedded Axum media server (serves video files)
-        models.rs           # Shared data models
-        prefs.rs            # Persist workspace path to app data dir
-        state.rs            # AppState (shared root path, tiles bin, video cache)
-        lib.rs              # Tauri app entry, plugin registration, command list
-      Cargo.toml
-      tauri.conf.json       # Bundle config, updater pubkey, endpoints
-      capabilities/
-        default.json        # Tauri capability permissions
+src/                        # React frontend
+  components/               # UI components
+  hooks/                    # React hooks (use-updater, use-workspace, etc.)
+  pages/                    # Page-level components
+src-tauri/
+  src/
+    commands/               # Tauri command handlers (one file per domain)
+      actions.rs            # run_action, list_actions, list_running_actions
+      folders.rs            # create/rename/move/delete folders, video moves
+      health.rs             # get_health
+      logs.rs               # list_logs, get_log
+      outputs.rs            # list_outputs, list_output_tree, delete_output
+      projects.rs           # list/get/create projects, project meta
+      settings.rs           # get/put settings, list layouts
+      videos.rs             # list_videos, get_video_info, delete_video
+      workspace.rs          # get/set/pick workspace, default path
+    media.rs                # Embedded Axum media server (serves video files)
+    models.rs               # Shared data models
+    prefs.rs                # Persist workspace path to app data dir
+    protocol.rs             # Custom streamfile:// URI scheme (video serving)
+    state.rs                # AppState (shared root path, tiles bin, video cache)
+    lib.rs                  # Tauri app entry, plugin registration, command list
+  Cargo.toml
+  tauri.conf.json           # Bundle config, updater pubkey, endpoints
+  capabilities/
+    default.json            # Tauri capability permissions
 docs/                       # Project documentation
 SPEC.md                     # Feature spec
 AGENT.md                    # This file
@@ -52,7 +51,6 @@ AGENT.md                    # This file
 
 ```bash
 # Install frontend deps
-cd apps/tiles-tauri
 npm install
 
 # Run dev (Tauri + Vite hot reload)
@@ -68,8 +66,8 @@ npm run lint
 npm run build
 ```
 
-> The `tiles` binary (ffmpeg wrapper) must be on PATH for actions to work.
-> Install ffmpeg first: `brew install ffmpeg`
+> `tiles-cli` is bundled as a Tauri sidecar — no PATH setup needed.
+> ffmpeg must be installed separately: `brew install ffmpeg`
 
 ## Workspace
 
@@ -108,9 +106,10 @@ GitHub Actions builds a universal macOS app bundle + DMG, uploads to GitHub Rele
 ## Gotchas
 
 - **Workspace root is a `RwLock`** — always read it at the top of a handler; never store a reference across an await point.
-- **Cargo workspace** — `target/` is at the repo root, not inside `apps/tiles-tauri/src-tauri/`.
+- **Cargo workspace** — `target/` is at the repo root, not inside `src-tauri/`.
+- **`tiles-cli` sidecar** — bundled in `src-tauri/binaries/`, resolved at startup by `find_tiles_bin()` in `lib.rs`. Falls back to PATH if not found next to the executable.
 - **Media server** — runs on a random port chosen at startup (`media::pick_port()`). The port is shared via `MediaPort` state and exposed as the `media_port` Tauri command.
-- **Video thumbnails** — served by the embedded media server, not the Tauri asset protocol.
+- **Video thumbnails** — served by the embedded media server (HTTP, fine for images). Source video files are served via the `streamfile://` custom URI scheme to avoid WKWebView mixed-content blocking.
 - **App is not notarized** — users need `xattr -dr com.apple.quarantine /Applications/tiles.app` on first launch.
 - **`GH_PAT`** secret (not `GITHUB_TOKEN`) is required for the release workflow to push to the homebrew tap repo.
 
