@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-13
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -27,47 +27,67 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/tiles-tauri/src-tauri
+          workspaces: .
 
       - name: Install frontend dependencies
         working-directory: apps/tiles-tauri
         run: npm install
 
-      - name: Build
+      - name: Build (app bundle only, no DMG)
         working-directory: apps/tiles-tauri
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri -- build --target universal-apple-darwin
+        run: npm run tauri -- build --target universal-apple-darwin --bundles app
+
+      - name: Create DMG manually
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          APP="$GITHUB_WORKSPACE/target/universal-apple-darwin/release/bundle/macos/tiles.app"
+          DMG="/tmp/tiles_${VERSION}_universal.dmg"
+
+          mkdir -p /tmp/dmg-staging
+          cp -r "$APP" /tmp/dmg-staging/
+          ln -s /Applications /tmp/dmg-staging/Applications
+
+          hdiutil create \
+            -volname "tiles" \
+            -srcfolder /tmp/dmg-staging \
+            -ov \
+            -format UDZO \
+            "$DMG"
 
       - name: Package and sign updater artifact
-        working-directory: apps/tiles-tauri
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAG: ${{ github.ref_name }}
         run: |
-          BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle/macos"
-          tar czf /tmp/tiles.app.tar.gz -C "$BUNDLE" tiles.app
-          cp /tmp/tiles.app.tar.gz "$BUNDLE/tiles.app.tar.gz"
-          npm run tauri -- signer sign \
+          VERSION="${TAG#v}"
+          MACOS="$GITHUB_WORKSPACE/target/universal-apple-darwin/release/bundle/macos"
+          tar czf /tmp/tiles.app.tar.gz -C "$MACOS" tiles.app
+          cp /tmp/tiles.app.tar.gz "$MACOS/tiles.app.tar.gz"
+          cd apps/tiles-tauri && npm run tauri -- signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-            "$BUNDLE/tiles.app.tar.gz"
+            "$MACOS/tiles.app.tar.gz"
 
       - name: Create release and upload artifacts
-        working-directory: apps/tiles-tauri
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           TAG: ${{ github.ref_name }}
         run: |
-          BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle"
+          VERSION="${TAG#v}"
+          MACOS="$GITHUB_WORKSPACE/target/universal-apple-darwin/release/bundle/macos"
           gh release create "$TAG" \
             --title "tiles $TAG" \
             --notes "" \
             --repo whaleen/tiles \
-            "$BUNDLE/dmg/tiles_${TAG#v}_universal.dmg" \
-            "$BUNDLE/macos/tiles.app.tar.gz" \
-            "$BUNDLE/macos/tiles.app.tar.gz.sig"
+            "/tmp/tiles_${VERSION}_universal.dmg" \
+            "$MACOS/tiles.app.tar.gz" \
+            "$MACOS/tiles.app.tar.gz.sig"
 
       - name: Update homebrew cask and tiles-latest.json
         env:
@@ -75,16 +95,13 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           VERSION="${TAG#v}"
-          BUNDLE="apps/tiles-tauri/src-tauri/target/universal-apple-darwin/release/bundle"
-          SIG_CONTENT=$(cat "$BUNDLE/macos/tiles.app.tar.gz.sig")
+          MACOS="$GITHUB_WORKSPACE/target/universal-apple-darwin/release/bundle/macos"
+          SIG_CONTENT=$(cat "$MACOS/tiles.app.tar.gz.sig")
+          SHA256=$(shasum -a 256 "/tmp/tiles_${VERSION}_universal.dmg" | awk '{print $1}')
 
           RELEASE=$(gh api repos/whaleen/tiles/releases/tags/$TAG)
           URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | endswith("app.tar.gz")) | .browser_download_url')
           PUB_DATE=$(echo "$RELEASE" | jq -r '.published_at')
-
-          DMG_PATH="apps/tiles-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/tiles_${VERSION}_universal.dmg"
-          SHA256=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
-          DMG_URL=$(echo "$RELEASE" | jq -r '.assets[] | select(.name | endswith(".dmg")) | .browser_download_url')
 
           git clone https://x-access-token:$GH_TOKEN@github.com/whaleen/homebrew-tap.git /tmp/homebrew-tap
           cd /tmp/homebrew-tap
