@@ -52,3 +52,7 @@ skills-lock.json
 CLAUDE.md
 GEMINI.md
 .memory/
+
+# pemguin managed
+.prompts/
+.pemguin.toml
