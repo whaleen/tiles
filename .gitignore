@@ -5,14 +5,13 @@ concatenated_output/
 output/
 scenes_output/
 target/
-apps/tiles-tui/target/
 
 # Settings file (optional - remove this line if you want to commit settings)
 configs/tile_videos_settings.json
 
 # Node / React
 node_modules/
-apps/tiles-studio/dist/
+dist/
 
 # macOS
 .DS_Store
