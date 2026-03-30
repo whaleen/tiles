@@ -43,16 +43,15 @@ models/
 .cntxignore
 .mcp.json
 
-# Agent dirs
+# Pemguin TUI
 .agents/
 .claude/
-.kiro/
+.memory/
+.prompts/
 .vite-hooks/
-skills-lock.json
 CLAUDE.md
 GEMINI.md
-.memory/
+skills-lock.json
 
 # pemguin managed
-.prompts/
 .pemguin.toml
