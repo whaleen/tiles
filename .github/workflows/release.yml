@@ -34,9 +34,8 @@ jobs:
 
       - name: Create universal tiles-cli sidecar
         run: |
-          lipo -create -output src-tauri/binaries/tiles-cli-universal-apple-darwin \
-            src-tauri/binaries/tiles-cli-aarch64-apple-darwin \
-            src-tauri/binaries/tiles-cli-x86_64-apple-darwin
+          cp src-tauri/binaries/tiles-cli-x86_64-apple-darwin \
+            src-tauri/binaries/tiles-cli-universal-apple-darwin
           chmod +x src-tauri/binaries/tiles-cli-universal-apple-darwin
 
       - name: Build (app bundle only, no DMG)
