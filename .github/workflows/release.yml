@@ -32,6 +32,13 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Create universal tiles-cli sidecar
+        run: |
+          lipo -create -output src-tauri/binaries/tiles-cli-universal-apple-darwin \
+            src-tauri/binaries/tiles-cli-aarch64-apple-darwin \
+            src-tauri/binaries/tiles-cli-x86_64-apple-darwin
+          chmod +x src-tauri/binaries/tiles-cli-universal-apple-darwin
+
       - name: Build (app bundle only, no DMG)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
