@@ -24,7 +24,6 @@ dist/
 models/
 
 # Video files
-/src/
 *.mp4
 *.mov
 *.avi

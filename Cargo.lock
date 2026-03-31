@@ -4692,7 +4692,7 @@ dependencies = [
 
 [[package]]
 name = "tiles-tauri"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "reqwest 0.12.28",

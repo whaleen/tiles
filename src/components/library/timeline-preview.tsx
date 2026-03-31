@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Maximize,
   Pause,
   Play,
   Film,
@@ -60,6 +61,16 @@ export function TimelinePreview({
     }
   }, []);
 
+  const enterFullscreen = useCallback(() => {
+    const el = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    if (!el) return;
+    if (el.webkitEnterFullscreen) {
+      el.webkitEnterFullscreen();
+    } else {
+      el.requestFullscreen?.();
+    }
+  }, []);
+
   // Auto-advance on video end
   const handleEnded = useCallback(() => {
     if (!isLast) {
@@ -105,11 +116,14 @@ export function TimelinePreview({
       } else if (e.key === " ") {
         e.preventDefault();
         togglePlay();
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        enterFullscreen();
       }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onBack, goPrev, goNext, togglePlay]);
+  }, [onBack, goPrev, goNext, togglePlay, enterFullscreen]);
 
   if (!current) return null;
 
@@ -154,6 +168,14 @@ export function TimelinePreview({
             disabled={isLast}
           >
             <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={enterFullscreen}
+          >
+            <Maximize className="h-4 w-4" />
           </Button>
         </div>
       </div>

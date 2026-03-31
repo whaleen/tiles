@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use tauri::State;
 
@@ -22,39 +22,6 @@ pub struct MovedVideoPath {
     pub to: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct CreateFolderArgs {
-    pub project: String,
-    pub parent: Option<String>,
-    pub name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct RenameFolderArgs {
-    pub project: String,
-    pub path: String,
-    pub new_name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct MoveFolderArgs {
-    pub project: String,
-    pub path: String,
-    pub target_parent: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct DeleteFolderArgs {
-    pub project: String,
-    pub path: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct MoveVideosArgs {
-    pub project: String,
-    pub video_paths: Vec<String>,
-    pub target_folder: String,
-}
 
 #[tauri::command]
 pub fn create_folder(

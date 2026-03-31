@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useOutputTree } from "@/hooks/use-output-tree";
 import { outThumbUrl, outVideoUrl } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -8,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useRunningActions } from "@/hooks/use-running-actions";
 import {
   Film,
+  Maximize,
   RefreshCw,
   Trash2,
   Search,
@@ -26,6 +28,26 @@ export function OutputsPage({ project }: { project?: string }) {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<OutputEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  const enterFullscreen = useCallback(async () => {
+    await getCurrentWindow().setFullscreen(true);
+    setFullscreen(true);
+  }, []);
+
+  const exitFullscreen = useCallback(async () => {
+    await getCurrentWindow().setFullscreen(false);
+    setFullscreen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") exitFullscreen();
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [fullscreen, exitFullscreen]);
   const { running: runningActions } = useRunningActions();
 
   // The main navigation controls the context (Project vs Global)
@@ -244,16 +266,39 @@ export function OutputsPage({ project }: { project?: string }) {
                   </span>
                 </div>
               </div>
-              <Button size="icon" variant="ghost" className="rounded-full" onClick={() => setSelectedFile(null)}>
-                <Trash2 className="h-5 w-5 rotate-45" /> {/* Close icon fallback */}
-              </Button>
+              <div className="flex items-center gap-1">
+                {selectedFile.kind === 'video' && (
+                  <Button size="icon" variant="ghost" className="rounded-full" onClick={enterFullscreen}>
+                    <Maximize className="h-4 w-4" />
+                  </Button>
+                )}
+                <Button size="icon" variant="ghost" className="rounded-full" onClick={() => setSelectedFile(null)}>
+                  <Trash2 className="h-5 w-5 rotate-45" />
+                </Button>
+              </div>
             </div>
             
+            {fullscreen && (
+              <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+                <video
+                  src={outVideoUrl(selectedFile.rel_path)}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                />
+                <button
+                  className="absolute top-4 right-4 rounded-full bg-black/70 p-2 text-white hover:bg-black/90 transition-colors"
+                  onClick={exitFullscreen}
+                >
+                  <Trash2 className="h-5 w-5 rotate-45" />
+                </button>
+              </div>
+            )}
             <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
               {selectedFile.kind === 'video' ? (
-                <video 
-                  src={outVideoUrl(selectedFile.rel_path)} 
-                  controls 
+                <video
+                  src={outVideoUrl(selectedFile.rel_path)}
+                  controls
                   autoPlay
                   className="max-w-full max-h-full"
                 />

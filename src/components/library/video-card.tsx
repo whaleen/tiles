@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback, memo } from "react";
+import { useState, useRef, useCallback, useEffect, memo } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { DragEventHandler } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { thumbUrl, videoUrl } from "@/api/client";
-import { Film, GripVertical, Play, X } from "lucide-react";
+import { Film, GripVertical, Maximize, Play, X } from "lucide-react";
 import type { VideoEntry } from "@/types";
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
@@ -35,8 +36,29 @@ export const VideoCard = memo(function VideoCard({
   const durationLabel = formatDuration(video.duration);
   const isImage = IMAGE_RE.test(video.rel_path);
   const [playing, setPlaying] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [thumbBroken, setThumbBroken] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const enterFullscreen = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await getCurrentWindow().setFullscreen(true);
+    setFullscreen(true);
+  }, []);
+
+  const exitFullscreen = useCallback(async () => {
+    await getCurrentWindow().setFullscreen(false);
+    setFullscreen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") exitFullscreen();
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [fullscreen, exitFullscreen]);
 
   const stopPlaying = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -72,11 +94,33 @@ export const VideoCard = memo(function VideoCard({
               onEnded={() => setPlaying(false)}
             />
             <button
+              className="absolute top-2 right-8 rounded-full bg-black/70 p-1 text-white hover:bg-black/90 transition-colors z-10"
+              onClick={enterFullscreen}
+            >
+              <Maximize className="h-3.5 w-3.5" />
+            </button>
+            <button
               className="absolute top-2 right-2 rounded-full bg-black/70 p-1 text-white hover:bg-black/90 transition-colors z-10"
               onClick={stopPlaying}
             >
               <X className="h-3.5 w-3.5" />
             </button>
+            {fullscreen && (
+              <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+                <video
+                  src={videoUrl(video.rel_path)}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                />
+                <button
+                  className="absolute top-4 right-4 rounded-full bg-black/70 p-2 text-white hover:bg-black/90 transition-colors"
+                  onClick={exitFullscreen}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <>

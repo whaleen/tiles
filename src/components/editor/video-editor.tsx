@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { videoUrl, bumpMediaCache } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 import { ActionCompleteContext } from "@/contexts/action-complete-context";
 import { EditorActionPanel } from "./editor-action-panel";
-import { ArrowLeft, ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize, Trash2 } from "lucide-react";
 import type { VideoEntry } from "@/types";
 
 interface VideoEditorProps {
@@ -25,6 +26,17 @@ export function VideoEditor({
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const [timelineContent, setTimelineContent] = useState<React.ReactNode>(null);
   const [overlayContent, setOverlayContent] = useState<React.ReactNode>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  const enterFullscreen = useCallback(async () => {
+    await getCurrentWindow().setFullscreen(true);
+    setFullscreen(true);
+  }, []);
+
+  const exitFullscreen = useCallback(async () => {
+    await getCurrentWindow().setFullscreen(false);
+    setFullscreen(false);
+  }, []);
 
   const isImage = (path: string) =>
     /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(path);
@@ -56,13 +68,14 @@ export function VideoEditor({
     function handleKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "ArrowRight") goNext();
-      if (e.key === "ArrowLeft") goPrev();
-      if (e.key === "Escape") onBack();
+      if (e.key === "ArrowRight" && !fullscreen) goNext();
+      if (e.key === "ArrowLeft" && !fullscreen) goPrev();
+      if (e.key === "Escape") { if (fullscreen) exitFullscreen(); else onBack(); }
+      if (e.key === "f" || e.key === "F") { if (fullscreen) exitFullscreen(); else enterFullscreen(); }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [goNext, goPrev, onBack]);
+  }, [goNext, goPrev, onBack, fullscreen, enterFullscreen, exitFullscreen]);
 
   // Reset state when video changes
   useEffect(() => {
@@ -146,6 +159,14 @@ export function VideoEditor({
             </Button>
             <Button
               size="sm"
+              variant="ghost"
+              onClick={enterFullscreen}
+              title="Fullscreen (F)"
+            >
+              <Maximize className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
               variant="destructive"
               onClick={handleDelete}
             >
@@ -204,6 +225,22 @@ export function VideoEditor({
           </div>
         </div>
       </div>
+      {fullscreen && (
+        <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+          <video
+            src={videoUrl(video.rel_path)}
+            controls
+            autoPlay
+            className="w-full h-full object-contain"
+          />
+          <button
+            className="absolute top-4 right-4 rounded-full bg-black/70 p-2 text-white hover:bg-black/90 transition-colors"
+            onClick={exitFullscreen}
+          >
+            <Minimize className="h-5 w-5" />
+          </button>
+        </div>
+      )}
     </ActionCompleteContext.Provider>
   );
 }
