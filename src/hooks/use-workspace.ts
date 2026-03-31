@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 type WorkspaceState =
   | { status: "loading" }
@@ -8,6 +9,7 @@ type WorkspaceState =
 
 export function useWorkspace() {
   const [state, setState] = useState<WorkspaceState>({ status: "loading" });
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     invoke<string | null>("get_workspace").then((path) => {
@@ -18,11 +20,12 @@ export function useWorkspace() {
   const pickWorkspace = useCallback(async () => {
     try {
       const path = await invoke<string>("pick_workspace");
+      queryClient.invalidateQueries();
       setState({ status: "ready", path });
     } catch (e) {
       if (e !== "cancelled") throw e;
     }
-  }, []);
+  }, [queryClient]);
 
   const confirmWorkspace = useCallback((path: string) => {
     setState({ status: "ready", path });

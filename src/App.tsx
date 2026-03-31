@@ -41,7 +41,7 @@ function App() {
           <span>Update check failed: {updateState.message}</span>
         </div>
       )}
-      <AppShell />
+      <AppShell onChangeWorkspace={pickWorkspace} />
       <Toaster />
     </div>
   );

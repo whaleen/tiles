@@ -32,12 +32,14 @@ export function AppSidebar({
   onTabChange,
   selectedProject,
   onProjectChange,
+  onChangeWorkspace,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   activeTab: string
   onTabChange: (tab: string) => void
   selectedProject?: string
   onProjectChange: (project?: string) => void
+  onChangeWorkspace?: () => void
 }) {
   const user = {
     name: "Local",
@@ -68,7 +70,7 @@ export function AppSidebar({
         <NavMain items={navItems} onSelect={onTabChange} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={user} />
+        <NavUser user={user} onChangeWorkspace={onChangeWorkspace} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

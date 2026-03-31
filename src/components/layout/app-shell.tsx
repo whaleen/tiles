@@ -43,7 +43,7 @@ function PageFallback() {
   );
 }
 
-export function AppShell() {
+export function AppShell({ onChangeWorkspace }: { onChangeWorkspace?: () => void }) {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [project, setProject] = useState<string | undefined>();
 
@@ -54,6 +54,7 @@ export function AppShell() {
         onTabChange={setActiveTab}
         selectedProject={project}
         onProjectChange={setProject}
+        onChangeWorkspace={onChangeWorkspace}
       />
       <SidebarInset className="min-w-0 h-svh overflow-hidden">
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

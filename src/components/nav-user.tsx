@@ -2,6 +2,7 @@
 
 import {
   ChevronsUpDown,
+  FolderOpen,
   Monitor,
   Moon,
   Sun,
@@ -33,12 +34,14 @@ import {
 
 export function NavUser({
   user,
+  onChangeWorkspace,
 }: {
   user: {
     name: string
     email: string
     avatar: string
   }
+  onChangeWorkspace?: () => void
 }) {
   const { isMobile } = useSidebar()
   const { theme, setTheme } = useTheme()
@@ -81,6 +84,11 @@ export function NavUser({
                 </div>
               </div>
             </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onChangeWorkspace}>
+              <FolderOpen />
+              Change workspace
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
