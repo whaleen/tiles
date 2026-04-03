@@ -10,7 +10,7 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 - [x] Actions: run batch video operations (concat, trim, slowmo, etc.) on selected folders/videos
 - [x] Outputs: browse rendered files, view logs
 - [x] In-app updates: banner on launch when new version available, one-click install + relaunch
-- [ ] Workspace settings: change workspace folder from within the app (currently requires manual prefs edit)
+- [x] Workspace settings: change workspace folder from within the app (sidebar menu → Change workspace)
 
 ## Functional Requirements
 

@@ -84,6 +84,7 @@ export function LibraryPage({
   const [folderBusy, setFolderBusy] = useState(false);
   const [movingVideos, setMovingVideos] = useState(false);
   const [dragRelPath, setDragRelPath] = useState<string | null>(null);
+  const dragRelPathRef = useRef<string | null>(null);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -129,6 +130,7 @@ export function LibraryPage({
     setEditorVideo(null);
     setPreviewMode(false);
     setDragRelPath(null);
+    dragRelPathRef.current = null;
     setDragOverFolderPath(null);
   }, [project]);
 
@@ -137,6 +139,7 @@ export function LibraryPage({
     setEditorVideo(null);
     setPreviewMode(false);
     setDragRelPath(null);
+    dragRelPathRef.current = null;
     setDragOverFolderPath(null);
   }, [selectedFolder]);
 
@@ -377,10 +380,11 @@ export function LibraryPage({
   }
 
   function dragSelectionPaths() {
-    if (selectedPaths.size > 0 && dragRelPath && selectedPaths.has(dragRelPath)) {
+    const current = dragRelPathRef.current;
+    if (selectedPaths.size > 0 && current && selectedPaths.has(current)) {
       return Array.from(selectedPaths);
     }
-    if (dragRelPath) return [dragRelPath];
+    if (current) return [current];
     return [] as string[];
   }
 
@@ -402,8 +406,8 @@ export function LibraryPage({
     try {
       const res = await invoke<MoveVideosResponse>("move_videos", {
         project,
-        video_paths: targets,
-        target_folder: targetFolder,
+        videoPaths: targets,
+        targetFolder,
       });
       if (res.moved > 0) {
         toast.success(`Moved ${res.moved} video${res.moved !== 1 ? "s" : ""}`);
@@ -417,12 +421,13 @@ export function LibraryPage({
         toast("Nothing moved");
       }
       setSelectedPaths(new Set());
+      dragRelPathRef.current = null;
       setDragRelPath(null);
       setDragOverFolderPath(null);
       // Background refresh to sync subfolder counts and pick up new paths
       void refreshLibraryData();
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to move videos";
+      const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to move videos";
       toast.error(message);
     } finally {
       setMovingVideos(false);
@@ -432,8 +437,8 @@ export function LibraryPage({
   function folderDropHandlers(path: string) {
     return {
       onDragOver: (event: DragEvent<HTMLButtonElement>) => {
-        if (!dragRelPath) return;
         event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
         setDragOverFolderPath(path);
       },
       onDragLeave: () => {
@@ -442,10 +447,11 @@ export function LibraryPage({
         }
       },
       onDrop: (event: DragEvent<HTMLButtonElement>) => {
-        if (!dragRelPath) return;
         event.preventDefault();
         setDragOverFolderPath(null);
-        const paths = dragSelectionPaths();
+        const data = event.dataTransfer.getData("application/tiles-drag");
+        if (!data) return;
+        const paths = JSON.parse(data) as string[];
         if (paths.length === 0) return;
         void moveVideosToFolder(path, paths);
       },
@@ -845,7 +851,15 @@ export function LibraryPage({
                         onVideoClick={setEditorVideo}
                         onVideoDragStart={(video, event) => {
                           event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("text/plain", video.rel_path);
+                          const dragPaths =
+                            selectedPaths.has(video.rel_path) && selectedPaths.size > 0
+                              ? Array.from(selectedPaths)
+                              : [video.rel_path];
+                          event.dataTransfer.setData(
+                            "application/tiles-drag",
+                            JSON.stringify(dragPaths)
+                          );
+                          dragRelPathRef.current = video.rel_path;
                           setDragRelPath(video.rel_path);
                           // Multi-drag badge
                           const count = selectedPaths.has(video.rel_path) ? selectedPaths.size : 1;
@@ -865,6 +879,7 @@ export function LibraryPage({
                           }
                         }}
                         onVideoDragEnd={() => {
+                          dragRelPathRef.current = null;
                           setDragRelPath(null);
                           setDragOverFolderPath(null);
                         }}
