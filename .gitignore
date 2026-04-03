@@ -1,3 +1,6 @@
+# CLI sidecar binaries (built from source in cli/)
+src-tauri/binaries/
+
 # Output directories
 outputs/
 trimmed_output/

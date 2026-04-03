@@ -1,0 +1,14 @@
+[package]
+name = "tiles-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI/TUI backend for tiles"
+license = "MIT"
+
+[dependencies]
+crossterm = "0.28"
+ratatui = "0.28"
+
+[[bin]]
+name = "tiles"
+path = "src/main.rs"

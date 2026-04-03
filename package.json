@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build",
+    "build": "npm run build:cli && tauri build",
+    "build:cli": "cargo build --release -p tiles-cli && cp target/release/tiles src-tauri/binaries/tiles-cli-aarch64-apple-darwin && cp target/release/tiles src-tauri/binaries/tiles-cli-x86_64-apple-darwin",
     "tauri": "tauri"
   },
   "dependencies": {
