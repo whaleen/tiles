@@ -46,15 +46,21 @@ When a new version is available, tiles will show a banner in the top of the app 
 .
 ├── src/          # React frontend
 ├── src-tauri/    # Rust backend + Tauri config
+├── cli/          # tiles-cli sidecar (Rust, built separately)
 └── docs/         # Project documentation
 ```
 
 ## Development
 
+`tiles-cli` is a Rust sidecar that must be compiled before running the app. The binary is not committed — build it first:
+
 ```bash
 npm install
+npm run build:cli  # compiles cli/ and copies binary to src-tauri/binaries/
 npm run dev
 ```
+
+
 
 ## Release
 

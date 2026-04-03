@@ -517,10 +517,20 @@ struct TileRect {
 
 // --- FFmpeg Pipeline Contract ---
 
+enum PipelineMode {
+    Simple,
+    Complex {
+        filter: String,
+        video_map: String,
+        audio_map: Option<String>,
+    },
+}
+
 struct FFmpegPipeline {
     cmd: Command,
     has_video: bool,
     has_audio: bool,
+    mode: PipelineMode,
 }
 
 impl FFmpegPipeline {
@@ -533,6 +543,7 @@ impl FFmpegPipeline {
             cmd,
             has_video: false,
             has_audio: false,
+            mode: PipelineMode::Simple,
         }
     }
 
@@ -544,17 +555,33 @@ impl FFmpegPipeline {
         self
     }
 
-    // Helper to restore the command after a mutable borrow (Rust Command doesn't chain well with custom logic)
-    fn set_cmd(&mut self, cmd: Command) {
-        self.cmd = cmd;
+    fn with_filter_complex(
+        &mut self,
+        filter: String,
+        video_map: impl Into<String>,
+        audio_map: Option<impl Into<String>>,
+    ) -> &mut Self {
+        self.mode = PipelineMode::Complex {
+            filter,
+            video_map: video_map.into(),
+            audio_map: audio_map.map(|m| m.into()),
+        };
+        self
+    }
+
+    fn apply_video_output_codec_args(&mut self) -> &mut Self {
+        self.cmd.args(["-fps_mode", "cfr"]);
+        self.cmd
+            .args(["-c:v", "libx264", "-preset", "medium", "-crf", "23"]);
+        self.has_video = true;
+        self
     }
 
     fn apply_canonical_video_params(&mut self) -> &mut Self {
-        // Enforce CFR, 30fps, and yuv420p for all outputs
-        self.cmd.args(["-vf", "fps=30,format=yuv420p", "-fps_mode", "cfr"]);
-        self.cmd.args(["-c:v", "libx264", "-preset", "medium", "-crf", "23"]);
-        self.has_video = true;
-        self
+        if matches!(self.mode, PipelineMode::Simple) {
+            self.cmd.args(["-vf", "fps=30,format=yuv420p"]);
+        }
+        self.apply_video_output_codec_args()
     }
 
     fn apply_video_params(&mut self, filter: Option<String>) -> &mut Self {
@@ -563,11 +590,11 @@ impl FFmpegPipeline {
             Some(f) => format!("{f},{base_filter}"),
             None => base_filter.to_string(),
         };
-        self.cmd.arg("-vf").arg(final_filter);
-        self.cmd.args(["-vsync", "cfr", "-fps_mode", "cfr"]);
-        self.cmd.args(["-c:v", "libx264", "-preset", "medium", "-crf", "23"]);
-        self.has_video = true;
-        self
+        if matches!(self.mode, PipelineMode::Simple) {
+            self.cmd.arg("-vf").arg(final_filter);
+        }
+        self.cmd.args(["-vsync", "cfr"]);
+        self.apply_video_output_codec_args()
     }
 
     fn apply_canonical_audio_params(&mut self, enabled: bool) -> &mut Self {
@@ -575,12 +602,8 @@ impl FFmpegPipeline {
             self.cmd.arg("-an");
         } else {
             // Enforce fixed sample rate and layout
-            self.cmd.args([
-                "-c:a", "aac", 
-                "-b:a", "192k", 
-                "-ar", "48000", 
-                "-ac", "2"
-            ]);
+            self.cmd
+                .args(["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]);
         }
         self.has_audio = enabled;
         self
@@ -599,10 +622,33 @@ impl FFmpegPipeline {
     }
 
     fn run(mut self, output: &Path) -> bool {
+        match self.mode {
+            PipelineMode::Complex {
+                ref filter,
+                ref video_map,
+                ref audio_map,
+            } => {
+                self.cmd.arg("-filter_complex").arg(filter);
+                self.cmd.arg("-map").arg(video_map);
+                if let Some(am) = audio_map {
+                    self.cmd.arg("-map").arg(am);
+                }
+            }
+            PipelineMode::Simple => {}
+        }
+        self.cmd.arg("-movflags").arg("+faststart");
         self.cmd.arg("-y").arg(output);
         match self.cmd.output() {
-            Ok(o) => o.status.success(),
-            Err(_) => false,
+            Ok(o) => {
+                if !o.status.success() {
+                    eprintln!("ffmpeg stderr:\n{}", String::from_utf8_lossy(&o.stderr));
+                }
+                o.status.success()
+            }
+            Err(e) => {
+                eprintln!("error running ffmpeg: {e}");
+                false
+            }
         }
     }
 }
@@ -8745,7 +8791,10 @@ fn run_concat(args: &[OsString]) -> i32 {
                 "concat_norm_{}_{}_{}.mp4",
                 std::process::id(),
                 i,
-                SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
             ));
             if normalize_video(file, &tmp, &root) {
                 normalized_files.push(tmp);
@@ -8757,7 +8806,9 @@ fn run_concat(args: &[OsString]) -> i32 {
         }
 
         if !norm_success {
-            for p in &normalized_files { let _ = fs::remove_file(p); }
+            for p in &normalized_files {
+                let _ = fs::remove_file(p);
+            }
             failures += 1;
             continue;
         }
@@ -8766,10 +8817,18 @@ fn run_concat(args: &[OsString]) -> i32 {
             concat_simple_cut(&normalized_files, &output_path, &root)
         } else {
             // IMPORTANT: Metadata must come from the normalized files to ensure perfectly accurate xfade offsets
-            concat_with_transitions(&normalized_files, &output_path, &opts.transition, opts.duration, &root)
+            concat_with_transitions(
+                &normalized_files,
+                &output_path,
+                &opts.transition,
+                opts.duration,
+                &root,
+            )
         };
 
-        for p in &normalized_files { let _ = fs::remove_file(p); }
+        for p in &normalized_files {
+            let _ = fs::remove_file(p);
+        }
 
         if ok {
             println!("✓ Saved: {}", output_path.display());
@@ -8900,7 +8959,10 @@ fn run_loop(args: &[OsString]) -> i32 {
         let tmp_norm = env::temp_dir().join(format!(
             "loop_norm_{}_{}.mp4",
             std::process::id(),
-            SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0)
         ));
         if !normalize_video(video, &tmp_norm, &root) {
             eprintln!("error: failed to normalize {}", video.display());
@@ -9056,7 +9118,14 @@ fn run_trim(args: &[OsString]) -> i32 {
                 )
             };
             println!("\nProcessing file: {}", as_path.display());
-            if trim_video(&as_path, &out_path, opts.trim_start, opts.trim_end, opts.no_audio, &root) {
+            if trim_video(
+                &as_path,
+                &out_path,
+                opts.trim_start,
+                opts.trim_end,
+                opts.no_audio,
+                &root,
+            ) {
                 if overwrite {
                     if let Err(err) = fs::rename(&out_path, &as_path) {
                         failures += 1;
@@ -9125,7 +9194,14 @@ fn run_trim(args: &[OsString]) -> i32 {
                     ),
                 )
             };
-            if trim_video(video, &out_path, opts.trim_start, opts.trim_end, opts.no_audio, &root) {
+            if trim_video(
+                video,
+                &out_path,
+                opts.trim_start,
+                opts.trim_end,
+                opts.no_audio,
+                &root,
+            ) {
                 if overwrite {
                     if let Err(err) = fs::rename(&out_path, video) {
                         failures += 1;
@@ -9994,29 +10070,13 @@ fn run_doctor_reencode(args: &[OsString]) -> i32 {
             out_dir.join(file.file_name().unwrap_or_default())
         };
 
-        let mut cmd = Command::new("ffmpeg");
-        cmd.arg("-v")
-            .arg("error")
-            .arg("-fflags")
-            .arg("+genpts")
-            .arg("-i")
-            .arg(&file)
-            .arg("-vf")
-            .arg(format!("fps={fps}"))
-            .arg("-fps_mode")
-            .arg("cfr")
-            .arg("-c:v")
-            .arg("libx264")
-            .arg("-preset")
-            .arg("medium")
-            .arg("-crf")
-            .arg("23");
-        if keep_audio {
-            cmd.arg("-c:a").arg("aac").arg("-b:a").arg("192k");
-        } else {
-            cmd.arg("-an");
-        }
-        let ok = matches!(cmd.arg("-y").arg(&target).output(), Ok(o) if o.status.success());
+        let mut pipeline = FFmpegPipeline::new(base);
+        pipeline.cmd.arg("-v").arg("error");
+        pipeline.add_input(&file, false);
+        pipeline.cmd.arg("-vf").arg(format!("fps={fps}"));
+        pipeline.apply_video_output_codec_args();
+        pipeline.apply_canonical_audio_params(keep_audio);
+        let ok = pipeline.run(&target);
         if ok && overwrite {
             let _ = fs::rename(&target, &file);
         }
@@ -10163,25 +10223,13 @@ fn run_doctor_trim_start(args: &[OsString]) -> i32 {
         } else {
             out_dir.join(file.file_name().unwrap_or_default())
         };
-        let mut cmd = Command::new("ffmpeg");
-        cmd.arg("-v")
-            .arg("error")
-            .arg("-i")
-            .arg(&file)
-            .arg("-ss")
-            .arg(format!("{seconds:.3}"))
-            .arg("-c:v")
-            .arg("libx264")
-            .arg("-preset")
-            .arg("medium")
-            .arg("-crf")
-            .arg("23");
-        if keep_audio {
-            cmd.arg("-c:a").arg("aac").arg("-b:a").arg("192k");
-        } else {
-            cmd.arg("-an");
-        }
-        let ok = matches!(cmd.arg("-y").arg(&target).output(), Ok(o) if o.status.success());
+        let mut pipeline = FFmpegPipeline::new(base);
+        pipeline.cmd.arg("-v").arg("error");
+        pipeline.add_input(&file, false);
+        pipeline.cmd.arg("-ss").arg(format!("{seconds:.3}"));
+        pipeline.apply_canonical_video_params();
+        pipeline.apply_canonical_audio_params(keep_audio);
+        let ok = pipeline.run(&target);
         if ok && overwrite {
             let _ = fs::rename(&target, &file);
         }
@@ -10553,7 +10601,13 @@ fn run_crop(args: &[OsString]) -> i32 {
             if crop_x + w > info.width || crop_y + h > info.height {
                 lines.push(format!(
                     "Skip (crop {}x{}+{}+{} exceeds {}x{}): {}",
-                    w, h, crop_x, crop_y, info.width, info.height, file.display()
+                    w,
+                    h,
+                    crop_x,
+                    crop_y,
+                    info.width,
+                    info.height,
+                    file.display()
                 ));
                 continue;
             }
@@ -10810,7 +10864,7 @@ fn chop_video(
         let mut pipeline = FFmpegPipeline::new(root);
         pipeline.cmd.arg("-ss").arg(format!("{current_start:.3}"));
         pipeline.cmd.arg("-i").arg(input);
-        
+
         let remaining = total_duration - current_start;
         let this_duration = if remaining < segment_duration {
             remaining
@@ -10823,7 +10877,11 @@ fn chop_video(
         pipeline.apply_canonical_audio_params(has_audio_stream(input, root));
 
         if !pipeline.run(&out_path) {
-            let msg = format!("Failed to create segment {} for {}", segment_idx, input.display());
+            let msg = format!(
+                "Failed to create segment {} for {}",
+                segment_idx,
+                input.display()
+            );
             eprintln!("{msg}");
             lines.push(msg);
             success = false;
@@ -10832,12 +10890,14 @@ fn chop_video(
 
         println!("  ✓ {}", out_path.display());
         lines.push(format!("  OK: {}", out_path.display()));
-        
+
         current_start += this_duration;
         segment_idx += 1;
-        
+
         // Safety break for extremely small durations
-        if this_duration < 0.1 { break; }
+        if this_duration < 0.1 {
+            break;
+        }
     }
 
     success
@@ -11293,11 +11353,8 @@ fn run_tile(args: &[OsString]) -> i32 {
             if distribution_mode != "none" {
                 images = order_files(images, &distribution_mode);
             }
-            images = apply_source_repeat_policy(
-                images,
-                &source_repeat_policy,
-                &mut used_sources_global,
-            );
+            images =
+                apply_source_repeat_policy(images, &source_repeat_policy, &mut used_sources_global);
             images = limit_images_by_duration(&images, opts.max_total_duration, image_duration);
             if preview_limit != usize::MAX && images.len() > preview_limit {
                 if distribution_mode == "random" || distribution_mode == "shuffle-round-robin" {
@@ -11429,16 +11486,16 @@ fn run_tile(args: &[OsString]) -> i32 {
             final_opts.audio_tiles = available;
         }
     }
-    let final_cmd = build_tiled_command(
+    let final_pipeline = build_tiled_command(
         &final_opts,
         &tile_paths,
         &tile_crop_positions,
         &target_duration,
-        &output_path,
+        &root,
         custom_dims.as_ref().or(adaptive_dims.as_ref()),
     );
     println!("[Final] Compositing tiled output...");
-    let final_ok = run_command_output(final_cmd);
+    let final_ok = final_pipeline.run(&output_path);
     cleanup_temp_files(&tile_paths, &temp_dir);
 
     if final_ok {
@@ -12354,50 +12411,16 @@ fn create_tile_video_simple(files: &[PathBuf], output: &Path, root: &Path) -> bo
         return false;
     }
     if files.len() == 1 {
-        let status = Command::new("ffmpeg")
-            .arg("-i")
-            .arg(&files[0])
-            .arg("-c:v")
-            .arg("libx264")
-            .arg("-preset")
-            .arg("medium")
-            .arg("-crf")
-            .arg("23")
-            .arg("-c:a")
-            .arg("aac")
-            .arg("-b:a")
-            .arg("192k")
-            .arg("-pix_fmt")
-            .arg("yuv420p")
-            .arg("-y")
-            .arg(output)
-            .current_dir(root)
-            .output();
-        return match status {
-            Ok(out) if out.status.success() => true,
-            Ok(out) => {
-                if !out.stderr.is_empty() {
-                    eprintln!(
-                        "ffmpeg failed creating single-file tile from {}:",
-                        files[0].display()
-                    );
-                    eprintln!("{}", String::from_utf8_lossy(&out.stderr));
-                }
-                false
-            }
-            Err(err) => {
-                eprintln!(
-                    "error running ffmpeg for single-file tile from {}: {err}",
-                    files[0].display()
-                );
-                false
-            }
-        };
+        let mut pipeline = FFmpegPipeline::new(root);
+        pipeline.add_input(&files[0], false);
+        pipeline.apply_canonical_video_params();
+        pipeline.apply_canonical_audio_params(has_audio_stream(&files[0], root));
+        return pipeline.run(output);
     }
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut pipeline = FFmpegPipeline::new(root);
     for f in files {
-        cmd.arg("-i").arg(f);
+        pipeline.add_input(f, false);
     }
     let mut filter_parts: Vec<String> = Vec::new();
     let mut concat_inputs: Vec<String> = Vec::new();
@@ -12429,46 +12452,10 @@ fn create_tile_video_simple(files: &[PathBuf], output: &Path, root: &Path) -> bo
         concat_inputs.join(""),
         files.len()
     ));
-    let filter_complex = filter_parts.join(";");
-
-    let out = cmd
-        .arg("-filter_complex")
-        .arg(filter_complex)
-        .arg("-map")
-        .arg("[outv]")
-        .arg("-map")
-        .arg("[outa]")
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-preset")
-        .arg("medium")
-        .arg("-crf")
-        .arg("23")
-        .arg("-c:a")
-        .arg("aac")
-        .arg("-b:a")
-        .arg("192k")
-        .arg("-pix_fmt")
-        .arg("yuv420p")
-        .arg("-y")
-        .arg(output)
-        .current_dir(root)
-        .output();
-
-    match out {
-        Ok(out) if out.status.success() => true,
-        Ok(out) => {
-            if !out.stderr.is_empty() {
-                eprintln!("ffmpeg failed creating concatenated tile:");
-                eprintln!("{}", String::from_utf8_lossy(&out.stderr));
-            }
-            false
-        }
-        Err(err) => {
-            eprintln!("error running ffmpeg for concatenated tile: {err}");
-            false
-        }
-    }
+    pipeline.with_filter_complex(filter_parts.join(";"), "[outv]", Some("[outa]"));
+    pipeline.apply_canonical_video_params();
+    pipeline.apply_canonical_audio_params(true);
+    pipeline.run(output)
 }
 
 fn create_tile_video_with_options(
@@ -12486,7 +12473,7 @@ fn create_tile_video_with_options(
     }
 
     let mut intermediate_files = Vec::<PathBuf>::new();
-    
+
     // Always normalize to canonical contract (CFR, fixed audio, etc.)
     // This prevents timing drift across tiles and scenarios.
     for (i, file) in files.iter().enumerate() {
@@ -12499,10 +12486,10 @@ fn create_tile_video_with_options(
                 .map(|d| d.as_millis())
                 .unwrap_or(0)
         ));
-        
+
         let mut pipeline = FFmpegPipeline::new(root);
         pipeline.cmd.arg("-i").arg(file);
-        
+
         if let Some(trim_dur) = trim_duration {
             pipeline.set_duration(trim_dur);
         }
@@ -12602,35 +12589,22 @@ fn create_image_tile(
         return false;
     }
 
-    let vf = "fps=30,format=yuv420p";
-    let mut cmd = Command::new("ffmpeg");
-    if force_cfr {
-        cmd.arg("-fflags").arg("+genpts");
-    }
-    cmd.arg("-f")
+    let mut pipeline = FFmpegPipeline::new(root);
+    pipeline
+        .cmd
+        .arg("-f")
         .arg("concat")
         .arg("-safe")
         .arg("0")
         .arg("-i")
-        .arg(&list_file)
-        .arg("-vf")
-        .arg(vf)
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-preset")
-        .arg("medium")
-        .arg("-crf")
-        .arg("23")
-        .arg("-pix_fmt")
-        .arg("yuv420p")
-        .arg("-an");
-    if force_cfr {
-        cmd.arg("-fps_mode").arg("cfr");
-    }
-    let out = cmd.arg("-y").arg(output).current_dir(root).output();
+        .arg(&list_file);
+    pipeline.apply_canonical_video_params();
+    pipeline.apply_canonical_audio_params(false);
+    let out = pipeline.run(output);
 
     let _ = fs::remove_file(&list_file);
-    matches!(out, Ok(o) if o.status.success())
+    let _ = force_cfr;
+    out
 }
 
 fn build_atempo_filter(speed: f64) -> String {
@@ -12719,7 +12693,7 @@ fn reflow_adaptive_layout(layout: &str, dims: &mut AdaptiveDimensions, scale: Op
                 let main_w = tiles[0].w;
                 let main_h = tiles[0].h;
                 let pip_w = tiles[1].w;
-                let pip_h = tiles[1].h;
+                let _pip_h = tiles[1].h;
                 tiles[0].x = 0;
                 tiles[0].y = 0;
                 tiles[1].x = main_w.saturating_sub(pip_w + margin);
@@ -13306,15 +13280,12 @@ fn build_tiled_command(
     tile_paths: &[PathBuf],
     tile_crop_positions: &[String],
     target_duration: &f64,
-    output_path: &Path,
+    root: &Path,
     per_tile_dims: Option<&AdaptiveDimensions>,
-) -> Command {
-    let mut cmd = Command::new("ffmpeg");
+) -> FFmpegPipeline {
+    let mut pipeline = FFmpegPipeline::new(root);
     for p in tile_paths {
-        if !opts.no_repeat {
-            cmd.arg("-stream_loop").arg("-1");
-        }
-        cmd.arg("-i").arg(p);
+        pipeline.add_input(p, !opts.no_repeat);
     }
 
     let mut filter_parts: Vec<String> = Vec::new();
@@ -14036,59 +14007,19 @@ fn build_tiled_command(
         video_map = "[outv_even]".to_string();
     }
 
-    // Enforce Canonical Contract on Final Output
-    cmd.arg("-fflags").arg("+genpts");
-    
-    cmd.arg("-filter_complex")
-        .arg(filter_parts.join(";"))
-        .arg("-map")
-        .arg(video_map);
-
-    if opts.audio_enabled && !filtered_audio_tiles.is_empty() {
-        cmd.arg("-map").arg("[outa]");
-    }
-
-    cmd.arg("-c:v")
-        .arg("libx264")
-        .arg("-preset")
-        .arg("medium")
-        .arg("-crf")
-        .arg("23")
-        .arg("-pix_fmt")
-        .arg("yuv420p");
-
-    if opts.audio_enabled && !filtered_audio_tiles.is_empty() {
-        cmd.arg("-c:a").arg("aac").arg("-b:a").arg("192k")
-           .arg("-ar").arg("48000").arg("-ac").arg("2");
+    let audio_map = if opts.audio_enabled && !filtered_audio_tiles.is_empty() {
+        Some("[outa]")
     } else {
-        cmd.arg("-an");
-    }
-
-    // Always enforce CFR in final output to prevent drift
-    cmd.arg("-vsync").arg("cfr").arg("-fps_mode").arg("cfr");
-
-    cmd.arg("-t")
-        .arg(format!("{:.6}", target_duration))
-        .arg("-y")
-        .arg(output_path);
-
-    cmd
-}
-
-fn run_command_output(mut cmd: Command) -> bool {
-    match cmd.output() {
-        Ok(out) if out.status.success() => true,
-        Ok(out) => {
-            if !out.stderr.is_empty() {
-                eprintln!("{}", String::from_utf8_lossy(&out.stderr));
-            }
-            false
-        }
-        Err(err) => {
-            eprintln!("error running command: {err}");
-            false
-        }
-    }
+        None::<&str>
+    };
+    pipeline.with_filter_complex(filter_parts.join(";"), video_map, audio_map);
+    pipeline.apply_canonical_video_params();
+    pipeline.apply_canonical_audio_params(opts.audio_enabled && !filtered_audio_tiles.is_empty());
+    pipeline
+        .cmd
+        .arg("-t")
+        .arg(format!("{:.6}", target_duration));
+    pipeline
 }
 
 fn resolve_output_no_overwrite(path: PathBuf) -> PathBuf {
@@ -15070,28 +15001,13 @@ fn split_video_into_scenes(
     let mut success = 0usize;
     for (i, (start, end)) in scenes.iter().enumerate() {
         let out_path = output_dir.join(format!("{prefix}-Scene-{:03}.mp4", i + 1));
-        let status = Command::new("ffmpeg")
-            .arg("-i")
-            .arg(video)
-            .arg("-ss")
-            .arg(format!("{start:.6}"))
-            .arg("-to")
-            .arg(format!("{end:.6}"))
-            .arg("-c:v")
-            .arg("libx264")
-            .arg("-preset")
-            .arg("medium")
-            .arg("-crf")
-            .arg("23")
-            .arg("-c:a")
-            .arg("aac")
-            .arg("-b:a")
-            .arg("192k")
-            .arg("-y")
-            .arg(&out_path)
-            .current_dir(root)
-            .output();
-        if matches!(status, Ok(s) if s.status.success())
+        let mut pipeline = FFmpegPipeline::new(root);
+        pipeline.add_input(video, false);
+        pipeline.cmd.arg("-ss").arg(format!("{start:.6}"));
+        pipeline.cmd.arg("-to").arg(format!("{end:.6}"));
+        pipeline.apply_canonical_video_params();
+        pipeline.apply_canonical_audio_params(true);
+        if pipeline.run(&out_path)
             && fs::metadata(&out_path)
                 .map(|m| m.len() > 0)
                 .unwrap_or(false)
@@ -15294,9 +15210,9 @@ fn concat_simple_cut(files: &[PathBuf], output: &Path, root: &Path) -> bool {
         return false;
     }
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut pipeline = FFmpegPipeline::new(root);
     for f in files {
-        cmd.arg("-i").arg(f);
+        pipeline.add_input(f, false);
     }
     let mut filter_parts: Vec<String> = Vec::new();
     let mut concat_inputs: Vec<String> = Vec::new();
@@ -15328,50 +15244,10 @@ fn concat_simple_cut(files: &[PathBuf], output: &Path, root: &Path) -> bool {
         concat_inputs.join(""),
         files.len()
     ));
-    let filter_complex = filter_parts.join(";");
-
-    let out = cmd
-        .arg("-filter_complex")
-        .arg(filter_complex)
-        .arg("-map")
-        .arg("[outv]")
-        .arg("-map")
-        .arg("[outa]")
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-preset")
-        .arg("medium")
-        .arg("-crf")
-        .arg("23")
-        .arg("-fps_mode")
-        .arg("cfr")
-        .arg("-c:a")
-        .arg("aac")
-        .arg("-b:a")
-        .arg("192k")
-        .arg("-pix_fmt")
-        .arg("yuv420p")
-        .arg("-movflags")
-        .arg("+faststart")
-        .arg("-y")
-        .arg(output)
-        .current_dir(root)
-        .output();
-
-    match out {
-        Ok(out) if out.status.success() => true,
-        Ok(out) => {
-            if !out.stderr.is_empty() {
-                eprintln!("ffmpeg failed creating concatenated output:");
-                eprintln!("{}", String::from_utf8_lossy(&out.stderr));
-            }
-            false
-        }
-        Err(err) => {
-            eprintln!("error running ffmpeg for concatenated output: {err}");
-            false
-        }
-    }
+    pipeline.with_filter_complex(filter_parts.join(";"), "[outv]", Some("[outa]"));
+    pipeline.apply_canonical_video_params();
+    pipeline.apply_canonical_audio_params(true);
+    pipeline.run(output)
 }
 
 fn concat_with_transitions(
@@ -15417,48 +15293,14 @@ fn concat_with_transitions(
         build_fadeblack_filter(&infos, use_duration, width, height)
     };
 
-    let mut cmd = Command::new("ffmpeg");
+    let mut pipeline = FFmpegPipeline::new(root);
     for file in files {
-        cmd.arg("-i").arg(file);
+        pipeline.add_input(file, false);
     }
-    cmd.arg("-filter_complex")
-        .arg(filter)
-        .arg("-map")
-        .arg("[outv]")
-        .arg("-map")
-        .arg("[outa]")
-        .arg("-c:v")
-        .arg("libx264")
-        .arg("-pix_fmt")
-        .arg("yuv420p")
-        .arg("-preset")
-        .arg("medium")
-        .arg("-crf")
-        .arg("23")
-        .arg("-fps_mode")
-        .arg("cfr")
-        .arg("-c:a")
-        .arg("aac")
-        .arg("-b:a")
-        .arg("192k")
-        .arg("-movflags")
-        .arg("+faststart")
-        .arg("-y")
-        .arg(output)
-        .current_dir(root);
-
-    match cmd.output() {
-        Ok(out) => {
-            if !out.status.success() {
-                eprintln!("ffmpeg stderr:\n{}", String::from_utf8_lossy(&out.stderr));
-            }
-            out.status.success()
-        }
-        Err(err) => {
-            eprintln!("error running ffmpeg: {err}");
-            false
-        }
-    }
+    pipeline.with_filter_complex(filter, "[outv]", Some("[outa]"));
+    pipeline.apply_canonical_video_params();
+    pipeline.apply_canonical_audio_params(true);
+    pipeline.run(output)
 }
 
 fn build_xfade_filter(infos: &[ClipInfo], duration: f64, width: u32, height: u32) -> String {
@@ -15510,7 +15352,7 @@ fn build_xfade_filter(infos: &[ClipInfo], duration: f64, width: u32, height: u32
             "[{current_v}][v{i}]xfade=transition=fade:duration={duration}:offset={:.3}[{next_v}]",
             offsets[i]
         ));
-        
+
         // Ensure audio fades are consistent
         parts.push(format!(
             "[{current_a}][a{i}]acrossfade=d={duration}:curve1=exp:curve2=exp[{next_a}]"
@@ -15730,7 +15572,14 @@ fn strip_audio_video(input: &Path, output: &Path, root: &Path) -> bool {
     }
 }
 
-fn trim_video(input: &Path, output: &Path, trim_start: f64, trim_end: f64, no_audio: bool, root: &Path) -> bool {
+fn trim_video(
+    input: &Path,
+    output: &Path,
+    trim_start: f64,
+    trim_end: f64,
+    no_audio: bool,
+    root: &Path,
+) -> bool {
     let duration = match get_video_duration(input, root) {
         Some(d) => d,
         None => return false,
@@ -15741,15 +15590,15 @@ fn trim_video(input: &Path, output: &Path, trim_start: f64, trim_end: f64, no_au
     }
 
     let mut pipeline = FFmpegPipeline::new(root);
-    
+
     // Build the command using the contract
     pipeline.cmd.arg("-i").arg(input);
     pipeline.cmd.arg("-ss").arg(format!("{trim_start:.3}"));
     pipeline.cmd.arg("-t").arg(format!("{new_duration:.3}"));
-    
+
     pipeline.apply_canonical_video_params();
     pipeline.apply_canonical_audio_params(!no_audio);
-    
+
     pipeline.run(output)
 }
 
@@ -16153,7 +16002,7 @@ fn check_yt_dlp(root: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn yt_dlp_video_id(root: &Path, url: &str) -> Option<String> {
+fn _yt_dlp_video_id(root: &Path, url: &str) -> Option<String> {
     let out = Command::new("yt-dlp")
         .args(["--no-playlist", "--print", "id"])
         .arg(url)
