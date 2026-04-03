@@ -57,3 +57,4 @@ skills-lock.json
 
 # pemguin managed
 .pemguin.toml
+.pemguin/
