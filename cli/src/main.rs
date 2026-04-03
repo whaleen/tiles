@@ -531,6 +531,9 @@ struct FFmpegPipeline {
     has_video: bool,
     has_audio: bool,
     mode: PipelineMode,
+    // Output codec args deferred in Complex mode so they are emitted
+    // AFTER -filter_complex and -map, which ffmpeg requires.
+    output_args: Vec<std::ffi::OsString>,
 }
 
 impl FFmpegPipeline {
@@ -544,6 +547,7 @@ impl FFmpegPipeline {
             has_video: false,
             has_audio: false,
             mode: PipelineMode::Simple,
+            output_args: Vec::new(),
         }
     }
 
@@ -570,9 +574,12 @@ impl FFmpegPipeline {
     }
 
     fn apply_video_output_codec_args(&mut self) -> &mut Self {
-        self.cmd.args(["-fps_mode", "cfr"]);
-        self.cmd
-            .args(["-c:v", "libx264", "-preset", "medium", "-crf", "23"]);
+        let args: &[&str] = &["-fps_mode", "cfr", "-c:v", "libx264", "-preset", "medium", "-crf", "23"];
+        if matches!(self.mode, PipelineMode::Complex { .. }) {
+            self.output_args.extend(args.iter().map(std::ffi::OsString::from));
+        } else {
+            self.cmd.args(args);
+        }
         self.has_video = true;
         self
     }
@@ -598,12 +605,21 @@ impl FFmpegPipeline {
     }
 
     fn apply_canonical_audio_params(&mut self, enabled: bool) -> &mut Self {
+        let is_complex = matches!(self.mode, PipelineMode::Complex { .. });
         if !enabled {
-            self.cmd.arg("-an");
+            if is_complex {
+                self.output_args.push(std::ffi::OsString::from("-an"));
+            } else {
+                self.cmd.arg("-an");
+            }
         } else {
             // Enforce fixed sample rate and layout
-            self.cmd
-                .args(["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]);
+            let args: &[&str] = &["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"];
+            if is_complex {
+                self.output_args.extend(args.iter().map(std::ffi::OsString::from));
+            } else {
+                self.cmd.args(args);
+            }
         }
         self.has_audio = enabled;
         self
@@ -633,6 +649,8 @@ impl FFmpegPipeline {
                 if let Some(am) = audio_map {
                     self.cmd.arg("-map").arg(am);
                 }
+                // Emit deferred output codec args AFTER maps, as ffmpeg requires
+                self.cmd.args(&self.output_args);
             }
             PipelineMode::Simple => {}
         }
