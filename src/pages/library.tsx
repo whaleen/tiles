@@ -78,7 +78,6 @@ export function LibraryPage({
     error: detailError,
     refresh: refreshDetail,
   } = useProjectDetail(project);
-  const { videos, loading: videosLoading, refresh, removeVideo } = useVideos(project, search);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [editorVideo, setEditorVideo] = useState<VideoEntry | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
@@ -92,6 +91,13 @@ export function LibraryPage({
   const [showTimeline, setShowTimeline] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [rootOnly, setRootOnly] = useState(true);
+  const videoScope = useMemo(() => {
+    if (selectedFolder) {
+      return { folder: selectedFolder, recursive: false, search };
+    }
+    return { recursive: !rootOnly, search };
+  }, [rootOnly, search, selectedFolder]);
+  const { videos, loading: videosLoading, refresh, removeVideo } = useVideos(project, videoScope);
 
   const { order, saveOrder } = useFolderOrder(project, selectedFolder);
   const lastSelectedRef = useRef<string | null>(null);
@@ -154,25 +160,14 @@ export function LibraryPage({
       window.removeEventListener("editor-navigate", handleEditorNavigate);
   }, [handleEditorNavigate]);
 
-  const filteredVideos = useMemo(() => {
-    let result = videos;
-    if (project && selectedFolder) {
-      const prefix = `${project}/${selectedFolder}`;
-      result = result.filter(
-        (v) => v.folder === prefix || v.folder.startsWith(`${prefix}/`)
-      );
-    } else if (project && rootOnly && !selectedFolder) {
-      result = result.filter((v) => v.folder === project);
-    }
-    return result;
-  }, [videos, project, selectedFolder, rootOnly]);
+  const filteredVideos = videos;
 
   const orderedVideos = useMemo(() => {
     if (order.length === 0) return filteredVideos;
-    const orderIndex = new Map(order.map((name, i) => [name, i]));
+    const orderIndex = new Map(order.map((relPath, i) => [relPath, i]));
     return [...filteredVideos].sort((a, b) => {
-      const ai = orderIndex.get(a.name);
-      const bi = orderIndex.get(b.name);
+      const ai = orderIndex.get(a.rel_path);
+      const bi = orderIndex.get(b.rel_path);
       if (ai !== undefined && bi !== undefined) return ai - bi;
       if (ai !== undefined) return -1;
       if (bi !== undefined) return 1;
@@ -305,9 +300,7 @@ export function LibraryPage({
         path: folderPath,
         new_name: trimmed,
       });
-      if (selectedFolder === folderPath) {
-        setSelectedFolder(res.path);
-      }
+      setSelectedFolder((current) => rewriteFolderPrefix(current, folderPath, res.path));
       toast.success("Folder renamed");
       await refreshLibraryData();
     } catch (err) {
@@ -335,9 +328,7 @@ export function LibraryPage({
         path: folderPath,
         target_parent: targetParent,
       });
-      if (selectedFolder === folderPath) {
-        setSelectedFolder(res.path);
-      }
+      setSelectedFolder((current) => rewriteFolderPrefix(current, folderPath, res.path));
       toast.success("Folder moved");
       await refreshLibraryData();
     } catch (err) {
@@ -413,8 +404,8 @@ export function LibraryPage({
         toast.success(`Moved ${res.moved} video${res.moved !== 1 ? "s" : ""}`);
         // Optimistic cache update: remove moved videos from the current list immediately
         const movedFromSet = new Set(res.moved_paths.map((p) => p.from));
-        queryClient.setQueryData<VideoEntry[]>(
-          queryKeys.videos.list(project, search),
+        queryClient.setQueriesData<VideoEntry[]>(
+          { queryKey: queryKeys.videos.all },
           (prev) => (prev ? prev.filter((v) => !movedFromSet.has(v.rel_path)) : [])
         );
       } else {
@@ -439,7 +430,7 @@ export function LibraryPage({
       onDragOver: (event: DragEvent<HTMLButtonElement>) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
-        setDragOverFolderPath(path);
+        if (dragOverFolderPath !== path) setDragOverFolderPath(path);
       },
       onDragLeave: () => {
         if (dragOverFolderPath === path) {
@@ -451,9 +442,16 @@ export function LibraryPage({
         setDragOverFolderPath(null);
         const data = event.dataTransfer.getData("application/tiles-drag");
         if (!data) return;
-        const paths = JSON.parse(data) as string[];
-        if (paths.length === 0) return;
-        void moveVideosToFolder(path, paths);
+        try {
+          const paths = JSON.parse(data) as unknown;
+          if (!Array.isArray(paths) || !paths.every((item) => typeof item === "string")) {
+            return;
+          }
+          if (paths.length === 0) return;
+          void moveVideosToFolder(path, paths);
+        } catch {
+          toast.error("Invalid drag payload");
+        }
       },
     };
   }
@@ -1096,3 +1094,16 @@ const FolderThumbMosaic = memo(function FolderThumbMosaic({ thumbs, label }: { t
     </div>
   );
 });
+
+function rewriteFolderPrefix(
+  current: string | undefined,
+  from: string,
+  to: string
+): string | undefined {
+  if (!current) return current;
+  if (current === from) return to;
+  if (current.startsWith(`${from}/`)) {
+    return `${to}${current.slice(from.length)}`;
+  }
+  return current;
+}

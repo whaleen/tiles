@@ -5,7 +5,7 @@ use axum::response::Response;
 use axum::routing::get;
 use std::io::SeekFrom;
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 pub fn pick_port() -> u16 {
@@ -60,7 +60,9 @@ async fn serve_src(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response,
     let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/files");
     let decoded = url_decode(rel.trim_start_matches('/'));
-    let path = root_path.join("src").join(&decoded);
+    let Some(path) = safe_join(&root_path.join("src"), &decoded) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
     if !path.exists() || !path.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -71,7 +73,9 @@ async fn serve_src_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Res
     let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/thumbs");
     let decoded = url_decode(rel.trim_start_matches('/'));
-    let src = root_path.join("src").join(&decoded);
+    let Some(src) = safe_join(&root_path.join("src"), &decoded) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
     if !src.exists() || !src.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -83,7 +87,10 @@ async fn serve_src_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Res
 async fn serve_out(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {
     let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/outfiles");
-    let path = root_path.join(rel.trim_start_matches('/'));
+    let decoded = url_decode(rel.trim_start_matches('/'));
+    let Some(path) = safe_join(&root_path, &decoded) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
     if !path.exists() || !path.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -94,7 +101,9 @@ async fn serve_out_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Res
     let root_path = root.read().unwrap().clone();
     let rel = strip_prefix(req.uri().path(), "/outthumbs");
     let decoded = url_decode(rel.trim_start_matches('/'));
-    let src = root_path.join(&decoded);
+    let Some(src) = safe_join(&root_path, &decoded) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
     if !src.exists() || !src.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -137,7 +146,10 @@ async fn serve_with_range(path: &Path, headers: &HeaderMap) -> Result<Response, 
                     .status(StatusCode::PARTIAL_CONTENT)
                     .header(header::CONTENT_TYPE, ct)
                     .header(header::ACCEPT_RANGES, "bytes")
-                    .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{total}"))
+                    .header(
+                        header::CONTENT_RANGE,
+                        format!("bytes {start}-{end}/{total}"),
+                    )
                     .header(header::CONTENT_LENGTH, len.to_string())
                     .body(Body::from_stream(stream))
                     .unwrap());
@@ -158,7 +170,9 @@ async fn serve_with_range(path: &Path, headers: &HeaderMap) -> Result<Response, 
 }
 
 async fn serve_static(path: &Path) -> Result<Response, StatusCode> {
-    let bytes = tokio::fs::read(path).await.map_err(|_| StatusCode::NOT_FOUND)?;
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
     Ok(Response::builder()
         .header(header::CONTENT_TYPE, content_type(path))
         .body(Body::from(bytes))
@@ -169,8 +183,27 @@ fn strip_prefix<'a>(path: &'a str, prefix: &str) -> &'a str {
     path.strip_prefix(prefix).unwrap_or(path)
 }
 
+fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() {
+        return None;
+    }
+    if rel_path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(base.join(rel_path))
+}
+
 fn content_type(path: &Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase()).as_deref() {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .as_deref()
+    {
         Some("mp4") | Some("m4v") => "video/mp4",
         Some("webm") => "video/webm",
         Some("mov") => "video/quicktime",
@@ -179,6 +212,9 @@ fn content_type(path: &Path) -> &'static str {
         Some("jpg") | Some("jpeg") => "image/jpeg",
         Some("png") => "image/png",
         Some("webp") => "image/webp",
+        Some("json") | Some("json3") => "application/json",
+        Some("vtt") => "text/vtt; charset=utf-8",
+        Some("srt") | Some("txt") => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     }
 }
@@ -197,7 +233,11 @@ fn url_decode(input: &str) -> String {
                 continue;
             }
         }
-        out.push(if bytes[i] == b'+' { ' ' } else { bytes[i] as char });
+        out.push(if bytes[i] == b'+' {
+            ' '
+        } else {
+            bytes[i] as char
+        });
         i += 1;
     }
     out

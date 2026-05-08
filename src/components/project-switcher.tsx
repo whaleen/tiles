@@ -1,8 +1,8 @@
+import { useState } from "react"
 import { ChevronsUpDown, Folder, Plus } from "lucide-react"
 
-import { invoke } from "@tauri-apps/api/core"
 import { useProjects } from "@/hooks/use-projects"
-import { toast } from "sonner"
+import { CreateProjectDialog } from "@/components/create-project-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,11 +27,13 @@ export function ProjectSwitcher({
   onProjectChange: (project?: string) => void
 }) {
   const { isMobile } = useSidebar()
-  const { projects, refresh } = useProjects()
+  const { projects } = useProjects()
+  const [createOpen, setCreateOpen] = useState(false)
 
   const label = selectedProject || "All Projects"
 
   return (
+    <>
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
@@ -86,23 +88,8 @@ export function ProjectSwitcher({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="gap-2 p-2"
-              onClick={async () => {
-                const name = window.prompt("New project name")
-                if (!name) return
-                const trimmed = name.trim()
-                if (!trimmed) return
-                try {
-                  const res = await invoke<{ name: string }>("create_project", {
-                    name: trimmed,
-                  })
-                  await refresh()
-                  onProjectChange(res.name)
-                  toast.success("Project created", { description: res.name })
-                } catch (err) {
-                  const message =
-                    err instanceof Error ? err.message : "Failed to create project"
-                  toast.error(message)
-                }
+              onSelect={() => {
+                window.setTimeout(() => setCreateOpen(true), 0)
               }}
             >
               <div className="flex size-6 items-center justify-center rounded-md border bg-background">
@@ -114,5 +101,11 @@ export function ProjectSwitcher({
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
+    <CreateProjectDialog
+      open={createOpen}
+      onOpenChange={setCreateOpen}
+      onProjectCreated={onProjectChange}
+    />
+    </>
   )
 }

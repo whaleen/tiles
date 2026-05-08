@@ -3,7 +3,6 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::ffprobe;
 use crate::models::{OutputEntry, OutputRun, ProjectDetail, ProjectSummary, VideoEntry};
 
 const VIDEO_EXTENSIONS: &[&str] = &[
@@ -31,6 +30,13 @@ pub fn is_image_file(path: &Path) -> bool {
 
 pub fn is_media_file(path: &Path) -> bool {
     is_video_file(path) || is_image_file(path)
+}
+
+fn should_skip_source_dir(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|s| s.to_str()),
+        Some("outputs" | ".thumbs" | ".tiles" | ".git")
+    )
 }
 
 pub fn list_projects(root: &Path) -> Vec<ProjectSummary> {
@@ -80,6 +86,9 @@ pub fn get_project_detail(root: &Path, name: &str) -> Option<ProjectDetail> {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
+                if should_skip_source_dir(&path) {
+                    continue;
+                }
                 if let Ok(rel) = path.strip_prefix(&project_dir) {
                     let rel_str = rel.to_string_lossy().replace('\\', "/");
                     if !rel_str.is_empty() {
@@ -102,7 +111,13 @@ pub fn get_project_detail(root: &Path, name: &str) -> Option<ProjectDetail> {
     })
 }
 
-pub fn list_videos(root: &Path, project: Option<&str>, search: Option<&str>) -> Vec<VideoEntry> {
+pub fn list_videos(
+    root: &Path,
+    project: Option<&str>,
+    search: Option<&str>,
+    folder: Option<&str>,
+    recursive: Option<bool>,
+) -> Vec<VideoEntry> {
     let src = root.join("src");
     if !src.exists() || !src.is_dir() {
         return Vec::new();
@@ -110,7 +125,19 @@ pub fn list_videos(root: &Path, project: Option<&str>, search: Option<&str>) -> 
 
     let start_dir = match project {
         Some(p) => {
-            let d = src.join(p);
+            if !is_safe_path_segment(p) {
+                return Vec::new();
+            }
+            let mut d = src.join(p);
+            if let Some(folder) = folder
+                .map(|f| f.trim_matches('/'))
+                .filter(|f| !f.is_empty())
+            {
+                if !is_safe_rel_path(folder) {
+                    return Vec::new();
+                }
+                d = d.join(folder);
+            }
             if !d.exists() || !d.is_dir() {
                 return Vec::new();
             }
@@ -119,6 +146,7 @@ pub fn list_videos(root: &Path, project: Option<&str>, search: Option<&str>) -> 
         None => src.clone(),
     };
 
+    let recursive = recursive.unwrap_or(true);
     let mut out = Vec::new();
     let mut stack = vec![start_dir];
     while let Some(dir) = stack.pop() {
@@ -129,7 +157,9 @@ pub fn list_videos(root: &Path, project: Option<&str>, search: Option<&str>) -> 
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                stack.push(path);
+                if recursive && !should_skip_source_dir(&path) {
+                    stack.push(path);
+                }
                 continue;
             }
             if !path.is_file() || !is_media_file(&path) {
@@ -161,16 +191,31 @@ pub fn list_videos(root: &Path, project: Option<&str>, search: Option<&str>) -> 
                 folder,
                 name,
                 rel_path,
-                duration: if is_video_file(&path) {
-                    ffprobe::get_video_duration(&path, root)
-                } else {
-                    None
-                },
+                // Keep directory scans cheap. Duration probing shells out to ffprobe and
+                // made Library/Tile Builder navigation pinwheel on large projects.
+                // Detailed metadata is still available through get_video_info when needed.
+                duration: None,
             });
         }
     }
     out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
     out
+}
+
+fn is_safe_path_segment(segment: &str) -> bool {
+    !segment.is_empty()
+        && !segment.starts_with('.')
+        && !segment.contains("..")
+        && !segment.contains('/')
+        && !segment.contains('\\')
+        && !segment.chars().any(|c| c.is_control())
+}
+
+fn is_safe_rel_path(path: &str) -> bool {
+    if path.is_empty() || path.starts_with('/') || path.contains("..") || path.contains('\\') {
+        return false;
+    }
+    path.split('/').all(is_safe_path_segment)
 }
 
 pub fn list_output_runs(
@@ -299,7 +344,14 @@ pub fn list_output_entries(root: &Path, rel_path: Option<&str>) -> Vec<OutputEnt
 }
 
 pub fn list_all_videos_recursive(root: &Path, rel_path: &str) -> Vec<OutputEntry> {
-    let base = root.join(rel_path.trim_matches('/'));
+    let rel = rel_path
+        .trim()
+        .trim_start_matches('/')
+        .trim_end_matches('/');
+    if !is_allowed_output_rel(rel) {
+        return Vec::new();
+    }
+    let base = root.join(rel);
     if !base.exists() || !base.is_dir() {
         return Vec::new();
     }
@@ -428,15 +480,24 @@ fn list_output_roots(root: &Path) -> Vec<OutputEntry> {
 }
 
 fn is_allowed_output_rel(rel: &str) -> bool {
+    if rel.is_empty()
+        || rel.starts_with('/')
+        || rel.contains('\\')
+        || rel
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return false;
+    }
     if rel == "outputs" || rel.starts_with("outputs/") {
         return true;
     }
     if rel.starts_with("src/") {
         let mut parts = rel.split('/');
         let _src = parts.next();
-        let _project = parts.next();
+        let project = parts.next();
         let outputs = parts.next();
-        return matches!(outputs, Some("outputs"));
+        return project.is_some() && matches!(outputs, Some("outputs"));
     }
     false
 }
@@ -574,7 +635,7 @@ fn collect_root_outputs(
                     Ok(v) => v.to_string_lossy().replace('\\', "/"),
                     Err(_) => continue,
                 };
-                let sample_url = format!("/api/media/outfiles/{}", url_encode_path(&run_rel));
+                let sample_url = format!("/outfiles/{}", url_encode_path(&run_rel));
                 let log_file = find_best_log(log_index, &tool, modified_epoch);
                 out.push(OutputRun {
                     project: "(global)".to_string(),
@@ -621,7 +682,7 @@ fn collect_root_outputs(
                 run_id,
                 run_rel,
                 sample_url: find_first_video_rel(root, &run_path)
-                    .map(|r| format!("/api/media/outfiles/{}", url_encode_path(&r))),
+                    .map(|r| format!("/outfiles/{}", url_encode_path(&r))),
                 log_file,
                 modified_epoch,
                 video_count,
@@ -684,7 +745,7 @@ fn collect_output_runs_in(
                     tool: tool.clone(),
                     run_id,
                     run_rel: format!("src/{}", rel),
-                    sample_url: Some(format!("/api/media/files/{}", url_encode_path(&rel))),
+                    sample_url: Some(format!("/files/{}", url_encode_path(&rel))),
                     log_file,
                     modified_epoch,
                     video_count: 1,
@@ -724,7 +785,7 @@ fn collect_output_runs_in(
             let project = project_from_folder(&folder);
             let video_count = count_videos_in_dir(&run_path);
             let sample_url = find_first_video_rel_src(src_root, &run_path)
-                .map(|r| format!("/api/media/files/{}", url_encode_path(&r)));
+                .map(|r| format!("/files/{}", url_encode_path(&r)));
             let log_file = find_best_log(log_index, &tool, modified_epoch);
             out.push(OutputRun {
                 project,
@@ -765,24 +826,34 @@ fn count_videos_in_dir(dir: &Path) -> usize {
 }
 
 fn find_first_video_rel(root: &Path, dir: &Path) -> Option<String> {
-    let entries = fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && is_video_file(&path) {
-            let rel = path.strip_prefix(root).ok()?;
-            return Some(rel.to_string_lossy().replace('\\', "/"));
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = fs::read_dir(current).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.is_file() && is_video_file(&path) {
+                let rel = path.strip_prefix(root).ok()?;
+                return Some(rel.to_string_lossy().replace('\\', "/"));
+            }
         }
     }
     None
 }
 
 fn find_first_video_rel_src(src_root: &Path, dir: &Path) -> Option<String> {
-    let entries = fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && is_video_file(&path) {
-            let rel = path.strip_prefix(src_root).ok()?;
-            return Some(rel.to_string_lossy().replace('\\', "/"));
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = fs::read_dir(current).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.is_file() && is_video_file(&path) {
+                let rel = path.strip_prefix(src_root).ok()?;
+                return Some(rel.to_string_lossy().replace('\\', "/"));
+            }
         }
     }
     None

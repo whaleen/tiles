@@ -10,8 +10,15 @@ pub fn list_videos(
     state: State<AppState>,
     project: Option<String>,
     search: Option<String>,
+    folder: Option<String>,
+    recursive: Option<bool>,
 ) -> Vec<VideoEntry> {
-    state.get_videos(project.as_deref(), search.as_deref())
+    state.get_videos(
+        project.as_deref(),
+        search.as_deref(),
+        folder.as_deref(),
+        recursive,
+    )
 }
 
 #[tauri::command]

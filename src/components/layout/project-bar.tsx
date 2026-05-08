@@ -1,7 +1,6 @@
 import { useProjects } from "@/hooks/use-projects";
-import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { CreateProjectDialog } from "@/components/create-project-dialog";
 import {
   Select,
   SelectContent,
@@ -46,7 +45,7 @@ export function ProjectBar({
   className,
   showLabel = true,
 }: ProjectBarProps) {
-  const { projects, refresh } = useProjects();
+  const { projects } = useProjects();
   const meta = tabMeta[activeTab] || { label: activeTab, icon: Library };
   const PageIcon = meta.icon;
 
@@ -82,30 +81,14 @@ export function ProjectBar({
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={async () => {
-              const name = window.prompt("New project name");
-              if (!name) return;
-              const trimmed = name.trim();
-              if (!trimmed) return;
-              try {
-                const res = await invoke<{ name: string }>("create_project", {
-                  name: trimmed,
-                });
-                await refresh();
-                onProjectChange(res.name);
-                toast.success("Project created", { description: res.name });
-              } catch (err) {
-                const message =
-                  err instanceof Error ? err.message : "Failed to create project";
-                toast.error(message);
-              }
-            }}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+          <CreateProjectDialog
+            onProjectCreated={onProjectChange}
+            trigger={(
+              <Button variant="outline" size="sm">
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
+          />
         </div>
       )}
     </div>

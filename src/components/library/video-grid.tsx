@@ -50,11 +50,11 @@ export const VideoGrid = memo(function VideoGrid({
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id || !onReorder) return;
-      const oldIndex = videos.findIndex((v) => v.name === active.id);
-      const newIndex = videos.findIndex((v) => v.name === over.id);
+      const oldIndex = videos.findIndex((v) => v.rel_path === active.id);
+      const newIndex = videos.findIndex((v) => v.rel_path === over.id);
       if (oldIndex === -1 || newIndex === -1) return;
       const reordered = arrayMove(videos, oldIndex, newIndex);
-      onReorder(reordered.map((v) => v.name));
+      onReorder(reordered.map((v) => v.rel_path));
     },
     [videos, onReorder]
   );
@@ -76,7 +76,7 @@ export const VideoGrid = memo(function VideoGrid({
         onDragEnd={handleDragEnd}
       >
         <SortableContext
-          items={videos.map((v) => v.name)}
+          items={videos.map((v) => v.rel_path)}
           strategy={rectSortingStrategy}
         >
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
@@ -136,7 +136,7 @@ function SortableVideoCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: video.name });
+  } = useSortable({ id: video.rel_path });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),

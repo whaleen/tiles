@@ -415,11 +415,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
   }, [tileOutputs, outputProject]);
 
   const latestOutputRel = latestOutput?.run_rel || null;
-  const latestOutputUrl = latestOutput?.sample_url
-    ? latestOutput.sample_url
-    : latestOutputRel
-      ? mediaUrlForRel(latestOutputRel)
-      : null;
+  const latestOutputUrl = latestOutputRel ? mediaUrlForRel(latestOutputRel) : null;
   const resolvedOutputRel = lastOutputRel || latestOutputRel;
   const resolvedOutputUrl =
     lastOutputRel && isRepoOutputPath(lastOutputRel)

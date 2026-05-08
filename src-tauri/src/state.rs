@@ -6,6 +6,8 @@ use std::time::Instant;
 use crate::models::{RunningAction, VideoEntry};
 
 /// Cached result from a video list scan.
+type VideoCacheKey = (Option<String>, Option<String>, Option<String>, Option<bool>);
+
 struct CachedVideoList {
     videos: Vec<VideoEntry>,
     created: Instant,
@@ -18,8 +20,8 @@ pub struct AppState {
     pub tiles_bin: PathBuf,
     /// Active actions currently running
     pub running_actions: Arc<Mutex<Vec<RunningAction>>>,
-    /// Cache for video list scans, keyed by (project, search)
-    video_cache: Mutex<HashMap<(Option<String>, Option<String>), CachedVideoList>>,
+    /// Cache for video list scans, keyed by (project, search, folder, recursive)
+    video_cache: Mutex<HashMap<VideoCacheKey, CachedVideoList>>,
 }
 
 /// How long cached video lists remain valid.
@@ -40,9 +42,16 @@ impl AppState {
         &self,
         project: Option<&str>,
         search: Option<&str>,
+        folder: Option<&str>,
+        recursive: Option<bool>,
     ) -> Vec<VideoEntry> {
         let root = self.root.read().unwrap().clone();
-        let key = (project.map(String::from), search.map(String::from));
+        let key = (
+            project.map(String::from),
+            search.map(String::from),
+            folder.map(String::from),
+            recursive,
+        );
         {
             if let Ok(cache) = self.video_cache.lock() {
                 if let Some(entry) = cache.get(&key) {
@@ -53,7 +62,8 @@ impl AppState {
             }
         }
 
-        let videos = crate::services::fs_scanner::list_videos(&root, project, search);
+        let videos =
+            crate::services::fs_scanner::list_videos(&root, project, search, folder, recursive);
 
         if let Ok(mut cache) = self.video_cache.lock() {
             cache.insert(

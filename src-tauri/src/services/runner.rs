@@ -24,7 +24,7 @@ pub fn run_action(
     })
 }
 
-fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
+pub(crate) fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
     let mut args: Vec<OsString> = Vec::new();
 
     for target in &req.targets {
@@ -107,7 +107,11 @@ fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
                 args.push("--end".into());
                 args.push(format!("{v}").into());
             }
-            if params.get("no_audio").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if params
+                .get("no_audio")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 args.push("--no-audio".into());
             }
         }
@@ -224,7 +228,7 @@ fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
-                args.push("--add-number".into());
+                args.push("--number".into());
             }
         }
         "slowmo" => {
@@ -341,7 +345,13 @@ fn action_supports_output(action: &str) -> bool {
 fn action_supports_overwrite(action: &str) -> bool {
     matches!(
         action,
-        "trim" | "strip-audio" | "chop" | "crop" | "slowmo" | "doctor-reencode" | "doctor-trim-start"
+        "trim"
+            | "strip-audio"
+            | "chop"
+            | "crop"
+            | "slowmo"
+            | "doctor-reencode"
+            | "doctor-trim-start"
     )
 }
 
@@ -703,13 +713,19 @@ fn project_output_dir(req: &ActionRunRequest) -> Option<String> {
     let mut project: Option<String> = None;
     for target in &req.targets {
         let normalized = target.replace('\\', "/");
-        let first = normalized.split('/').next()?.to_string();
+        let mut parts = normalized.split('/').filter(|part| !part.is_empty());
+        let first = parts.next()?;
+        let current = if first == "src" {
+            parts.next()?.to_string()
+        } else {
+            first.to_string()
+        };
         if let Some(existing) = &project {
-            if existing != &first {
+            if existing != &current {
                 return None;
             }
         } else {
-            project = Some(first);
+            project = Some(current);
         }
     }
     let project = project?;
@@ -768,4 +784,64 @@ fn run_subcommand(
     let _ = fs::write(&log_path, &combined);
     let status = output.status.code().unwrap_or(1);
     Ok((status, combined, log_path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn req(action: &str) -> ActionRunRequest {
+        ActionRunRequest {
+            action: action.to_string(),
+            targets: vec!["project-a/clip.mp4".to_string()],
+            target_type: "folders_or_videos".to_string(),
+            output_mode: "source".to_string(),
+            params: json!({}),
+        }
+    }
+
+    fn args_as_strings(req: &ActionRunRequest) -> Vec<String> {
+        build_args(req)
+            .into_iter()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn clean_numbering_uses_cli_flag_name() {
+        let request = ActionRunRequest {
+            action: "clean".to_string(),
+            targets: vec!["project-a".to_string()],
+            target_type: "folders".to_string(),
+            output_mode: "global".to_string(),
+            params: json!({ "mode": "rename", "add_number": true }),
+        };
+
+        let args = args_as_strings(&request);
+
+        assert!(args.contains(&"--number".to_string()));
+        assert!(!args.contains(&"--add-number".to_string()));
+    }
+
+    #[test]
+    fn project_output_dir_uses_project_from_relative_target() {
+        let args = args_as_strings(&req("slowmo"));
+
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair[0] == "--output" && pair[1] == "src/project-a/outputs/slowmo" }));
+    }
+
+    #[test]
+    fn alongside_output_uses_cli_token() {
+        let mut request = req("trim");
+        request.output_mode = "alongside".to_string();
+
+        let args = args_as_strings(&request);
+
+        assert!(args
+            .windows(2)
+            .any(|pair| { pair[0] == "--output" && pair[1] == "__alongside__" }));
+    }
 }

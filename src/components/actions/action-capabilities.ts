@@ -24,6 +24,7 @@ const ACTION_CAPS: Record<string, ActionCapability> = {
   loop: { allowOutput: true, allowOverwrite: false, allowAlongside: true },
   "yt-import": { allowOutput: true, allowOverwrite: false, allowAlongside: false },
   crop: { allowOutput: true, allowOverwrite: true, allowAlongside: true },
+  "doctor-reencode": { allowOutput: true, allowOverwrite: true, allowAlongside: true },
 };
 
 export function actionCapabilities(actionName: string | undefined) {

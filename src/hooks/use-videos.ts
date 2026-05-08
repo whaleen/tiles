@@ -4,13 +4,23 @@ import { invoke } from "@tauri-apps/api/core";
 import { queryKeys } from "@/lib/query-keys";
 import type { VideoEntry } from "@/types";
 
-export function useVideos(project?: string, search?: string) {
+type UseVideosOptions = {
+  search?: string;
+  folder?: string;
+  recursive?: boolean;
+};
+
+export function useVideos(project?: string, options: UseVideosOptions | string = {}) {
   const queryClient = useQueryClient();
-  const key = queryKeys.videos.list(project, search);
+  const normalizedOptions =
+    typeof options === "string" ? { search: options } : options;
+  const { search, folder, recursive } = normalizedOptions;
+  const key = queryKeys.videos.list(project, search, folder, recursive);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: key,
-    queryFn: () => invoke<VideoEntry[]>("list_videos", { project, search }),
+    queryFn: () =>
+      invoke<VideoEntry[]>("list_videos", { project, search, folder, recursive }),
     staleTime: 10_000,
   });
 

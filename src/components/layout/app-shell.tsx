@@ -15,6 +15,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Loader2 } from "lucide-react";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 const DashboardPage = lazy(() =>
   import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage }))
@@ -82,16 +83,18 @@ export function AppShell({ onChangeWorkspace }: { onChangeWorkspace?: () => void
           </div>
         </header>
         <div className="flex min-w-0 flex-1 min-h-0 flex-col gap-4 overflow-y-auto p-4 pt-0">
-          <Suspense fallback={<PageFallback />}>
-            {activeTab === "dashboard" && (
-              <DashboardPage onNavigate={setActiveTab} onProjectChange={setProject} />
-            )}
-            {activeTab === "library" && <LibraryPage key={project ?? "__all__"} project={project} />}
-            {activeTab === "tile-builder" && <TileBuilderPage key={project ?? "__all__"} project={project} />}
-            {activeTab === "import" && <ImportPage key={project ?? "__all__"} project={project} />}
-            {activeTab === "outputs" && <OutputsPage key={project ?? "__all__"} project={project} />}
-            {activeTab === "logs" && <LogsPage />}
-          </Suspense>
+          <ErrorBoundary resetKey={`${activeTab}:${project ?? "__all__"}`}>
+            <Suspense fallback={<PageFallback />}>
+              {activeTab === "dashboard" && (
+                <DashboardPage onNavigate={setActiveTab} onProjectChange={setProject} />
+              )}
+              {activeTab === "library" && <LibraryPage key={project ?? "__all__"} project={project} />}
+              {activeTab === "tile-builder" && <TileBuilderPage key={project ?? "__all__"} project={project} />}
+              {activeTab === "import" && <ImportPage key={project ?? "__all__"} project={project} />}
+              {activeTab === "outputs" && <OutputsPage key={project ?? "__all__"} project={project} />}
+              {activeTab === "logs" && <LogsPage />}
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </SidebarInset>
     </SidebarProvider>

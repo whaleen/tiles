@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { queryClient } from "@/lib/query-client";
 import { queryKeys } from "@/lib/query-keys";
+import { errorMessage } from "@/lib/errors";
 import type { ActionRunRequest, ActionRunResult } from "@/types";
 
 export function useActionRunner(scopeKey = "__default__") {
@@ -29,7 +30,7 @@ export function useActionRunner(scopeKey = "__default__") {
       playPing();
       return res;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Unknown error";
+      const msg = errorMessage(e, "Action failed");
       if (requestId === requestSeqRef.current) {
         setError(msg);
       }

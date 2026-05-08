@@ -14,8 +14,7 @@ pub fn list_projects(state: State<AppState>) -> Vec<ProjectSummary> {
 #[tauri::command]
 pub fn get_project(state: State<AppState>, name: String) -> Result<ProjectDetail, String> {
     let root = state.root.read().unwrap().clone();
-    fs_scanner::get_project_detail(&root, &name)
-        .ok_or_else(|| "not found".to_string())
+    fs_scanner::get_project_detail(&root, &name).ok_or_else(|| "not found".to_string())
 }
 
 #[tauri::command]
@@ -26,7 +25,7 @@ pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSum
         return Err("name is required".to_string());
     }
     if !is_valid_project_name(&name) {
-        return Err("invalid project name".to_string());
+        return Err("Project names cannot start with '.', contain path separators, '..', or control characters.".to_string());
     }
     let dest = root.join("src").join(&name);
     if dest.exists() {
@@ -88,7 +87,12 @@ pub fn put_project_meta(
 }
 
 fn is_valid_project_name(name: &str) -> bool {
-    if name.starts_with('.') {
+    const RESERVED: &[&str] = &["src", "outputs", "configs", "logs"];
+    if name.starts_with('.')
+        || RESERVED
+            .iter()
+            .any(|reserved| name.eq_ignore_ascii_case(reserved))
+    {
         return false;
     }
     if name.contains('/') || name.contains('\\') {
@@ -100,8 +104,7 @@ fn is_valid_project_name(name: &str) -> bool {
     if StdPath::new(name).is_absolute() {
         return false;
     }
-    name.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    name.chars().all(|c| !c.is_control())
 }
 
 fn meta_path(root: &StdPath, name: &str) -> std::path::PathBuf {
@@ -133,7 +136,9 @@ fn default_meta() -> ProjectMeta {
 }
 
 fn normalize_optional(value: Option<String>) -> Option<String> {
-    value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    value
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 fn is_valid_cover_rel(project: &str, rel: &str) -> bool {
@@ -143,4 +148,23 @@ fn is_valid_cover_rel(project: &str, rel: &str) -> bool {
     rel.starts_with(&format!("{project}/"))
         || rel.starts_with(&format!("src/{project}/outputs/"))
         || rel.starts_with("outputs/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_project_name;
+
+    #[test]
+    fn project_names_can_include_spaces_and_unicode() {
+        assert!(is_valid_project_name("My Project 01"));
+        assert!(is_valid_project_name("καλός-project"));
+    }
+
+    #[test]
+    fn project_names_reject_path_traversal_and_hidden_names() {
+        assert!(!is_valid_project_name(".hidden"));
+        assert!(!is_valid_project_name("../escape"));
+        assert!(!is_valid_project_name("nested/project"));
+        assert!(!is_valid_project_name("bad\nname"));
+    }
 }

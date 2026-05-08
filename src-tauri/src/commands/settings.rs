@@ -1,11 +1,16 @@
+use std::path::{Component, Path};
 use tauri::State;
 
 use crate::models::{LayoutInfo, TileSettings};
 use crate::state::AppState;
 
 #[tauri::command]
-pub fn get_settings(state: State<AppState>, project: Option<String>) -> Result<TileSettings, String> {
+pub fn get_settings(
+    state: State<AppState>,
+    project: Option<String>,
+) -> Result<TileSettings, String> {
     let root = state.root.read().unwrap().clone();
+    validate_project_settings_scope(&root, project.as_deref())?;
     let path = settings_path(&root, project.as_deref());
     if !path.exists() {
         return Ok(TileSettings {
@@ -48,6 +53,7 @@ pub fn put_settings(
     settings: TileSettings,
 ) -> Result<(), String> {
     let root = state.root.read().unwrap().clone();
+    validate_project_settings_scope(&root, project.as_deref())?;
     let path = settings_path(&root, project.as_deref());
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -59,24 +65,78 @@ pub fn put_settings(
 #[tauri::command]
 pub fn list_layouts() -> Vec<LayoutInfo> {
     vec![
-        LayoutInfo { code: "2x1".to_string(), tile_count: 2 },
-        LayoutInfo { code: "1x2".to_string(), tile_count: 2 },
-        LayoutInfo { code: "2x2".to_string(), tile_count: 4 },
-        LayoutInfo { code: "2x3".to_string(), tile_count: 6 },
-        LayoutInfo { code: "3x2".to_string(), tile_count: 6 },
-        LayoutInfo { code: "3x1".to_string(), tile_count: 3 },
-        LayoutInfo { code: "1x3".to_string(), tile_count: 3 },
-        LayoutInfo { code: "4x1".to_string(), tile_count: 4 },
-        LayoutInfo { code: "1x4".to_string(), tile_count: 4 },
-        LayoutInfo { code: "3x3".to_string(), tile_count: 9 },
-        LayoutInfo { code: "2x2-focus".to_string(), tile_count: 3 },
-        LayoutInfo { code: "3x3-focus".to_string(), tile_count: 6 },
-        LayoutInfo { code: "pip".to_string(), tile_count: 2 },
-        LayoutInfo { code: "1+2".to_string(), tile_count: 3 },
-        LayoutInfo { code: "2+1".to_string(), tile_count: 3 },
-        LayoutInfo { code: "1+3".to_string(), tile_count: 4 },
-        LayoutInfo { code: "left-big-right-stack".to_string(), tile_count: 3 },
-        LayoutInfo { code: "top-big-bottom-stack".to_string(), tile_count: 3 },
+        LayoutInfo {
+            code: "2x1".to_string(),
+            tile_count: 2,
+        },
+        LayoutInfo {
+            code: "1x2".to_string(),
+            tile_count: 2,
+        },
+        LayoutInfo {
+            code: "2x2".to_string(),
+            tile_count: 4,
+        },
+        LayoutInfo {
+            code: "2x3".to_string(),
+            tile_count: 6,
+        },
+        LayoutInfo {
+            code: "3x2".to_string(),
+            tile_count: 6,
+        },
+        LayoutInfo {
+            code: "3x1".to_string(),
+            tile_count: 3,
+        },
+        LayoutInfo {
+            code: "1x3".to_string(),
+            tile_count: 3,
+        },
+        LayoutInfo {
+            code: "4x1".to_string(),
+            tile_count: 4,
+        },
+        LayoutInfo {
+            code: "1x4".to_string(),
+            tile_count: 4,
+        },
+        LayoutInfo {
+            code: "3x3".to_string(),
+            tile_count: 9,
+        },
+        LayoutInfo {
+            code: "2x2-focus".to_string(),
+            tile_count: 3,
+        },
+        LayoutInfo {
+            code: "3x3-focus".to_string(),
+            tile_count: 6,
+        },
+        LayoutInfo {
+            code: "pip".to_string(),
+            tile_count: 2,
+        },
+        LayoutInfo {
+            code: "1+2".to_string(),
+            tile_count: 3,
+        },
+        LayoutInfo {
+            code: "2+1".to_string(),
+            tile_count: 3,
+        },
+        LayoutInfo {
+            code: "1+3".to_string(),
+            tile_count: 4,
+        },
+        LayoutInfo {
+            code: "left-big-right-stack".to_string(),
+            tile_count: 3,
+        },
+        LayoutInfo {
+            code: "top-big-bottom-stack".to_string(),
+            tile_count: 3,
+        },
     ]
 }
 
@@ -85,4 +145,28 @@ fn settings_path(root: &std::path::Path, project: Option<&str>) -> std::path::Pa
         return root.join("src").join(p).join("tile_videos_settings.json");
     }
     root.join("configs").join("tile_videos_settings.json")
+}
+
+fn validate_project_settings_scope(root: &Path, project: Option<&str>) -> Result<(), String> {
+    let Some(project) = project else {
+        return Ok(());
+    };
+    if project.is_empty()
+        || project.starts_with('.')
+        || project.contains("..")
+        || project.contains('/')
+        || project.contains('\\')
+        || Path::new(project).is_absolute()
+        || !project.chars().all(|c| !c.is_control())
+        || Path::new(project)
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+    {
+        return Err("invalid project".to_string());
+    }
+    let project_dir = root.join("src").join(project);
+    if !project_dir.exists() || !project_dir.is_dir() {
+        return Err("project not found".to_string());
+    }
+    Ok(())
 }

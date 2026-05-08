@@ -4,6 +4,10 @@ import { Button } from "@/components/ui/button";
 import { videoUrl, bumpMediaCache } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 import { ActionCompleteContext } from "@/contexts/action-complete-context";
+import { queryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
+import { errorMessage } from "@/lib/errors";
+import { toast } from "sonner";
 import { EditorActionPanel } from "./editor-action-panel";
 import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize, Trash2 } from "lucide-react";
 import type { VideoEntry } from "@/types";
@@ -23,6 +27,7 @@ export function VideoEditor({
 }: VideoEditorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoVersion, setVideoVersion] = useState(0);
+  const [deleting, setDeleting] = useState(false);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const [timelineContent, setTimelineContent] = useState<React.ReactNode>(null);
   const [overlayContent, setOverlayContent] = useState<React.ReactNode>(null);
@@ -104,25 +109,31 @@ export function VideoEditor({
     const ok = window.confirm(`Delete ${video.name}? This cannot be undone.`);
     if (!ok) return;
 
-    // Navigate first (instant), then delete in background
-    const nextVideo =
-      videos.length <= 1
-        ? null
-        : currentIndex < videos.length - 1
-          ? videos[currentIndex + 1]
-          : videos[currentIndex - 1];
+    setDeleting(true);
+    try {
+      await invoke("delete_video", { path: video.rel_path });
+      const nextVideo =
+        videos.length <= 1
+          ? null
+          : currentIndex < videos.length - 1
+            ? videos[currentIndex + 1]
+            : videos[currentIndex - 1];
 
-    // Optimistically remove from local state — no full API refetch
-    onRemoveVideo(video.rel_path);
+      onRemoveVideo(video.rel_path);
+      queryClient.invalidateQueries({ queryKey: queryKeys.videos.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      toast.success("Video deleted", { description: video.name });
 
-    if (nextVideo) {
-      onNavigate(nextVideo);
-    } else {
-      onBack();
+      if (nextVideo) {
+        onNavigate(nextVideo);
+      } else {
+        onBack();
+      }
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to delete video"));
+    } finally {
+      setDeleting(false);
     }
-
-    // Fire-and-forget the actual deletion
-    invoke("delete_video", { path: video.rel_path }).catch(console.error);
   };
 
   return (
@@ -169,6 +180,7 @@ export function VideoEditor({
               size="sm"
               variant="destructive"
               onClick={handleDelete}
+              disabled={deleting}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </Button>

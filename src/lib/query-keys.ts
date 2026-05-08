@@ -6,8 +6,12 @@ export const queryKeys = {
   },
   videos: {
     all: ["videos"] as const,
-    list: (project?: string, search?: string) =>
-      ["videos", { project, search }] as const,
+    list: (
+      project?: string,
+      search?: string,
+      folder?: string,
+      recursive?: boolean
+    ) => ["videos", { project, search, folder, recursive }] as const,
     info: (relPath: string) => ["videos", "info", relPath] as const,
   },
   outputs: {

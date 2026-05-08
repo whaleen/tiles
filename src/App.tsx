@@ -41,7 +41,7 @@ function App() {
           <span>Update check failed: {updateState.message}</span>
         </div>
       )}
-      <AppShell onChangeWorkspace={pickWorkspace} />
+      <AppShell key={workspaceState.path} onChangeWorkspace={pickWorkspace} />
       <Toaster />
     </div>
   );

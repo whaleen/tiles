@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { FolderOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { errorMessage } from "@/lib/errors";
+import { toast } from "sonner";
 
 interface WorkspaceSetupProps {
   onPick: () => void;
@@ -16,8 +18,13 @@ export function WorkspaceSetup({ onPick, onSet }: WorkspaceSetupProps) {
   }, []);
 
   const useDefault = async () => {
-    const path = await invoke<string>("set_workspace", { path: defaultPath });
-    onSet(path);
+    if (!defaultPath) return;
+    try {
+      const path = await invoke<string>("set_workspace", { path: defaultPath });
+      onSet(path);
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to set workspace"));
+    }
   };
 
   return (
@@ -38,7 +45,7 @@ export function WorkspaceSetup({ onPick, onSet }: WorkspaceSetupProps) {
             <p className="text-xs text-muted-foreground mb-1">Default location</p>
             <p className="text-sm font-mono truncate">{defaultPath}</p>
           </div>
-          <Button onClick={useDefault} className="w-full">
+          <Button onClick={useDefault} disabled={!defaultPath} className="w-full">
             Use this location
           </Button>
           <Button variant="outline" onClick={onPick} className="w-full gap-2">

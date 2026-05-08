@@ -22,7 +22,6 @@ pub struct MovedVideoPath {
     pub to: String,
 }
 
-
 #[tauri::command]
 pub fn create_folder(
     state: State<AppState>,
@@ -116,7 +115,10 @@ pub fn move_folder(
     if from_rel == to_rel {
         return Ok(FolderPathResponse { path: to_rel });
     }
-    if from_rel.starts_with(&format!("{to_rel}/")) {
+    if !target_parent_norm.is_empty()
+        && (target_parent_norm == from_rel
+            || target_parent_norm.starts_with(&format!("{from_rel}/")))
+    {
         return Err("cannot move folder into itself".to_string());
     }
 
@@ -138,11 +140,7 @@ pub fn move_folder(
 }
 
 #[tauri::command]
-pub fn delete_folder(
-    state: State<AppState>,
-    project: String,
-    path: String,
-) -> Result<(), String> {
+pub fn delete_folder(state: State<AppState>, project: String, path: String) -> Result<(), String> {
     let root = state.root.read().unwrap().clone();
     let project_dir = get_project_dir(&root, &project)?;
     let rel = normalize_rel(&path);
@@ -300,11 +298,10 @@ fn is_valid_project_name(name: &str) -> bool {
     if name.is_empty() || name.starts_with('.') || name.contains("..") {
         return false;
     }
-    if name.contains('/') || name.contains('\\') {
+    if name.contains('/') || name.contains('\\') || Path::new(name).is_absolute() {
         return false;
     }
-    name.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    name.chars().all(|c| !c.is_control())
 }
 
 fn is_valid_folder_name(name: &str) -> bool {
@@ -325,7 +322,10 @@ fn is_valid_rel_folder(path: &str, allow_empty: bool) -> bool {
         return false;
     }
     let parts: Vec<&str> = path.split('/').collect();
-    if parts.iter().any(|seg| seg.is_empty() || *seg == "." || *seg == "..") {
+    if parts
+        .iter()
+        .any(|seg| seg.is_empty() || *seg == "." || *seg == "..")
+    {
         return false;
     }
     true
@@ -375,4 +375,27 @@ fn unique_destination(target_dir: &Path, file_name: &str) -> PathBuf {
         }
     }
     target_dir.join(format!("{stem}-moved{ext}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_valid_project_name, is_valid_rel_folder};
+
+    #[test]
+    fn folder_commands_accept_project_names_that_create_project_accepts() {
+        assert!(is_valid_project_name("My Project 01"));
+        assert!(is_valid_project_name("καλός-project"));
+        assert!(!is_valid_project_name("../escape"));
+        assert!(!is_valid_project_name("bad/name"));
+        assert!(!is_valid_project_name("bad\nname"));
+    }
+
+    #[test]
+    fn folder_paths_reject_traversal() {
+        assert!(is_valid_rel_folder("", true));
+        assert!(is_valid_rel_folder("a/b", false));
+        assert!(!is_valid_rel_folder("../a", true));
+        assert!(!is_valid_rel_folder("a/../b", true));
+        assert!(!is_valid_rel_folder("/a", true));
+    }
 }

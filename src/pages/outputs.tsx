@@ -66,9 +66,16 @@ export function OutputsPage({ project }: { project?: string }) {
     let list = allFiles;
     
     // 1. Filter out files that are currently being written to (active runs)
-    // We check if the rel_path of a file matches any active run's output path
-    const activeOutputs = new Set(runningActions.map(r => r.output).filter(Boolean));
-    list = list.filter(file => !activeOutputs.has(file.rel_path));
+    // Hide files that are currently being written. Directory outputs hide descendants too.
+    const activeOutputs = runningActions
+      .map((r) => r.output)
+      .filter((output): output is string => Boolean(output));
+    list = list.filter(
+      (file) =>
+        !activeOutputs.some(
+          (output) => file.rel_path === output || file.rel_path.startsWith(`${output}/`)
+        )
+    );
 
     // 2. Tool Filter
     if (activeTool) {

@@ -53,10 +53,14 @@ export function LogsPage() {
   }, [filtered]);
 
   useEffect(() => {
-    if (latest.length > 0) {
-      setSelectedLog(latest[0].log);
+    if (latest.length === 0) {
+      setSelectedLog(null);
+      return;
     }
-  }, [selectedTool, latest]);
+    setSelectedLog((current) =>
+      current && filtered.includes(current) ? current : latest[0].log
+    );
+  }, [filtered, latest]);
 
   return (
     <div className="space-y-6">

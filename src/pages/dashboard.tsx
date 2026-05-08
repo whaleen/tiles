@@ -7,6 +7,7 @@ import { useRunningActions } from "@/hooks/use-running-actions";
 import { useProjectDetailsMap } from "@/hooks/use-project-details-map";
 import { useProjectMetasMap } from "@/hooks/use-project-metas-map";
 import { queryKeys } from "@/lib/query-keys";
+import { errorMessage } from "@/lib/errors";
 import {
   outThumbUrl,
   outVideoUrl,
@@ -50,6 +51,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatActionName } from "@/lib/action-icons";
+import { CreateProjectDialog } from "@/components/create-project-dialog";
 
 interface DashboardPageProps {
   onNavigate: (tab: string) => void;
@@ -78,7 +80,7 @@ const EMPTY_META: ProjectMeta = {
 
 export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProps) {
   const queryClient = useQueryClient();
-  const { projects, loading: projectsLoading, refresh } = useProjects();
+  const { projects, loading: projectsLoading } = useProjects();
   const { outputs } = useOutputs();
   const { running } = useRunningActions();
 
@@ -169,7 +171,7 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
       ]);
       const outputCandidates = outputList
         .map((run) => run.run_rel)
-        .filter((rel) => !!rel && !rel.endsWith("/"))
+        .filter((rel) => !!rel && isMediaPath(rel))
         .slice(0, 120)
         .map((rel) => ({
           rel_path: rel,
@@ -197,8 +199,8 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
   async function handleSaveSettings() {
     if (!settingsProject) return;
     const coverImageRel = draft.cover_image_rel.trim();
-    if (coverImageRel && !coverImageRel.startsWith(`${settingsProject}/`)) {
-      toast.error("Cover image path must start with the project folder");
+    if (coverImageRel && !isValidCoverRel(settingsProject, coverImageRel)) {
+      toast.error("Cover image path must be a source file or output file for this project");
       return;
     }
 
@@ -226,27 +228,9 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
       setSettingsProject(null);
       setCoverCandidates([]);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to save settings";
-      toast.error(message);
+      toast.error(errorMessage(err, "Failed to save settings"));
     } finally {
       setSettingsSaving(false);
-    }
-  }
-
-  async function handleCreate() {
-    const name = window.prompt("New project name");
-    if (!name) return;
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    try {
-      const res = await invoke<{ name: string }>("create_project", { name: trimmed });
-      await refresh();
-      onProjectChange(res.name);
-      onNavigate("library");
-      toast.success("Project created", { description: res.name });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to create project";
-      toast.error(message);
     }
   }
 
@@ -262,10 +246,18 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <p className="text-muted-foreground">No projects yet</p>
-        <Button onClick={handleCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add project
-        </Button>
+        <CreateProjectDialog
+          onProjectCreated={(name) => {
+            onProjectChange(name);
+            onNavigate("library");
+          }}
+          trigger={(
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Add project
+            </Button>
+          )}
+        />
       </div>
     );
   }
@@ -275,10 +267,18 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold">Projects</h1>
-          <Button variant="outline" size="sm" onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-1" />
-            Add project
-          </Button>
+          <CreateProjectDialog
+            onProjectCreated={(name) => {
+              onProjectChange(name);
+              onNavigate("library");
+            }}
+            trigger={(
+              <Button variant="outline" size="sm">
+                <Plus className="h-4 w-4 mr-1" />
+                Add project
+              </Button>
+            )}
+          />
         </div>
 
         <div className="relative max-w-sm">
@@ -593,6 +593,21 @@ function normalizeMeta(meta: ProjectMeta | null | undefined): ProjectMeta {
 
 function isImagePath(path: string) {
   return /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(path);
+}
+
+function isMediaPath(path: string) {
+  return /\.(mp4|mov|avi|mkv|flv|wmv|m4v|webm|png|jpe?g|gif|webp|bmp|tiff?)$/i.test(path);
+}
+
+function isValidCoverRel(project: string, rel: string) {
+  if (rel.includes("..") || rel.includes("\\") || rel.startsWith("/")) {
+    return false;
+  }
+  return (
+    rel.startsWith(`${project}/`) ||
+    rel.startsWith(`src/${project}/outputs/`) ||
+    rel.startsWith("outputs/")
+  );
 }
 
 function thumbnailForProject(meta: ProjectMeta, latestOutput?: OutputRun): string | null {

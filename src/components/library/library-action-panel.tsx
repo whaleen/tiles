@@ -23,6 +23,7 @@ import { TranscribeForm } from "@/components/actions/transcribe-form";
 import { ChopForm } from "@/components/actions/chop-form";
 import { LoopForm } from "@/components/actions/loop-form";
 import { CropForm } from "@/components/actions/crop-form";
+import { DoctorReencodeForm } from "@/components/actions/doctor-reencode-form";
 import { actionCapabilities } from "@/components/actions/action-capabilities";
 
 interface LibraryActionPanelProps {
@@ -124,6 +125,7 @@ export function LibraryActionPanel({
     chop: <ChopForm {...formProps} {...caps} />,
     loop: <LoopForm {...formProps} {...caps} />,
     crop: <CropForm {...formProps} {...caps} />,
+    "doctor-reencode": <DoctorReencodeForm {...formProps} {...caps} />,
     "yt-import": (
         <YtImportForm
           {...formProps}

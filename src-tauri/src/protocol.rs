@@ -1,5 +1,5 @@
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use tauri::http::{header, Request, Response};
 
@@ -11,10 +11,7 @@ use tauri::http::{header, Request, Response};
 /// Registered instead of HTTP for video files so that WKWebView
 /// (which treats `tauri://localhost` as a secure context) doesn't
 /// block the load as mixed content the way it does for `http://`.
-pub fn handle(
-    root: &Arc<RwLock<PathBuf>>,
-    request: Request<Vec<u8>>,
-) -> Response<Vec<u8>> {
+pub fn handle(root: &Arc<RwLock<PathBuf>>, request: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let root_path = root.read().unwrap().clone();
 
     if root_path.as_os_str().is_empty() {
@@ -23,7 +20,9 @@ pub fn handle(
 
     let uri_path = request.uri().path();
     let rel = url_decode(uri_path.trim_start_matches('/'));
-    let file_path = root_path.join("src").join(&rel);
+    let Some(file_path) = safe_join(&root_path.join("src"), &rel) else {
+        return not_found();
+    };
 
     if !file_path.exists() || !file_path.is_file() {
         return not_found();
@@ -87,18 +86,26 @@ pub fn handle(
         .unwrap()
 }
 
+fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {
+    let rel_path = Path::new(rel);
+    if rel_path.is_absolute() {
+        return None;
+    }
+    if rel_path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return None;
+    }
+    Some(base.join(rel_path))
+}
+
 fn not_found() -> Response<Vec<u8>> {
-    Response::builder()
-        .status(404u16)
-        .body(Vec::new())
-        .unwrap()
+    Response::builder().status(404u16).body(Vec::new()).unwrap()
 }
 
 fn server_error() -> Response<Vec<u8>> {
-    Response::builder()
-        .status(500u16)
-        .body(Vec::new())
-        .unwrap()
+    Response::builder().status(500u16).body(Vec::new()).unwrap()
 }
 
 fn content_type(path: &Path) -> &'static str {
@@ -113,6 +120,12 @@ fn content_type(path: &Path) -> &'static str {
         Some("mov") => "video/quicktime",
         Some("mkv") => "video/x-matroska",
         Some("avi") => "video/x-msvideo",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("png") => "image/png",
+        Some("webp") => "image/webp",
+        Some("json") | Some("json3") => "application/json",
+        Some("vtt") => "text/vtt; charset=utf-8",
+        Some("srt") | Some("txt") => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     }
 }
@@ -131,7 +144,11 @@ fn url_decode(input: &str) -> String {
                 continue;
             }
         }
-        out.push(if bytes[i] == b'+' { ' ' } else { bytes[i] as char });
+        out.push(if bytes[i] == b'+' {
+            ' '
+        } else {
+            bytes[i] as char
+        });
         i += 1;
     }
     out
