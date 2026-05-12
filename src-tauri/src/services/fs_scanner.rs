@@ -187,6 +187,7 @@ pub fn list_videos(
                 }
             }
 
+            let has_transcript = check_has_transcript(&root, &rel_path);
             out.push(VideoEntry {
                 folder,
                 name,
@@ -195,11 +196,53 @@ pub fn list_videos(
                 // made Library/Tile Builder navigation pinwheel on large projects.
                 // Detailed metadata is still available through get_video_info when needed.
                 duration: None,
+                has_transcript,
             });
         }
     }
     out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
     out
+}
+
+const TRANSCRIPT_EXTENSIONS: &[&str] = &["txt", "srt", "vtt", "json"];
+
+/// Check whether a transcript file exists for a source video at `rel_path`
+/// (relative to `src/`, e.g. "project-a/footage/clip.mp4").
+pub fn check_has_transcript(root: &Path, rel_path: &str) -> bool {
+    let stem = {
+        let p = std::path::Path::new(rel_path);
+        let s = p.with_extension("");
+        s.to_string_lossy().replace('\\', "/")
+    };
+
+    for ext in TRANSCRIPT_EXTENSIONS {
+        // Global mode: outputs/transcribe/<rel_stem>.<ext>
+        if root.join("outputs").join("transcribe").join(format!("{stem}.{ext}")).exists() {
+            return true;
+        }
+        // Source mode: src/<project>/outputs/transcribe/<rest>.<ext>
+        // rel_path = "project/folder/file.mp4" → project = "project", rest = "folder/file"
+        let parts: Vec<&str> = stem.splitn(2, '/').collect();
+        if parts.len() == 2 {
+            let project = parts[0];
+            let rest = parts[1];
+            if root
+                .join("src")
+                .join(project)
+                .join("outputs")
+                .join("transcribe")
+                .join(format!("{rest}.{ext}"))
+                .exists()
+            {
+                return true;
+            }
+        }
+        // Alongside: src/<rel_stem>.<ext>
+        if root.join("src").join(format!("{stem}.{ext}")).exists() {
+            return true;
+        }
+    }
+    false
 }
 
 fn is_safe_path_segment(segment: &str) -> bool {

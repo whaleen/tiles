@@ -22,6 +22,7 @@ export interface VideoEntry {
   name: string;
   rel_path: string;
   duration?: number | null;
+  has_transcript?: boolean;
 }
 
 export interface VideoInfo {

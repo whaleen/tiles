@@ -107,6 +107,7 @@ pub fn run() {
             // videos
             commands::videos::list_videos,
             commands::videos::get_video_info,
+            commands::videos::get_transcript,
             commands::videos::delete_video,
             // folders
             commands::folders::create_folder,

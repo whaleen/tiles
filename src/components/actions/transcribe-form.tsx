@@ -9,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 
 interface ActionFormProps {
   targetsOverride?: string[];
@@ -29,12 +28,7 @@ export function TranscribeForm({
   onRunComplete,
 }: ActionFormProps) {
   const [language, setLanguage] = useState("auto");
-  const [format, setFormat] = useState("text");
-  const [queue, setQueue] = useState("3");
-  const [useGpu, setUseGpu] = useState(true);
-  const [gpuDevice, setGpuDevice] = useState("0");
-  const queueValue = parseFloat(queue);
-  const gpuDeviceValue = parseInt(gpuDevice, 10);
+  const [format, setFormat] = useState("txt");
 
   return (
     <ActionFormWrapper
@@ -54,21 +48,17 @@ export function TranscribeForm({
         params: {
           language: language.trim() || "auto",
           format,
-          queue: Number.isFinite(queueValue) ? queueValue : undefined,
-          use_gpu: useGpu,
-          gpu_device: Number.isFinite(gpuDeviceValue) ? gpuDeviceValue : undefined,
         },
       })}
     >
       {() => (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Uses FFmpeg's whisper filter to generate transcripts. Requires FFmpeg
-            built with whisper.cpp support and a local Whisper model file.
+            Transcribes audio from videos using whisper-cli. Requires{" "}
+            <code className="text-xs">brew install whisper-cpp</code>. The base
+            model (~150 MB) is auto-downloaded to <code className="text-xs">models/</code> in
+            your workspace on first run.
           </p>
-          <div className="text-xs text-muted-foreground">
-            Model: ggml-base.bin (auto-downloaded to models/ on first run)
-          </div>
           <div>
             <Label className="text-sm">Language</Label>
             <Input
@@ -77,6 +67,10 @@ export function TranscribeForm({
               placeholder="auto"
               className="mt-1"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              Use a language code (e.g. <code>en</code>, <code>es</code>) or{" "}
+              <code>auto</code> to detect.
+            </p>
           </div>
           <div>
             <Label className="text-sm">Output Format</Label>
@@ -85,38 +79,12 @@ export function TranscribeForm({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="text">Text</SelectItem>
-                <SelectItem value="srt">SRT</SelectItem>
-                <SelectItem value="json">JSON</SelectItem>
+                <SelectItem value="txt">Text (.txt)</SelectItem>
+                <SelectItem value="srt">SRT subtitles (.srt)</SelectItem>
+                <SelectItem value="vtt">WebVTT (.vtt)</SelectItem>
+                <SelectItem value="json">JSON (.json)</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div>
-            <Label className="text-sm">Queue (seconds)</Label>
-            <Input
-              type="number"
-              step="0.1"
-              min="0"
-              value={queue}
-              onChange={(e) => setQueue(e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={useGpu} onCheckedChange={setUseGpu} />
-            <Label className="text-sm">Use GPU</Label>
-          </div>
-          <div>
-            <Label className="text-sm">GPU Device</Label>
-            <Input
-              type="number"
-              min="0"
-              step="1"
-              value={gpuDevice}
-              onChange={(e) => setGpuDevice(e.target.value)}
-              className="mt-1"
-              disabled={!useGpu}
-            />
           </div>
         </div>
       )}

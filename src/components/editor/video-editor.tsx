@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { videoUrl, bumpMediaCache } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -8,7 +9,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { errorMessage } from "@/lib/errors";
 import { toast } from "sonner";
 import { EditorActionPanel } from "./editor-action-panel";
-import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize, Trash2 } from "lucide-react";
 import type { VideoEntry } from "@/types";
 
 interface VideoEditorProps {
@@ -103,10 +104,18 @@ export function VideoEditor({
     }
   }, [selectedAction]);
 
+  const { data: transcript } = useQuery({
+    queryKey: ["transcript", video.rel_path],
+    queryFn: () => invoke<string | null>("get_transcript", { path: video.rel_path }),
+    enabled: !activeIsImage,
+    staleTime: 30_000,
+  });
+
   const handleActionComplete = useCallback(() => {
     setVideoVersion((v) => v + 1);
     bumpMediaCache();
-  }, []);
+    queryClient.invalidateQueries({ queryKey: ["transcript", video.rel_path] });
+  }, [video.rel_path]);
 
   const handleDelete = async () => {
     const ok = window.confirm(`Delete ${video.name}? This cannot be undone.`);
@@ -221,21 +230,34 @@ export function VideoEditor({
             )}
           </div>
 
-          {/* Right: action panel */}
-          <div className="border-l p-4 min-h-0 overflow-hidden flex flex-col">
-            {activeIsImage ? (
-              <div className="text-xs text-muted-foreground">
-                Actions are only available for videos.
+          {/* Right: action panel + transcript */}
+          <div className="border-l min-h-0 overflow-y-auto flex flex-col">
+            <div className="p-4">
+              {activeIsImage ? (
+                <div className="text-xs text-muted-foreground">
+                  Actions are only available for videos.
+                </div>
+              ) : (
+                <EditorActionPanel
+                  video={video}
+                  videoRef={videoRef}
+                  selectedAction={selectedAction}
+                  onSelectAction={setSelectedAction}
+                  onRenderTimeline={setTimelineContent}
+                  onRenderOverlay={setOverlayContent}
+                />
+              )}
+            </div>
+            {transcript && (
+              <div className="border-t p-4 flex flex-col gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <FileText className="h-3.5 w-3.5" />
+                  Transcript
+                </div>
+                <pre className="text-xs whitespace-pre-wrap break-words leading-relaxed font-sans max-h-64 overflow-y-auto">
+                  {transcript}
+                </pre>
               </div>
-            ) : (
-              <EditorActionPanel
-                video={video}
-                videoRef={videoRef}
-                selectedAction={selectedAction}
-                onSelectAction={setSelectedAction}
-                onRenderTimeline={setTimelineContent}
-                onRenderOverlay={setOverlayContent}
-              />
             )}
           </div>
         </div>

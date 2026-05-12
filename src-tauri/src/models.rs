@@ -36,6 +36,7 @@ pub struct VideoEntry {
     pub name: String,
     pub rel_path: String,
     pub duration: Option<f64>,
+    pub has_transcript: bool,
 }
 
 #[derive(Debug, Serialize)]

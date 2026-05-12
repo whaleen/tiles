@@ -34,8 +34,8 @@ pub fn list_actions() -> Vec<ActionInfo> {
         },
         ActionInfo {
             name: "yt-import".to_string(),
-            label: "Import YouTube Video".to_string(),
-            description: "Download a YouTube video, fetch transcript, and split into tiles.".to_string(),
+            label: "URL Import".to_string(),
+            description: "Download a video from any yt-dlp-supported source (YouTube, Vimeo, X, etc.), fetch transcript, and split into tiles.".to_string(),
             target_type: "url".to_string(),
         },
         ActionInfo {
@@ -53,7 +53,7 @@ pub fn list_actions() -> Vec<ActionInfo> {
         ActionInfo {
             name: "transcribe".to_string(),
             label: "Transcribe".to_string(),
-            description: "Generate Whisper transcripts from audio using FFmpeg's whisper filter.".to_string(),
+            description: "Generate transcripts using whisper-cli. Extracts audio then runs the Whisper base model. Requires brew install whisper-cpp.".to_string(),
             target_type: "folders_or_videos".to_string(),
         },
         ActionInfo {

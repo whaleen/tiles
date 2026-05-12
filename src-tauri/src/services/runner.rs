@@ -394,78 +394,108 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
         .params
         .get("format")
         .and_then(|v| v.as_str())
-        .unwrap_or("text")
+        .unwrap_or("txt")
         .to_lowercase();
-    let ext = match format.as_str() {
-        "srt" => "srt",
-        "json" => "json",
-        _ => "txt",
-    };
 
     let language = req
         .params
         .get("language")
         .and_then(|v| v.as_str())
-        .unwrap_or("auto")
-        .trim();
-    let queue = req.params.get("queue").and_then(|v| v.as_f64());
-    let use_gpu = req.params.get("use_gpu").and_then(|v| v.as_bool());
-    let gpu_device = req.params.get("gpu_device").and_then(|v| v.as_u64());
-    let max_len = req.params.get("max_len").and_then(|v| v.as_u64());
-    let vad_model = req.params.get("vad_model").and_then(|v| v.as_str());
-    let vad_threshold = req.params.get("vad_threshold").and_then(|v| v.as_f64());
-    let vad_min_speech = req
-        .params
-        .get("vad_min_speech_duration")
-        .and_then(|v| v.as_f64());
-    let vad_min_silence = req
-        .params
-        .get("vad_min_silence_duration")
-        .and_then(|v| v.as_f64());
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "auto".to_string());
+
+    // whisper-cli format flags and file extensions
+    let (format_flag, ext) = match format.as_str() {
+        "srt" => ("--output-srt", "srt"),
+        "vtt" => ("--output-vtt", "vtt"),
+        "json" => ("--output-json", "json"),
+        _ => ("--output-txt", "txt"),
+    };
+
+    // Temp dir for extracted audio
+    let tmp_dir = root.join("outputs").join("tui-tmp");
+    let _ = fs::create_dir_all(&tmp_dir);
 
     let mut combined = String::new();
     let mut exit_code = 0;
-    for input in inputs {
-        let output = build_transcribe_output_path(&output_dir, root, &input, ext);
-        if let Some(parent) = output.parent() {
+
+    for input in &inputs {
+        let file_stem = input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("audio");
+
+        // 1. Extract mono 16kHz WAV — the only format whisper-cli reliably accepts
+        let tmp_wav = tmp_dir.join(format!("{file_stem}_{ts}.wav"));
+        combined.push_str(&format!(
+            "$ ffmpeg -y -i {} -vn -acodec pcm_s16le -ar 16000 -ac 1 {}\n\n",
+            input.display(),
+            tmp_wav.display()
+        ));
+        let extract = Command::new("ffmpeg")
+            .args(["-y", "-i"])
+            .arg(input)
+            .args(["-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1"])
+            .arg(&tmp_wav)
+            .current_dir(root)
+            .output();
+        match extract {
+            Ok(out) if !out.status.success() => {
+                exit_code = 1;
+                combined.push_str(&String::from_utf8_lossy(&out.stderr));
+                combined.push('\n');
+                let _ = fs::remove_file(&tmp_wav);
+                continue;
+            }
+            Err(e) => {
+                exit_code = 1;
+                combined.push_str(&format!("error running ffmpeg: {e}\n"));
+                continue;
+            }
+            _ => {}
+        }
+
+        // 2. Build output stem (no extension — whisper-cli appends it)
+        let output_stem = {
+            let src_root = root.join("src");
+            let rel = input
+                .strip_prefix(&src_root)
+                .ok()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| {
+                    input
+                        .file_name()
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|| PathBuf::from("transcript"))
+                });
+            let mut p = output_dir.join(rel);
+            p.set_extension("");
+            p
+        };
+        if let Some(parent) = output_stem.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let filter = build_whisper_filter(
-            model.to_string_lossy().as_ref(),
-            language,
-            queue,
-            use_gpu,
-            gpu_device,
-            &output,
-            &format,
-            max_len,
-            vad_model,
-            vad_threshold,
-            vad_min_speech,
-            vad_min_silence,
-        );
 
-        let mut cmd = Command::new("ffmpeg");
-        cmd.arg("-hide_banner");
-        cmd.arg("-i");
-        cmd.arg(&input);
-        cmd.arg("-vn");
-        cmd.arg("-af");
-        cmd.arg(&filter);
-        cmd.arg("-f");
-        cmd.arg("null");
-        cmd.arg("-");
-        cmd.current_dir(root);
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-
+        // 3. Run whisper-cli
         combined.push_str(&format!(
-            "$ ffmpeg -i {} -vn -af \"{}\" -f null -\n\n",
-            input.display(),
-            filter
+            "$ whisper-cli -m {} -l {} -of {} {} {}\n\n",
+            model.display(),
+            language,
+            output_stem.display(),
+            format_flag,
+            tmp_wav.display()
         ));
-
-        match cmd.output() {
+        let whisper = Command::new("whisper-cli")
+            .arg("-m").arg(&model)
+            .arg("-l").arg(&language)
+            .arg("-of").arg(&output_stem)
+            .arg(format_flag)
+            .arg("--no-prints")
+            .arg(&tmp_wav)
+            .current_dir(root)
+            .output();
+        match whisper {
             Ok(out) => {
                 if !out.stdout.is_empty() {
                     combined.push_str(&String::from_utf8_lossy(&out.stdout));
@@ -476,16 +506,23 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
                     }
                     combined.push_str(&String::from_utf8_lossy(&out.stderr));
                 }
-                let status = out.status.code().unwrap_or(1);
-                if status != 0 {
+                if !out.status.success() {
                     exit_code = 1;
+                } else {
+                    combined.push_str(&format!(
+                        "wrote {}.{ext}\n",
+                        output_stem.display()
+                    ));
                 }
             }
-            Err(err) => {
+            Err(e) => {
                 exit_code = 1;
-                combined.push_str(&format!("error running ffmpeg: {err}\n"));
+                combined.push_str(&format!("error running whisper-cli: {e}\n"));
             }
         }
+
+        // 4. Clean up temp WAV
+        let _ = fs::remove_file(&tmp_wav);
     }
 
     let _ = fs::write(&log_path, &combined);
@@ -603,89 +640,6 @@ fn collect_videos_in_dir(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
-}
-
-fn build_transcribe_output_path(
-    output_dir: &Path,
-    root: &Path,
-    input: &Path,
-    ext: &str,
-) -> PathBuf {
-    let src_root = root.join("src");
-    let rel = input
-        .strip_prefix(&src_root)
-        .ok()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| {
-            input
-                .file_name()
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("transcript"))
-        });
-    let mut out = output_dir.join(rel);
-    out.set_extension(ext);
-    out
-}
-
-fn build_whisper_filter(
-    model: &str,
-    language: &str,
-    queue: Option<f64>,
-    use_gpu: Option<bool>,
-    gpu_device: Option<u64>,
-    destination: &Path,
-    format: &str,
-    max_len: Option<u64>,
-    vad_model: Option<&str>,
-    vad_threshold: Option<f64>,
-    vad_min_speech: Option<f64>,
-    vad_min_silence: Option<f64>,
-) -> String {
-    let mut parts = Vec::new();
-    parts.push(format!("model={}", escape_filter_value(model)));
-    if !language.is_empty() {
-        parts.push(format!("language={}", escape_filter_value(language)));
-    }
-    if let Some(v) = queue {
-        parts.push(format!("queue={v}"));
-    }
-    if let Some(v) = use_gpu {
-        parts.push(format!("use_gpu={}", if v { "true" } else { "false" }));
-    }
-    if let Some(v) = gpu_device {
-        parts.push(format!("gpu_device={v}"));
-    }
-    parts.push(format!(
-        "destination={}",
-        escape_filter_value(&destination.display().to_string())
-    ));
-    parts.push(format!("format={}", escape_filter_value(format)));
-    if let Some(v) = max_len {
-        parts.push(format!("max_len={v}"));
-    }
-    if let Some(v) = vad_model {
-        if !v.trim().is_empty() {
-            parts.push(format!("vad_model={}", escape_filter_value(v)));
-        }
-    }
-    if let Some(v) = vad_threshold {
-        parts.push(format!("vad_threshold={v}"));
-    }
-    if let Some(v) = vad_min_speech {
-        parts.push(format!("vad_min_speech_duration={v}"));
-    }
-    if let Some(v) = vad_min_silence {
-        parts.push(format!("vad_min_silence_duration={v}"));
-    }
-    format!("whisper={}", parts.join(":"))
-}
-
-fn escape_filter_value(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace(':', "\\:")
-        .replace(' ', "\\ ")
-        .replace('\'', "\\'")
 }
 
 fn normalize_target(target: &str) -> String {

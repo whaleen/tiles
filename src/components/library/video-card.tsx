@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { thumbUrl, videoUrl } from "@/api/client";
-import { Film, GripVertical, Maximize, Play, X } from "lucide-react";
+import { FileText, Film, GripVertical, Maximize, Play, X } from "lucide-react";
 import type { VideoEntry } from "@/types";
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
@@ -168,6 +168,11 @@ export const VideoCard = memo(function VideoCard({
               >
                 <Play className="h-3.5 w-3.5" />
               </button>
+            )}
+            {video.has_transcript && (
+              <div className="absolute bottom-2 left-2 rounded bg-black/75 p-1" title="Transcript available">
+                <FileText className="h-3 w-3 text-white" />
+              </div>
             )}
             {durationLabel && (
               <div className="absolute bottom-2 right-2 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-medium text-white">
