@@ -41,7 +41,7 @@ export function YtImportForm({
   const handleRun = async () => {
     const trimmed = url.trim();
     if (!trimmed) {
-      toast.error("Enter a YouTube URL");
+      toast.error("Enter a URL");
       return;
     }
     if (!currentProject) {
@@ -85,20 +85,20 @@ export function YtImportForm({
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <h3 className="text-lg font-semibold">yt-import</h3>
+      <h3 className="text-lg font-semibold">URL Import</h3>
       {targetsSummary && (
         <div className="text-xs text-muted-foreground">{targetsSummary}</div>
       )}
       <div>
-        <Label className="text-sm">YouTube URL</Label>
+        <Label className="text-sm">URL</Label>
         <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://www.youtube.com/watch?v=..."
+          placeholder="https://..."
           className="mt-1"
         />
         <p className="text-xs text-muted-foreground mt-1">
-          Downloads the video, fetches the transcript, and splits the screen into tiles.
+          Downloads the video via yt-dlp (YouTube, Vimeo, X, and more), fetches the transcript, and splits the screen into tiles.
         </p>
       </div>
       <div className="flex items-center gap-2">

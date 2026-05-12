@@ -114,6 +114,7 @@ pub fn run() {
             commands::folders::move_folder,
             commands::folders::delete_folder,
             commands::folders::move_videos,
+            commands::folders::import_files_to_folder,
             commands::folders::get_folder_order,
             commands::folders::put_folder_order,
             // settings

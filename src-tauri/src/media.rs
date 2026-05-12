@@ -79,8 +79,12 @@ async fn serve_src_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Res
     if !src.exists() || !src.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
-    let thumb = crate::services::thumbnail::ensure_thumbnail(&root_path, &src, &decoded)
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let thumb = tokio::task::spawn_blocking(move || {
+        crate::services::thumbnail::ensure_thumbnail(&root_path, &src, &decoded)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
     serve_static(&thumb).await
 }
 
@@ -107,8 +111,12 @@ async fn serve_out_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Res
     if !src.exists() || !src.is_file() {
         return Err(StatusCode::NOT_FOUND);
     }
-    let thumb = crate::services::thumbnail::ensure_thumbnail(&root_path, &src, &decoded)
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let thumb = tokio::task::spawn_blocking(move || {
+        crate::services::thumbnail::ensure_thumbnail(&root_path, &src, &decoded)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
     serve_static(&thumb).await
 }
 

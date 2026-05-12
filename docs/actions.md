@@ -26,9 +26,9 @@ Detect split-screen regions in each video and export every detected split to its
 
 **Parameters**: force 2x1 flag, quality, clip seconds, fast-preview flag.
 
-## Import YouTube Video (`yt-import`)
+## URL Import (`yt-import`)
 
-Download a YouTube video, fetch its transcript, and split the result into tiles. Requires `yt-dlp` on PATH.
+Download a video from any yt-dlp-supported source (YouTube, Vimeo, X, and others), fetch its transcript, and split the result into tiles. Requires `yt-dlp` on PATH.
 
 **Parameters**: force 2x1 flag, quality, clip seconds, fast-preview flag, cookies-from-browser, cookies file.
 

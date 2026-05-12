@@ -65,7 +65,7 @@ When using global mode, each action writes to a folder under `outputs/`:
 | `trim` | `outputs/trim/` |
 | `detect` | `outputs/detect/` |
 | `split-detect` | `outputs/split-detect/` |
-| `yt-import` | `outputs/yt-import/` |
+| `yt-import` (URL import) | `outputs/yt-import/` |
 | `strip-audio` | `outputs/strip-audio/` |
 | `chop` | `outputs/chop/` |
 | `transcribe` | `outputs/transcribe/` |
@@ -118,8 +118,8 @@ The `apps/tiles-tui/Cargo.toml` file is a required marker for the `tiles` CLI bi
 The repo only contains the app code — no source media or outputs are stored here.
 
 ```text
-apps/
-  tiles-tauri/
-    src/           # React frontend
-    src-tauri/     # Rust backend + Tauri config
+src/           # React frontend (Vite + TypeScript)
+src-tauri/     # Rust backend + Tauri config
+cli/           # tiles-cli sidecar (built separately, copied into src-tauri/binaries/)
+docs/          # Project documentation
 ```

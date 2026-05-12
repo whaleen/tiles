@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { outVideoUrl } from "@/api/client";
+import { open } from "@tauri-apps/plugin-dialog";
+import { outVideoUrl, bumpMediaCache } from "@/api/client";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import { useOutputTree } from "@/hooks/use-output-tree";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, FolderOpen, X } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -31,6 +32,9 @@ export function ImportPage({ project }: { project?: string }) {
   const [transcriptText, setTranscriptText] = useState<string>("");
   const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+
+  const [localFiles, setLocalFiles] = useState<string[]>([]);
+  const [localImporting, setLocalImporting] = useState(false);
 
   const ytProject = project || null;
   const ytImportRoot = ytProject
@@ -105,12 +109,88 @@ export function ImportPage({ project }: { project?: string }) {
       .finally(() => setTranscriptLoading(false));
   }, [transcriptFile]);
 
+  const pickLocalFiles = async () => {
+    const picked = await open({
+      multiple: true,
+      filters: [{ name: "Videos", extensions: ["mp4", "mov", "mkv", "avi", "m4v", "webm", "wmv", "mts", "m2ts"] }],
+    });
+    if (picked) {
+      setLocalFiles(Array.isArray(picked) ? picked : [picked]);
+    }
+  };
+
+  const runLocalImport = async () => {
+    if (!localFiles.length || !project) return;
+    setLocalImporting(true);
+    try {
+      const result = await invoke<{ copied: number; skipped: number }>(
+        "import_files_to_folder",
+        { project, folder: "", files: localFiles }
+      );
+      toast.success(
+        `Imported ${result.copied} file${result.copied !== 1 ? "s" : ""}`,
+        { description: result.skipped > 0 ? `${result.skipped} skipped` : undefined }
+      );
+      setLocalFiles([]);
+      bumpMediaCache();
+    } catch (err) {
+      toast.error("Import failed", { description: String(err) });
+    } finally {
+      setLocalImporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="border rounded-lg p-3 bg-muted/20 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-semibold">YouTube Import</div>
+            <div className="text-sm font-semibold">Local Files</div>
+            <div className="text-xs text-muted-foreground">
+              {project ? `Copy files into ${project}` : "Select a project to import"}
+            </div>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={pickLocalFiles}
+            disabled={!project}
+            className="gap-2"
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+            Choose files
+          </Button>
+          {localFiles.length > 0 && (
+            <div className="space-y-1">
+              {localFiles.map((f) => (
+                <div key={f} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="truncate flex-1">{f.split("/").pop()}</span>
+                  <button
+                    onClick={() => setLocalFiles((prev) => prev.filter((p) => p !== f))}
+                    className="shrink-0 hover:text-destructive"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <Button
+            size="sm"
+            onClick={runLocalImport}
+            disabled={!project || !localFiles.length || localImporting}
+          >
+            {localImporting ? "Importing..." : `Import ${localFiles.length || ""} file${localFiles.length !== 1 ? "s" : ""}`}
+          </Button>
+        </div>
+      </div>
+
+      <div className="border rounded-lg p-3 bg-muted/20 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold">URL Import</div>
             <div className="text-xs text-muted-foreground">
               {ytProject
                 ? `Project: ${ytProject}`
@@ -128,19 +208,19 @@ export function ImportPage({ project }: { project?: string }) {
           </Button>
         </div>
         <div className="space-y-2">
-          <Label className="text-xs">YouTube URL</Label>
+          <Label className="text-xs">URL</Label>
           <div className="flex gap-2">
             <Input
               value={ytUrl}
               onChange={(e) => setYtUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder="https://..."
               disabled={!ytProject || running}
             />
             <Button
               onClick={async () => {
                 const trimmed = ytUrl.trim();
                 if (!trimmed) {
-                  toast.error("Enter a YouTube URL");
+                  toast.error("Enter a URL");
                   return;
                 }
                 if (!ytProject) {

@@ -25,6 +25,8 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 - [ ] Tile builder: per-tile transition preview
 - [ ] Multiple saved tile configs (currently single settings file)
 - [x] Video preview / playback — per-video editor with inline player and visual action tools (trim, slowmo, crop, loop)
+- [x] Local file import — copy videos from the filesystem into any project folder via the Import page or the folder context menu ("Import files here")
+- [x] URL import — download videos via yt-dlp (YouTube, Vimeo, X, etc.) from the Import page
 - [ ] Workspace history — quick-switch between recent workspaces
 
 ## Non-Functional Requirements
@@ -38,7 +40,7 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 ## Nice To Have
 
 - App notarization (removes Gatekeeper friction)
-- Drag-and-drop video import into workspace
+- Drag-and-drop video import into workspace (file picker import exists; drag-and-drop is not implemented)
 - Progress bar for long-running ffmpeg actions
 - Multiple tile settings configs
 - Workspace change UI (no manual prefs delete required)

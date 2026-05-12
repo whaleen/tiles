@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import type { DragEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { thumbUrl } from "@/api/client";
+import { thumbUrl, bumpMediaCache } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useProjectDetail } from "@/hooks/use-project-detail";
 import { useVideos } from "@/hooks/use-videos";
 import { useFolderOrder } from "@/hooks/use-folder-order";
@@ -99,6 +100,14 @@ export function LibraryPage({
   }, [rootOnly, search, selectedFolder]);
   const { videos, loading: videosLoading, refresh, removeVideo } = useVideos(project, videoScope);
 
+  // Always fetch recursively so folder card mosaics can find videos in subfolders,
+  // regardless of the rootOnly / selectedFolder filter applied to the display grid.
+  const thumbScope = useMemo(
+    () => ({ folder: selectedFolder || undefined, recursive: true }),
+    [selectedFolder]
+  );
+  const { videos: thumbVideos } = useVideos(project, thumbScope);
+
   const { order, saveOrder } = useFolderOrder(project, selectedFolder);
   const lastSelectedRef = useRef<string | null>(null);
 
@@ -176,8 +185,8 @@ export function LibraryPage({
   }, [filteredVideos, order]);
 
   const folderCards = useMemo(
-    () => buildFolderCards(selectedFolder || "", detail?.subfolders, videos, project),
-    [detail?.subfolders, project, selectedFolder, videos]
+    () => buildFolderCards(selectedFolder || "", detail?.subfolders, thumbVideos, project),
+    [detail?.subfolders, project, selectedFolder, thumbVideos]
   );
 
   const selectedVideos = useMemo(
@@ -191,8 +200,8 @@ export function LibraryPage({
 
   const parentThumbs = useMemo(() => {
     if (!selectedFolder) return [] as string[];
-    return buildFolderPreviewThumbs(parentPath || "", videos, project);
-  }, [parentPath, project, selectedFolder, videos]);
+    return buildFolderPreviewThumbs(parentPath || "", thumbVideos, project);
+  }, [parentPath, project, selectedFolder, thumbVideos]);
 
   const allFolderPaths = useMemo(() => {
     const paths = [...(detail?.subfolders ?? [])];
@@ -367,6 +376,30 @@ export function LibraryPage({
       toast.error(message);
     } finally {
       setFolderBusy(false);
+    }
+  }
+
+  async function importFilesToFolder(folderPath: string) {
+    if (!project) return;
+    const picked = await open({
+      multiple: true,
+      filters: [{ name: "Videos", extensions: ["mp4", "mov", "mkv", "avi", "m4v", "webm", "wmv", "mts", "m2ts"] }],
+    });
+    if (!picked) return;
+    const files = Array.isArray(picked) ? picked : [picked];
+    try {
+      const result = await invoke<{ copied: number; skipped: number }>(
+        "import_files_to_folder",
+        { project, folder: folderPath, files }
+      );
+      toast.success(
+        `Imported ${result.copied} file${result.copied !== 1 ? "s" : ""} into ${folderPath || project}`,
+        { description: result.skipped > 0 ? `${result.skipped} skipped` : undefined }
+      );
+      bumpMediaCache();
+      await refreshLibraryData();
+    } catch (err) {
+      toast.error("Import failed", { description: String(err) });
     }
   }
 
@@ -651,6 +684,7 @@ export function LibraryPage({
                           onRename={(path) => void renameFolder(path)}
                           onMove={(path) => void moveFolder(path)}
                           onDelete={(path) => void deleteFolder(path)}
+                          onImport={(path) => void importFilesToFolder(path)}
                           disabled={folderBusy}
                         >
                           <button

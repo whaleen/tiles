@@ -77,12 +77,12 @@ The library lists **both videos and images** (`is_media_file` = video OR image).
 
 ---
 
-### Import YouTube Video (`yt-import`)
+### URL Import (`yt-import`)
 
 | | |
 |---|---|
 | **Target type** | `url` |
-| **Media** | N/A — downloads from the internet |
+| **Media** | N/A — downloads from any yt-dlp-supported source (YouTube, Vimeo, X, etc.) |
 | **Overwrite** | Not applicable |
 | **Library context** | Not shown in library panel (URL input lives in the Import page). |
 | **Editor context** | Not applicable. |

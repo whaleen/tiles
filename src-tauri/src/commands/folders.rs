@@ -17,6 +17,13 @@ pub struct MoveVideosResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ImportFilesResult {
+    pub copied: usize,
+    pub skipped: usize,
+    pub files: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct MovedVideoPath {
     pub from: String,
     pub to: String,
@@ -215,6 +222,68 @@ pub fn move_videos(
 
     state.invalidate_video_cache();
     Ok(MoveVideosResponse { moved, moved_paths })
+}
+
+#[tauri::command]
+pub fn import_files_to_folder(
+    state: State<AppState>,
+    project: String,
+    folder: String,
+    files: Vec<String>,
+) -> Result<ImportFilesResult, String> {
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
+    let folder_rel = normalize_rel(&folder);
+    if !is_valid_rel_folder(&folder_rel, true) {
+        return Err("invalid folder".to_string());
+    }
+    let dest_dir = if folder_rel.is_empty() {
+        project_dir.clone()
+    } else {
+        project_dir.join(&folder_rel)
+    };
+    if !dest_dir.exists() || !dest_dir.is_dir() {
+        return Err("destination folder not found".to_string());
+    }
+
+    let mut copied = 0usize;
+    let mut skipped = 0usize;
+    let mut result_files = Vec::new();
+
+    for src_path in &files {
+        let src = PathBuf::from(src_path);
+        if !src.is_absolute() || !src.exists() || !src.is_file() {
+            skipped += 1;
+            continue;
+        }
+        // Don't allow importing files already inside the workspace
+        if src.starts_with(&root) {
+            skipped += 1;
+            continue;
+        }
+        let file_name = src
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| "invalid file name".to_string())?;
+        let dest = unique_destination(&dest_dir, file_name);
+        std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+        let rel = dest
+            .strip_prefix(root.join("src"))
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .map_err(|_| "path error".to_string())?;
+        result_files.push(rel);
+        copied += 1;
+    }
+
+    if copied > 0 {
+        state.invalidate_video_cache();
+    }
+
+    Ok(ImportFilesResult {
+        copied,
+        skipped,
+        files: result_files,
+    })
 }
 
 #[tauri::command]

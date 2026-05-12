@@ -24,7 +24,10 @@ Browse all generated outputs in the workspace `outputs/` folder. Includes a log 
 
 ### Import
 
-YouTube import flow — paste a URL, configure quality and tiling settings, download and process via `yt-import`.
+Two import modes:
+
+- **URL import** — paste a URL (YouTube, Vimeo, X, or any yt-dlp-supported source), configure quality and tiling settings, download and process via `yt-import`.
+- **Local files** — pick video files from the filesystem and copy them into the current project. Also available as "Import files here" on the folder context menu in the Library.
 
 ## Actions
 

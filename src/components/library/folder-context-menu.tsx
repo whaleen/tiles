@@ -6,7 +6,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { FolderOpen, Pencil, FolderOutput, Trash2 } from "lucide-react";
+import { FolderOpen, Pencil, FolderOutput, Trash2, Download } from "lucide-react";
 
 interface FolderContextMenuProps {
   children: ReactNode;
@@ -16,6 +16,7 @@ interface FolderContextMenuProps {
   onRename: (path: string) => void;
   onMove: (path: string) => void;
   onDelete: (path: string) => void;
+  onImport: (path: string) => void;
   disabled?: boolean;
 }
 
@@ -27,6 +28,7 @@ export function FolderContextMenu({
   onRename,
   onMove,
   onDelete,
+  onImport,
   disabled,
 }: FolderContextMenuProps) {
   return (
@@ -39,6 +41,15 @@ export function FolderContextMenu({
         >
           <FolderOpen className="h-3.5 w-3.5" />
           Open "{folderLabel}"
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          onClick={() => onImport(folderPath)}
+          disabled={disabled}
+          className="gap-2"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Import files here
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Button } from "@/components/ui/button";
 import { videoUrl, bumpMediaCache } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
@@ -9,7 +8,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { errorMessage } from "@/lib/errors";
 import { toast } from "sonner";
 import { EditorActionPanel } from "./editor-action-panel";
-import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Minimize, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Trash2 } from "lucide-react";
 import type { VideoEntry } from "@/types";
 
 interface VideoEditorProps {
@@ -33,14 +32,18 @@ export function VideoEditor({
   const [overlayContent, setOverlayContent] = useState<React.ReactNode>(null);
   const [fullscreen, setFullscreen] = useState(false);
 
-  const enterFullscreen = useCallback(async () => {
-    await getCurrentWindow().setFullscreen(true);
-    setFullscreen(true);
+  useEffect(() => {
+    const handler = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
-  const exitFullscreen = useCallback(async () => {
-    await getCurrentWindow().setFullscreen(false);
-    setFullscreen(false);
+  const enterFullscreen = useCallback(() => {
+    videoRef.current?.requestFullscreen();
+  }, []);
+
+  const exitFullscreen = useCallback(() => {
+    if (document.fullscreenElement) document.exitFullscreen();
   }, []);
 
   const isImage = (path: string) =>
@@ -237,22 +240,6 @@ export function VideoEditor({
           </div>
         </div>
       </div>
-      {fullscreen && (
-        <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
-          <video
-            src={videoUrl(video.rel_path)}
-            controls
-            autoPlay
-            className="w-full h-full object-contain"
-          />
-          <button
-            className="absolute top-4 right-4 rounded-full bg-black/70 p-2 text-white hover:bg-black/90 transition-colors"
-            onClick={exitFullscreen}
-          >
-            <Minimize className="h-5 w-5" />
-          </button>
-        </div>
-      )}
     </ActionCompleteContext.Provider>
   );
 }

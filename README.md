@@ -60,7 +60,35 @@ npm run build:cli  # compiles cli/ and copies binary to src-tauri/binaries/
 npm run dev
 ```
 
+`npm run dev` uses the local `@tauri-apps/cli` from `node_modules` — not any globally installed Tauri. You don't need Tauri on your PATH.
 
+### Build and test a production bundle
+
+**1. Build**
+
+```bash
+npm run build
+```
+
+The app bundle lands at `target/release/bundle/macos/tiles.app` (the Cargo workspace puts `target/` at the repo root, not inside `src-tauri/`).
+
+**2. Run the bundle directly (without installing)**
+
+```bash
+open target/release/bundle/macos/tiles.app
+```
+
+**3. Replace the installed app in /Applications**
+
+Remove the old version first, then copy the new bundle into `/Applications/`:
+
+```bash
+rm -rf /Applications/tiles.app
+cp -r target/release/bundle/macos/tiles.app /Applications/
+xattr -dr com.apple.quarantine /Applications/tiles.app
+```
+
+Note: use `/Applications/` as the destination (not `/Applications/tiles.app`) — `cp -r` creates `tiles.app` inside it.
 
 ## Release
 
