@@ -46,17 +46,28 @@ pub fn get_transcript(state: State<AppState>, path: String) -> Option<String> {
         s.to_string_lossy().replace('\\', "/")
     };
     const EXTS: &[&str] = &["txt", "srt", "vtt", "json"];
-    let candidates: Vec<std::path::PathBuf> = EXTS.iter().flat_map(|ext| {
-        let mut v = vec![
-            root.join("outputs").join("transcribe").join(format!("{stem}.{ext}")),
-            root.join("src").join(format!("{stem}.{ext}")),
-        ];
-        let parts: Vec<&str> = stem.splitn(2, '/').collect();
-        if parts.len() == 2 {
-            v.push(root.join("src").join(parts[0]).join("outputs").join("transcribe").join(format!("{}.{ext}", parts[1])));
-        }
-        v
-    }).collect();
+    let candidates: Vec<std::path::PathBuf> = EXTS
+        .iter()
+        .flat_map(|ext| {
+            let mut v = vec![
+                root.join("outputs")
+                    .join("transcribe")
+                    .join(format!("{stem}.{ext}")),
+                root.join("src").join(format!("{stem}.{ext}")),
+            ];
+            let parts: Vec<&str> = stem.splitn(2, '/').collect();
+            if parts.len() == 2 {
+                v.push(
+                    root.join("src")
+                        .join(parts[0])
+                        .join("outputs")
+                        .join("transcribe")
+                        .join(format!("{}.{ext}", parts[1])),
+                );
+            }
+            v
+        })
+        .collect();
     for candidate in candidates {
         if candidate.is_file() {
             if let Ok(content) = std::fs::read_to_string(&candidate) {

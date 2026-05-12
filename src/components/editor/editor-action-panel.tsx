@@ -19,6 +19,7 @@ import { VisualTrimForm } from "./tools/visual-trim-form";
 import { VisualCropForm } from "./tools/visual-crop-form";
 import { VisualLoopForm } from "./tools/visual-loop-form";
 import { VisualSlowmoForm } from "./tools/visual-slowmo-form";
+import { actionCapabilities } from "@/components/actions/action-capabilities";
 import type { VideoEntry } from "@/types";
 
 interface EditorActionPanelProps {
@@ -66,6 +67,7 @@ export function EditorActionPanel({
     }),
     [video.rel_path, video.name]
   );
+  const caps = actionCapabilities(selectedAction ?? undefined);
 
   const formMap: Record<string, React.ReactNode> = {
     trim: (
@@ -82,13 +84,13 @@ export function EditorActionPanel({
         renderOverlay={onRenderOverlay}
       />
     ),
-    detect: <DetectForm {...formProps} />,
-    "split-detect": <SplitDetectForm {...formProps} />,
-    "strip-audio": <StripAudioForm {...formProps} />,
-    transcribe: <TranscribeForm {...formProps} />,
+    detect: <DetectForm {...formProps} {...caps} />,
+    "split-detect": <SplitDetectForm {...formProps} {...caps} />,
+    "strip-audio": <StripAudioForm {...formProps} {...caps} />,
+    transcribe: <TranscribeForm {...formProps} {...caps} />,
     slowmo: <VisualSlowmoForm video={video} videoRef={videoRef} />,
-    chop: <ChopForm {...formProps} />,
-    "doctor-reencode": <DoctorReencodeForm {...formProps} />,
+    chop: <ChopForm {...formProps} {...caps} />,
+    "doctor-reencode": <DoctorReencodeForm {...formProps} {...caps} />,
     loop: (
       <VisualLoopForm
         video={video}

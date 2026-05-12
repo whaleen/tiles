@@ -37,9 +37,10 @@ export function TranscribeForm({
       targetsOverride={targetsOverride}
       targetsSummary={targetsSummary}
       onRunComplete={onRunComplete}
-      allowOutput={allowOutput}
+      allowOutput={false}
       allowOverwrite={allowOverwrite}
       allowAlongside={allowAlongside}
+      fixedOutputMode="alongside"
       buildRequest={(targets, outputMode) => ({
         action: "transcribe",
         targets,
@@ -54,10 +55,9 @@ export function TranscribeForm({
       {() => (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Transcribes audio from videos using whisper-cli. Requires{" "}
-            <code className="text-xs">brew install whisper-cpp</code>. The base
-            model (~150 MB) is auto-downloaded to <code className="text-xs">models/</code> in
-            your workspace on first run.
+            Transcribes audio from videos using whisper-cli and saves the transcript
+            next to the source video. Requires{" "}
+            <code className="text-xs">brew install whisper-cpp</code>.
           </p>
           <div>
             <Label className="text-sm">Language</Label>

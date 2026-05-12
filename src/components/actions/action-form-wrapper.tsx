@@ -36,6 +36,7 @@ interface ActionFormWrapperProps {
   allowOverwrite?: boolean;
   allowOutput?: boolean;
   allowAlongside?: boolean;
+  fixedOutputMode?: string;
   onRunComplete?: () => void;
 }
 
@@ -49,6 +50,7 @@ export function ActionFormWrapper({
   allowOverwrite = true,
   allowOutput = true,
   allowAlongside = true,
+  fixedOutputMode,
   onRunComplete,
 }: ActionFormWrapperProps) {
   const { projects } = useProjects();
@@ -60,22 +62,30 @@ export function ActionFormWrapper({
   const onActionComplete = useContext(ActionCompleteContext);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [outputMode, setOutputMode] = useState(
-    targetType === "settings" ? "global" : "overwrite"
+    fixedOutputMode ?? (targetType === "settings" ? "global" : "overwrite")
   );
   const [outputPath, setOutputPath] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
+    if (fixedOutputMode && outputMode !== fixedOutputMode) {
+      setOutputMode(fixedOutputMode);
+    }
+  }, [fixedOutputMode, outputMode]);
+
+  useEffect(() => {
+    if (fixedOutputMode) return;
     if (!allowOverwrite && outputMode === "overwrite") {
       setOutputMode(targetType === "settings" ? "global" : "source");
     }
-  }, [allowOverwrite, outputMode, targetType]);
+  }, [allowOverwrite, fixedOutputMode, outputMode, targetType]);
 
   useEffect(() => {
+    if (fixedOutputMode) return;
     if (!allowOutput && outputMode !== "global") {
       setOutputMode("global");
     }
-  }, [allowOutput, outputMode]);
+  }, [allowOutput, fixedOutputMode, outputMode]);
 
   const hasOverride = Array.isArray(targetsOverride);
   const targets = hasOverride
@@ -89,7 +99,7 @@ export function ActionFormWrapper({
       toast.error("Select at least one target");
       return;
     }
-    if (allowOutput && outputMode === "custom" && !outputPath.trim()) {
+    if (allowOutput && !fixedOutputMode && outputMode === "custom" && !outputPath.trim()) {
       toast.error("Enter a custom output path");
       return;
     }
@@ -98,8 +108,9 @@ export function ActionFormWrapper({
 
   const handleRun = async () => {
     setConfirmOpen(false);
-    const req = buildRequest(targets, outputMode);
-    if (outputMode === "custom") {
+    const effectiveOutputMode = fixedOutputMode ?? outputMode;
+    const req = buildRequest(targets, effectiveOutputMode);
+    if (!fixedOutputMode && outputMode === "custom") {
       req.params = {
         ...(req.params ?? {}),
         output: outputPath.trim(),
@@ -112,7 +123,7 @@ export function ActionFormWrapper({
           toast.success(`${actionName} completed`, {
             description: `${targetLabel} · ${outputLabel}`,
           });
-          if (outputMode === "overwrite" && onActionComplete) {
+          if ((fixedOutputMode ?? outputMode) === "overwrite" && onActionComplete) {
             onActionComplete();
           } else {
             bumpMediaCache();
@@ -137,6 +148,7 @@ export function ActionFormWrapper({
   }, [targetType, targets.length, targetsSummary]);
 
   const outputLabel = useMemo(() => {
+    if (fixedOutputMode === "alongside") return "Save transcript next to source video";
     if (!allowOutput) return "Not applicable";
     if (outputMode === "overwrite") return "Overwrite originals";
     if (outputMode === "alongside") return "Save alongside originals";
@@ -148,7 +160,7 @@ export function ActionFormWrapper({
         : "Custom path";
     }
     return outputMode;
-  }, [allowOutput, outputMode, outputPath]);
+  }, [allowOutput, fixedOutputMode, outputMode, outputPath]);
 
   const toggleFolder = (name: string) => {
     setSelectedFolders((prev) =>
@@ -199,7 +211,7 @@ export function ActionFormWrapper({
           </div>
         )}
 
-        {allowOutput && (
+        {allowOutput && !fixedOutputMode && (
           <div>
             <Label className="text-sm">Output</Label>
             <Select value={outputMode} onValueChange={setOutputMode}>
@@ -234,7 +246,7 @@ export function ActionFormWrapper({
           </div>
         )}
 
-        {allowOutput && outputMode === "custom" && (
+        {allowOutput && !fixedOutputMode && outputMode === "custom" && (
           <div>
             <Label className="text-sm">Output Path</Label>
             <Input
@@ -266,7 +278,7 @@ export function ActionFormWrapper({
               <div className="text-xs text-muted-foreground">Targets</div>
               <div className="font-medium">{targetLabel}</div>
             </div>
-            {allowOutput && (
+            {allowOutput && !fixedOutputMode && (
               <div>
                 <div className="text-xs text-muted-foreground">Output</div>
                 <div className={outputMode === "overwrite" ? "font-medium text-destructive" : "font-medium"}>

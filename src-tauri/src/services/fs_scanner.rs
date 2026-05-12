@@ -32,6 +32,30 @@ pub fn is_media_file(path: &Path) -> bool {
     is_video_file(path) || is_image_file(path)
 }
 
+pub fn is_transcript_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .map(|ext| TRANSCRIPT_EXTENSIONS.iter().any(|v| *v == ext))
+        .unwrap_or(false)
+}
+
+pub fn is_output_file(path: &Path) -> bool {
+    is_media_file(path) || is_transcript_file(path)
+}
+
+fn output_kind(path: &Path) -> String {
+    if is_video_file(path) {
+        "video".to_string()
+    } else if is_image_file(path) {
+        "image".to_string()
+    } else if is_transcript_file(path) {
+        "text".to_string()
+    } else {
+        "other".to_string()
+    }
+}
+
 fn should_skip_source_dir(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(|s| s.to_str()),
@@ -208,6 +232,74 @@ const TRANSCRIPT_EXTENSIONS: &[&str] = &["txt", "srt", "vtt", "json"];
 
 /// Check whether a transcript file exists for a source video at `rel_path`
 /// (relative to `src/`, e.g. "project-a/footage/clip.mp4").
+pub fn resolve_transcript_source_video(root: &Path, transcript_rel: &str) -> Option<String> {
+    let stem = Path::new(transcript_rel)
+        .with_extension("")
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let source_stem = if let Some(rest) = stem.strip_prefix("outputs/transcribe/") {
+        rest.to_string()
+    } else if let Some(rest) = stem.strip_prefix("src/") {
+        let parts: Vec<&str> = rest.split('/').collect();
+        if parts.len() >= 4 && parts[1] == "outputs" && parts[2] == "transcribe" {
+            let project = parts[0];
+            let mut source_rest = parts[3..].join("/");
+            // Compatibility with older transcripts written as
+            // src/<project>/outputs/transcribe/<project>/...
+            if source_rest.starts_with(&format!("{project}/")) {
+                source_rest = source_rest[project.len() + 1..].to_string();
+            }
+            format!("{project}/{source_rest}")
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    };
+
+    find_source_video_for_stem(root, &source_stem)
+}
+
+fn find_source_video_for_stem(root: &Path, source_stem: &str) -> Option<String> {
+    let src = root.join("src");
+    let stem_path = src.join(source_stem);
+    for ext in VIDEO_EXTENSIONS {
+        let ext = ext.trim_start_matches('.');
+        let candidate = stem_path.with_extension(ext);
+        if candidate.is_file() {
+            return candidate
+                .strip_prefix(&src)
+                .ok()
+                .map(|p| p.to_string_lossy().replace('\\', "/"));
+        }
+        let candidate_upper = stem_path.with_extension(ext.to_uppercase());
+        if candidate_upper.is_file() {
+            return candidate_upper
+                .strip_prefix(&src)
+                .ok()
+                .map(|p| p.to_string_lossy().replace('\\', "/"));
+        }
+    }
+
+    let parent = stem_path.parent()?;
+    let wanted = stem_path.file_stem()?.to_string_lossy().to_lowercase();
+    for entry in fs::read_dir(parent).ok()?.flatten() {
+        let path = entry.path();
+        if !path.is_file() || !is_video_file(&path) {
+            continue;
+        }
+        let candidate_stem = path.file_stem()?.to_string_lossy().to_lowercase();
+        if candidate_stem == wanted {
+            return path
+                .strip_prefix(&src)
+                .ok()
+                .map(|p| p.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    None
+}
+
 pub fn check_has_transcript(root: &Path, rel_path: &str) -> bool {
     let stem = {
         let p = std::path::Path::new(rel_path);
@@ -217,7 +309,12 @@ pub fn check_has_transcript(root: &Path, rel_path: &str) -> bool {
 
     for ext in TRANSCRIPT_EXTENSIONS {
         // Global mode: outputs/transcribe/<rel_stem>.<ext>
-        if root.join("outputs").join("transcribe").join(format!("{stem}.{ext}")).exists() {
+        if root
+            .join("outputs")
+            .join("transcribe")
+            .join(format!("{stem}.{ext}"))
+            .exists()
+        {
             return true;
         }
         // Source mode: src/<project>/outputs/transcribe/<rest>.<ext>
@@ -348,20 +445,8 @@ pub fn list_output_entries(root: &Path, rel_path: Option<&str>) -> Vec<OutputEnt
         let size_bytes = if is_dir { 0 } else { metadata.len() };
         let kind = if is_dir {
             "dir".to_string()
-        } else if is_video_file(&path) {
-            "video".to_string()
         } else {
-            match path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| e.to_lowercase())
-                .as_deref()
-            {
-                Some("jpg") | Some("jpeg") | Some("png") | Some("gif") | Some("webp") => {
-                    "image".to_string()
-                }
-                _ => "other".to_string(),
-            }
+            output_kind(&path)
         };
         out.push(OutputEntry {
             name,
@@ -386,7 +471,7 @@ pub fn list_output_entries(root: &Path, rel_path: Option<&str>) -> Vec<OutputEnt
     out
 }
 
-pub fn list_all_videos_recursive(root: &Path, rel_path: &str) -> Vec<OutputEntry> {
+pub fn list_all_output_files_recursive(root: &Path, rel_path: &str) -> Vec<OutputEntry> {
     let rel = rel_path
         .trim()
         .trim_start_matches('/')
@@ -411,13 +496,17 @@ pub fn list_all_videos_recursive(root: &Path, rel_path: &str) -> Vec<OutputEntry
             let path = entry.path();
             if path.is_dir() {
                 let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                if name == "tui-thumbs" || name == "tui-logs" || name.starts_with('.') {
+                if name == "tui-thumbs"
+                    || name == "tui-logs"
+                    || name == "tui-tmp"
+                    || name.starts_with('.')
+                {
                     continue;
                 }
                 stack.push(path);
                 continue;
             }
-            if !path.is_file() || !is_media_file(&path) {
+            if !path.is_file() || !is_output_file(&path) {
                 continue;
             }
 
@@ -441,11 +530,7 @@ pub fn list_all_videos_recursive(root: &Path, rel_path: &str) -> Vec<OutputEntry
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
 
-            let kind = if is_video_file(&path) {
-                "video".to_string()
-            } else {
-                "image".to_string()
-            };
+            let kind = output_kind(&path);
 
             out.push(OutputEntry {
                 name,
@@ -652,7 +737,7 @@ fn collect_root_outputs(
             Some(s) if !s.is_empty() => s.to_string(),
             _ => continue,
         };
-        if tool == "tui-logs" || tool == "tui-thumbs" {
+        if tool == "tui-logs" || tool == "tui-thumbs" || tool == "tui-tmp" {
             continue;
         }
         let run_entries = match fs::read_dir(&tool_path) {
@@ -661,7 +746,7 @@ fn collect_root_outputs(
         };
         for entry in run_entries.flatten() {
             let path = entry.path();
-            if path.is_file() && is_video_file(&path) {
+            if path.is_file() && is_output_file(&path) {
                 let run_id = match path.file_name().and_then(|s| s.to_str()) {
                     Some(s) if !s.is_empty() => s.to_string(),
                     _ => continue,
@@ -678,14 +763,18 @@ fn collect_root_outputs(
                     Ok(v) => v.to_string_lossy().replace('\\', "/"),
                     Err(_) => continue,
                 };
-                let sample_url = format!("/outfiles/{}", url_encode_path(&run_rel));
+                let sample_url = if is_video_file(&path) || is_image_file(&path) {
+                    Some(format!("/outfiles/{}", url_encode_path(&run_rel)))
+                } else {
+                    None
+                };
                 let log_file = find_best_log(log_index, &tool, modified_epoch);
                 out.push(OutputRun {
                     project: "(global)".to_string(),
                     tool: tool.clone(),
                     run_id,
                     run_rel,
-                    sample_url: Some(sample_url),
+                    sample_url,
                     log_file,
                     modified_epoch,
                     video_count: 1,
@@ -717,14 +806,14 @@ fn collect_root_outputs(
                 Ok(v) => v.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
             };
-            let video_count = count_videos_in_dir(&run_path);
+            let video_count = count_output_files_in_dir(&run_path);
             let log_file = find_best_log(log_index, &tool, modified_epoch);
             out.push(OutputRun {
                 project: "(global)".to_string(),
                 tool: tool.clone(),
                 run_id,
                 run_rel,
-                sample_url: find_first_video_rel(root, &run_path)
+                sample_url: find_first_preview_rel(root, &run_path)
                     .map(|r| format!("/outfiles/{}", url_encode_path(&r))),
                 log_file,
                 modified_epoch,
@@ -759,7 +848,7 @@ fn collect_output_runs_in(
         };
         for entry in run_entries.flatten() {
             let path = entry.path();
-            if path.is_file() && is_video_file(&path) {
+            if path.is_file() && is_output_file(&path) {
                 let run_id = match path.file_name().and_then(|s| s.to_str()) {
                     Some(s) if !s.is_empty() => s.to_string(),
                     _ => continue,
@@ -782,13 +871,18 @@ fn collect_output_runs_in(
                     .map(|p| p.to_string_lossy().replace('\\', "/"))
                     .unwrap_or_default();
                 let project = project_from_folder(&folder);
+                let sample_url = if is_video_file(&path) || is_image_file(&path) {
+                    Some(format!("/files/{}", url_encode_path(&rel)))
+                } else {
+                    None
+                };
                 let log_file = find_best_log(log_index, &tool, modified_epoch);
                 out.push(OutputRun {
                     project,
                     tool: tool.clone(),
                     run_id,
                     run_rel: format!("src/{}", rel),
-                    sample_url: Some(format!("/files/{}", url_encode_path(&rel))),
+                    sample_url,
                     log_file,
                     modified_epoch,
                     video_count: 1,
@@ -826,8 +920,8 @@ fn collect_output_runs_in(
                 .map(|p| p.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
             let project = project_from_folder(&folder);
-            let video_count = count_videos_in_dir(&run_path);
-            let sample_url = find_first_video_rel_src(src_root, &run_path)
+            let video_count = count_output_files_in_dir(&run_path);
+            let sample_url = find_first_preview_rel_src(src_root, &run_path)
                 .map(|r| format!("/files/{}", url_encode_path(&r)));
             let log_file = find_best_log(log_index, &tool, modified_epoch);
             out.push(OutputRun {
@@ -848,7 +942,7 @@ fn project_from_folder(folder: &str) -> String {
     folder.split('/').next().unwrap_or("(unknown)").to_string()
 }
 
-fn count_videos_in_dir(dir: &Path) -> usize {
+fn count_output_files_in_dir(dir: &Path) -> usize {
     let mut count = 0;
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -860,7 +954,7 @@ fn count_videos_in_dir(dir: &Path) -> usize {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.is_file() && is_video_file(&path) {
+            } else if path.is_file() && is_output_file(&path) {
                 count += 1;
             }
         }
@@ -868,7 +962,7 @@ fn count_videos_in_dir(dir: &Path) -> usize {
     count
 }
 
-fn find_first_video_rel(root: &Path, dir: &Path) -> Option<String> {
+fn find_first_preview_rel(root: &Path, dir: &Path) -> Option<String> {
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
         let entries = fs::read_dir(current).ok()?;
@@ -876,7 +970,7 @@ fn find_first_video_rel(root: &Path, dir: &Path) -> Option<String> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.is_file() && is_video_file(&path) {
+            } else if path.is_file() && (is_video_file(&path) || is_image_file(&path)) {
                 let rel = path.strip_prefix(root).ok()?;
                 return Some(rel.to_string_lossy().replace('\\', "/"));
             }
@@ -885,7 +979,7 @@ fn find_first_video_rel(root: &Path, dir: &Path) -> Option<String> {
     None
 }
 
-fn find_first_video_rel_src(src_root: &Path, dir: &Path) -> Option<String> {
+fn find_first_preview_rel_src(src_root: &Path, dir: &Path) -> Option<String> {
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
         let entries = fs::read_dir(current).ok()?;
@@ -893,7 +987,7 @@ fn find_first_video_rel_src(src_root: &Path, dir: &Path) -> Option<String> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if path.is_file() && is_video_file(&path) {
+            } else if path.is_file() && (is_video_file(&path) || is_image_file(&path)) {
                 let rel = path.strip_prefix(src_root).ok()?;
                 return Some(rel.to_string_lossy().replace('\\', "/"));
             }

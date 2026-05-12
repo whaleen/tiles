@@ -27,9 +27,6 @@ pub fn get_log(state: State<AppState>, filename: String) -> Result<String, Strin
     if filename.contains("..") || filename.contains('/') {
         return Err("invalid filename".to_string());
     }
-    let path = root
-        .join("outputs")
-        .join("tui-logs")
-        .join(&filename);
+    let path = root.join("outputs").join("tui-logs").join(&filename);
     std::fs::read_to_string(&path).map_err(|_| "not found".to_string())
 }

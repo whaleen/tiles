@@ -364,7 +364,18 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
         .unwrap_or(0);
     let log_path = log_dir.join(format!("studio_transcribe_run_{ts}.log"));
 
-    let model = resolve_whisper_model(root, req)?;
+    let model = match resolve_whisper_model(root, req) {
+        Ok(path) => path,
+        Err(err) => {
+            let msg = format!("failed to prepare Whisper model: {err}");
+            let _ = fs::write(&log_path, &msg);
+            return Ok(ActionRunResult {
+                exit_code: 1,
+                output: msg,
+                log_file: log_path.display().to_string(),
+            });
+        }
+    };
 
     let output_dir = match resolve_transcribe_output_dir(root, req) {
         Some(dir) => dir,
@@ -416,8 +427,16 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
     // Temp dir for extracted audio
     let tmp_dir = root.join("outputs").join("tui-tmp");
     let _ = fs::create_dir_all(&tmp_dir);
+    let run_id = format!("run-{ts}");
+    let ffmpeg_bin = resolve_tool_bin("ffmpeg");
+    let whisper_bin = resolve_tool_bin("whisper-cli");
 
     let mut combined = String::new();
+    combined.push_str(&format!("Transcribe run: {run_id}\n"));
+    combined.push_str(&format!("Model: {}\n", model.display()));
+    combined.push_str(&format!("Output dir: {}\n", output_dir.display()));
+    combined.push_str(&format!("ffmpeg: {}\n", ffmpeg_bin.display()));
+    combined.push_str(&format!("whisper-cli: {}\n\n", whisper_bin.display()));
     let mut exit_code = 0;
 
     for input in &inputs {
@@ -429,11 +448,12 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
         // 1. Extract mono 16kHz WAV — the only format whisper-cli reliably accepts
         let tmp_wav = tmp_dir.join(format!("{file_stem}_{ts}.wav"));
         combined.push_str(&format!(
-            "$ ffmpeg -y -i {} -vn -acodec pcm_s16le -ar 16000 -ac 1 {}\n\n",
+            "$ {} -y -i {} -vn -acodec pcm_s16le -ar 16000 -ac 1 {}\n\n",
+            ffmpeg_bin.display(),
             input.display(),
             tmp_wav.display()
         ));
-        let extract = Command::new("ffmpeg")
+        let extract = Command::new(&ffmpeg_bin)
             .args(["-y", "-i"])
             .arg(input)
             .args(["-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1"])
@@ -456,19 +476,11 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
             _ => {}
         }
 
-        // 2. Build output stem (no extension — whisper-cli appends it)
+        // 2. Build output stem (no extension — whisper-cli appends it).
+        // Global outputs mirror src/<project>/..., but project outputs should be
+        // relative to that project so lookup paths stay predictable.
         let output_stem = {
-            let src_root = root.join("src");
-            let rel = input
-                .strip_prefix(&src_root)
-                .ok()
-                .map(|p| p.to_path_buf())
-                .unwrap_or_else(|| {
-                    input
-                        .file_name()
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| PathBuf::from("transcript"))
-                });
+            let rel = transcript_output_rel(root, input, &output_dir);
             let mut p = output_dir.join(rel);
             p.set_extension("");
             p
@@ -479,17 +491,21 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
 
         // 3. Run whisper-cli
         combined.push_str(&format!(
-            "$ whisper-cli -m {} -l {} -of {} {} {}\n\n",
+            "$ {} -m {} -l {} -of {} {} {}\n\n",
+            whisper_bin.display(),
             model.display(),
             language,
             output_stem.display(),
             format_flag,
             tmp_wav.display()
         ));
-        let whisper = Command::new("whisper-cli")
-            .arg("-m").arg(&model)
-            .arg("-l").arg(&language)
-            .arg("-of").arg(&output_stem)
+        let whisper = Command::new(&whisper_bin)
+            .arg("-m")
+            .arg(&model)
+            .arg("-l")
+            .arg(&language)
+            .arg("-of")
+            .arg(&output_stem)
             .arg(format_flag)
             .arg("--no-prints")
             .arg(&tmp_wav)
@@ -509,10 +525,7 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
                 if !out.status.success() {
                     exit_code = 1;
                 } else {
-                    combined.push_str(&format!(
-                        "wrote {}.{ext}\n",
-                        output_stem.display()
-                    ));
+                    combined.push_str(&format!("wrote {}.{ext}\n", output_stem.display()));
                 }
             }
             Err(e) => {
@@ -540,8 +553,7 @@ fn resolve_transcribe_output_dir(root: &Path, req: &ActionRunRequest) -> Option<
             .params
             .get("output")
             .and_then(|v| v.as_str())
-            .filter(|v| !v.trim().is_empty())
-            .map(|v| root.join(v)),
+            .and_then(|v| safe_output_path(root, v)),
         "alongside" => Some(root.join("src")),
         "source" => project_output_dir(req)
             .map(|v| root.join(v))
@@ -549,6 +561,64 @@ fn resolve_transcribe_output_dir(root: &Path, req: &ActionRunRequest) -> Option<
         "overwrite" => None,
         _ => Some(root.join("outputs").join("transcribe")),
     }
+}
+
+fn safe_output_path(root: &Path, rel: &str) -> Option<PathBuf> {
+    let rel = rel.trim().trim_start_matches('/');
+    if rel.is_empty() || rel.contains("..") || rel.contains('\\') || Path::new(rel).is_absolute() {
+        return None;
+    }
+    Some(root.join(rel))
+}
+
+fn transcript_output_rel(root: &Path, input: &Path, output_dir: &Path) -> PathBuf {
+    let src_root = root.join("src");
+    let src_rel = input
+        .strip_prefix(&src_root)
+        .ok()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| {
+            input
+                .file_name()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("transcript"))
+        });
+
+    // outputs/transcribe mirrors the full src-relative path, including project.
+    if output_dir == root.join("outputs").join("transcribe") {
+        return src_rel;
+    }
+
+    // src/<project>/outputs/... stores paths relative to <project>/.
+    let parts: Vec<_> = src_rel.iter().collect();
+    if parts.len() > 1 {
+        if let Some(project) = parts[0].to_str() {
+            let project_outputs = root.join("src").join(project).join("outputs");
+            if output_dir.starts_with(&project_outputs) {
+                return parts.iter().skip(1).collect();
+            }
+        }
+    }
+
+    src_rel
+}
+
+fn resolve_tool_bin(name: &str) -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates = [
+        format!("/opt/homebrew/bin/{name}"),
+        format!("/usr/local/bin/{name}"),
+        format!("/usr/bin/{name}"),
+        format!("{home}/.cargo/bin/{name}"),
+        format!("{home}/.local/bin/{name}"),
+    ];
+    for candidate in candidates {
+        let path = PathBuf::from(candidate);
+        if path.exists() {
+            return path;
+        }
+    }
+    PathBuf::from(name)
 }
 
 fn resolve_whisper_model(root: &Path, req: &ActionRunRequest) -> Result<PathBuf, io::Error> {
@@ -567,13 +637,18 @@ fn resolve_whisper_model(root: &Path, req: &ActionRunRequest) -> Result<PathBuf,
         });
     }
 
-    let models_dir = root.join("models");
+    let models_dir = default_whisper_models_dir(root);
     let model_path = models_dir.join("ggml-base.bin");
     if model_path.exists() {
         return Ok(model_path);
     }
 
     fs::create_dir_all(&models_dir)?;
+    migrate_workspace_model_download(root, &model_path);
+    if model_path.exists() {
+        return Ok(model_path);
+    }
+
     download_whisper_model(
         "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
         &model_path,
@@ -581,23 +656,62 @@ fn resolve_whisper_model(root: &Path, req: &ActionRunRequest) -> Result<PathBuf,
     Ok(model_path)
 }
 
+fn default_whisper_models_dir(root: &Path) -> PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("com.whaleen.tiles")
+            .join("models");
+    }
+    root.join("models")
+}
+
+fn migrate_workspace_model_download(root: &Path, model_path: &Path) {
+    let legacy_model = root.join("models").join("ggml-base.bin");
+    let legacy_partial = root.join("models").join("ggml-base.bin.download");
+    let partial = model_path.with_extension("download");
+
+    if legacy_model.is_file() {
+        let _ = fs::rename(&legacy_model, model_path)
+            .or_else(|_| fs::copy(&legacy_model, model_path).map(|_| ()));
+    } else if legacy_partial.is_file() && !partial.exists() {
+        let _ = fs::rename(&legacy_partial, &partial)
+            .or_else(|_| fs::copy(&legacy_partial, &partial).map(|_| ()));
+    }
+}
+
 fn download_whisper_model(url: &str, dest: &Path) -> Result<(), io::Error> {
     let url = url.to_string();
     let dest = dest.to_path_buf();
     let handle = thread::spawn(move || -> Result<(), io::Error> {
-        let response = reqwest::blocking::get(&url)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-        if !response.status().is_success() {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("failed to download model: {}", response.status()),
-            ));
+        let tmp = dest.with_extension("download");
+
+        // Prefer curl because Hugging Face can return responses that reqwest's
+        // decoder rejects, and curl can resume partial model downloads.
+        match download_whisper_model_curl(&url, &tmp) {
+            Ok(()) => {
+                fs::rename(&tmp, &dest)?;
+                return Ok(());
+            }
+            Err(curl_err) => {
+                // If curl is unavailable, fall back to a streaming reqwest download.
+                // Start fresh because reqwest does not resume the partial curl file.
+                let _ = fs::remove_file(&tmp);
+                match download_whisper_model_reqwest(&url, &tmp) {
+                    Ok(()) => {
+                        fs::rename(&tmp, &dest)?;
+                        Ok(())
+                    }
+                    Err(reqwest_err) => Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "curl download failed: {curl_err}; reqwest fallback failed: {reqwest_err}"
+                        ),
+                    )),
+                }
+            }
         }
-        let bytes = response
-            .bytes()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-        fs::write(&dest, &bytes)?;
-        Ok(())
     });
     match handle.join() {
         Ok(result) => result,
@@ -605,6 +719,52 @@ fn download_whisper_model(url: &str, dest: &Path) -> Result<(), io::Error> {
             io::ErrorKind::Other,
             "model download thread panicked",
         )),
+    }
+}
+
+fn download_whisper_model_reqwest(url: &str, dest: &Path) -> Result<(), io::Error> {
+    let mut response = reqwest::blocking::Client::new()
+        .get(url)
+        .header(reqwest::header::ACCEPT_ENCODING, "identity")
+        .send()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    if !response.status().is_success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("failed to download model: {}", response.status()),
+        ));
+    }
+    let mut file = fs::File::create(dest)?;
+    response
+        .copy_to(&mut file)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    Ok(())
+}
+
+fn download_whisper_model_curl(url: &str, dest: &Path) -> Result<(), io::Error> {
+    let curl_bin = resolve_tool_bin("curl");
+    let output = Command::new(&curl_bin)
+        .args([
+            "-L",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--continue-at",
+            "-",
+            "--output",
+        ])
+        .arg(dest)
+        .arg(url)
+        .output()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("error running curl: {e}")))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("curl exited with {}: {stderr}", output.status),
+        ))
     }
 }
 
@@ -797,5 +957,29 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| { pair[0] == "--output" && pair[1] == "__alongside__" }));
+    }
+
+    #[test]
+    fn transcribe_global_output_keeps_project_prefix() {
+        let root = Path::new("/workspace");
+        let input = root.join("src/project-a/footage/clip.mp4");
+        let output_dir = root.join("outputs/transcribe");
+
+        assert_eq!(
+            transcript_output_rel(root, &input, &output_dir),
+            PathBuf::from("project-a/footage/clip.mp4")
+        );
+    }
+
+    #[test]
+    fn transcribe_project_output_strips_project_prefix() {
+        let root = Path::new("/workspace");
+        let input = root.join("src/project-a/footage/clip.mp4");
+        let output_dir = root.join("src/project-a/outputs/transcribe");
+
+        assert_eq!(
+            transcript_output_rel(root, &input, &output_dir),
+            PathBuf::from("footage/clip.mp4")
+        );
     }
 }

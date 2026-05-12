@@ -23,13 +23,39 @@ pub fn list_output_tree(
 ) -> Vec<OutputEntry> {
     let root = state.root.read().unwrap().clone();
     if recursive.unwrap_or(false) {
-        fs_scanner::list_all_videos_recursive(
-            &root,
-            path.as_deref().unwrap_or("outputs"),
-        )
+        fs_scanner::list_all_output_files_recursive(&root, path.as_deref().unwrap_or("outputs"))
     } else {
         fs_scanner::list_output_entries(&root, path.as_deref())
     }
+}
+
+#[tauri::command]
+pub fn resolve_transcript_source(state: State<AppState>, path: String) -> Option<String> {
+    if path.contains("..") || Path::new(&path).is_absolute() {
+        return None;
+    }
+    let root = state.root.read().unwrap().clone();
+    fs_scanner::resolve_transcript_source_video(&root, path.trim_matches('/'))
+}
+
+#[tauri::command]
+pub fn get_output_text(state: State<AppState>, path: String) -> Result<String, String> {
+    let root = state.root.read().unwrap().clone();
+    if path.contains("..") || Path::new(&path).is_absolute() {
+        return Err("invalid path".to_string());
+    }
+    let rel_norm = path.trim_matches('/');
+    if !rel_norm.starts_with("outputs/") && !rel_norm.starts_with("src/") {
+        return Err("forbidden".to_string());
+    }
+    if rel_norm.starts_with("src/") && !rel_norm.contains("/outputs/") {
+        return Err("forbidden".to_string());
+    }
+    let full = root.join(rel_norm);
+    if !full.is_file() || !fs_scanner::is_transcript_file(&full) {
+        return Err("not found".to_string());
+    }
+    std::fs::read_to_string(&full).map_err(|_| "failed to read text".to_string())
 }
 
 #[tauri::command]

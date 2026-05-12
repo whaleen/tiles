@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useOutputTree } from "@/hooks/use-output-tree";
-import { outThumbUrl, outVideoUrl } from "@/api/client";
+import { outThumbUrl, outVideoUrl, videoUrl } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import {
   Calendar,
   Tag,
   Clock,
+  FileText,
 } from "lucide-react";
 import { getActionIcon, formatActionName } from "@/lib/action-icons";
 import { toast } from "sonner";
@@ -29,6 +30,8 @@ export function OutputsPage({ project }: { project?: string }) {
   const [selectedFile, setSelectedFile] = useState<OutputEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [textPreview, setTextPreview] = useState<string | null>(null);
+  const [transcriptSource, setTranscriptSource] = useState<string | null>(null);
 
   const enterFullscreen = useCallback(async () => {
     await getCurrentWindow().setFullscreen(true);
@@ -48,12 +51,36 @@ export function OutputsPage({ project }: { project?: string }) {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [fullscreen, exitFullscreen]);
+
+  useEffect(() => {
+    setTextPreview(null);
+    setTranscriptSource(null);
+    if (selectedFile?.kind !== "text") return;
+    let cancelled = false;
+    void invoke<string | null>("resolve_transcript_source", { path: selectedFile.rel_path })
+      .then((source) => {
+        if (!cancelled) setTranscriptSource(source);
+      })
+      .catch(() => {
+        if (!cancelled) setTranscriptSource(null);
+      });
+    void invoke<string>("get_output_text", { path: selectedFile.rel_path })
+      .then((text) => {
+        if (!cancelled) setTextPreview(text);
+      })
+      .catch((err) => {
+        if (!cancelled) setTextPreview(typeof err === "string" ? err : "Failed to load text");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFile]);
   const { running: runningActions } = useRunningActions();
 
   // The main navigation controls the context (Project vs Global)
   const rootPath = project ? `src/${project}/outputs` : "outputs";
   
-  // Fetch ALL videos recursively for the active context
+  // Fetch all output files recursively for the active context
   const {
     entries: allFiles,
     loading,
@@ -309,12 +336,16 @@ export function OutputsPage({ project }: { project?: string }) {
                   autoPlay
                   className="max-w-full max-h-full"
                 />
-              ) : (
+              ) : selectedFile.kind === 'image' ? (
                 <img 
                   src={outVideoUrl(selectedFile.rel_path)} 
                   className="max-w-full max-h-full object-contain" 
                   alt={selectedFile.name}
                 />
+              ) : selectedFile.kind === 'text' ? (
+                <TranscriptDetail source={transcriptSource} text={textPreview} />
+              ) : (
+                <div className="text-muted-foreground text-sm">No preview available</div>
               )}
             </div>
 
@@ -376,15 +407,19 @@ function OutputCard({
         className="relative aspect-video bg-muted cursor-pointer overflow-hidden"
         onClick={onSelect}
       >
-        <img
-          src={file.kind === "image" ? outVideoUrl(file.rel_path) : outThumbUrl(file.rel_path)}
-          alt={file.name}
-          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-          loading="lazy"
-        />
+        {file.kind === "text" ? (
+          <TranscriptThumbnail file={file} />
+        ) : (
+          <img
+            src={file.kind === "image" ? outVideoUrl(file.rel_path) : outThumbUrl(file.rel_path)}
+            alt={file.name}
+            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            loading="lazy"
+          />
+        )}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <div className="bg-primary text-primary-foreground rounded-full p-2 shadow-lg scale-90 group-hover:scale-100 transition-transform">
-            <Play className="h-5 w-5 fill-current" />
+            {file.kind === "text" ? <FileText className="h-5 w-5" /> : <Play className="h-5 w-5 fill-current" />}
           </div>
         </div>
         
@@ -426,6 +461,72 @@ function OutputCard({
           </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TranscriptThumbnail({ file }: { file: OutputEntry }) {
+  const [source, setSource] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSource(null);
+    void invoke<string | null>("resolve_transcript_source", { path: file.rel_path })
+      .then((resolved) => {
+        if (!cancelled) setSource(resolved);
+      })
+      .catch(() => {
+        if (!cancelled) setSource(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file.rel_path]);
+
+  return (
+    <>
+      {source ? (
+        <img
+          src={outThumbUrl(`src/${source}`)}
+          alt={file.name}
+          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+          loading="lazy"
+          onError={() => setSource(null)}
+        />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-muted/50 text-muted-foreground">
+          <FileText className="h-8 w-8" />
+          <span className="text-[10px] font-semibold uppercase">Transcript</span>
+        </div>
+      )}
+      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full bg-primary/90 text-primary-foreground flex items-center gap-1 shadow-sm">
+        <FileText className="h-3 w-3" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider">Transcript</span>
+      </div>
+    </>
+  );
+}
+
+function TranscriptDetail({ source, text }: { source: string | null; text: string | null }) {
+  return (
+    <div className="grid h-full w-full grid-cols-1 md:grid-cols-2 bg-background text-foreground">
+      <div className="min-h-0 bg-black flex items-center justify-center border-b md:border-b-0 md:border-r">
+        {source ? (
+          <video
+            key={source}
+            src={videoUrl(source)}
+            controls
+            className="max-w-full max-h-full"
+          />
+        ) : (
+          <div className="text-xs text-muted-foreground p-4 text-center">
+            Source video preview not found for this transcript.
+          </div>
+        )}
+      </div>
+      <pre className="min-h-0 overflow-auto p-4 text-xs whitespace-pre-wrap font-mono">
+        {text ?? "Loading transcript..."}
+      </pre>
     </div>
   );
 }

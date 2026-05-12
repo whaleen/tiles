@@ -15,6 +15,7 @@ import {
   Repeat,
   Clapperboard,
   Crop,
+  FileText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +36,7 @@ const actionIcons: Record<string, LucideIcon> = {
   loop: Repeat,
   chop: Scissors,
   crop: Crop,
+  transcribe: FileText,
 };
 
 const fallbackIcon: LucideIcon = Clapperboard;

@@ -33,8 +33,8 @@ fn find_tiles_bin() -> PathBuf {
     // macOS apps don't inherit the user's shell PATH, so check explicitly.
     let home = std::env::var("HOME").unwrap_or_default();
     let candidates: &[&str] = &[
-        "/opt/homebrew/bin/tiles",         // Apple Silicon Homebrew
-        "/usr/local/bin/tiles",            // Intel Homebrew / manual install
+        "/opt/homebrew/bin/tiles", // Apple Silicon Homebrew
+        "/usr/local/bin/tiles",    // Intel Homebrew / manual install
         &format!("{home}/.cargo/bin/tiles"),
         &format!("{home}/.local/bin/tiles"),
     ];
@@ -125,6 +125,8 @@ pub fn run() {
             // outputs
             commands::outputs::list_outputs,
             commands::outputs::list_output_tree,
+            commands::outputs::resolve_transcript_source,
+            commands::outputs::get_output_text,
             commands::outputs::delete_output,
             // actions
             commands::actions::list_actions,

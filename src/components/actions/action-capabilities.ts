@@ -20,7 +20,7 @@ const ACTION_CAPS: Record<string, ActionCapability> = {
   concat: { allowOutput: true, allowOverwrite: false, allowAlongside: true },
   detect: { allowOutput: true, allowOverwrite: false, allowAlongside: true },
   "split-detect": { allowOutput: true, allowOverwrite: false, allowAlongside: true },
-  transcribe: { allowOutput: true, allowOverwrite: false, allowAlongside: true },
+  transcribe: { allowOutput: false, allowOverwrite: false, allowAlongside: false },
   loop: { allowOutput: true, allowOverwrite: false, allowAlongside: true },
   "yt-import": { allowOutput: true, allowOverwrite: false, allowAlongside: false },
   crop: { allowOutput: true, allowOverwrite: true, allowAlongside: true },
