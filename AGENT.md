@@ -6,11 +6,12 @@ tiles is a macOS desktop app for video tile layouts and batch video processing. 
 
 ## Stack
 
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS + shadcn/ui
+- **Frontend**: React + TypeScript + Vite+ + Tailwind CSS + shadcn/ui
 - **Backend**: Rust (Tauri v2 commands, Axum-based embedded media server)
 - **Desktop shell**: Tauri v2
-- **Package manager**: npm (frontend), Cargo (Rust)
-- **Build**: Tauri CLI via `npm run tauri`
+- **Package manager**: pnpm (frontend), Cargo (Rust)
+- **Frontend tooling**: Vite+ (`vp`) scripts
+- **Build**: Tauri CLI via pnpm scripts
 - **Release**: GitHub Actions → GitHub Releases → Homebrew tap → in-app updater
 
 ## Repo Layout
@@ -51,19 +52,41 @@ AGENT.md                    # This file
 
 ```bash
 # Install frontend deps
-npm install
+pnpm install
 
-# Run dev (Tauri + Vite hot reload)
-npm run dev
+# Build/copy the tiles-cli sidecar used by Tauri
+pnpm build:cli
 
-# Typecheck
-npm run typecheck
+# Run dev (Tauri + Vite+ hot reload)
+pnpm dev
+
+# Frontend-only Vite+ dev server
+pnpm dev:web
+
+# Typecheck / Vite+ checks
+pnpm check
 
 # Lint
-npm run lint
+pnpm lint
 
 # Build production app
-npm run build
+pnpm build
+```
+
+## Agent / Human-in-the-loop Iteration
+
+For UI and workflow changes, agents should usually iterate in this order:
+
+1. Make a focused change.
+2. Ask the human to validate it in the dev app (`pnpm dev`) if it is not already running.
+3. Repeat until the chunk is approved.
+4. Then run `pnpm build` and have the human test `target/release/bundle/macos/tiles.app` directly.
+5. Only replace `/Applications/tiles.app` after the built bundle is approved:
+
+```bash
+rm -rf /Applications/tiles.app
+cp -r target/release/bundle/macos/tiles.app /Applications/
+xattr -dr com.apple.quarantine /Applications/tiles.app
 ```
 
 > `tiles-cli` is bundled as a Tauri sidecar — no PATH setup needed.
@@ -107,8 +130,10 @@ GitHub Actions builds a universal macOS app bundle + DMG, uploads to GitHub Rele
 
 - **Workspace root is a `RwLock`** — always read it at the top of a handler; never store a reference across an await point.
 - **Cargo workspace** — `target/` is at the repo root, not inside `src-tauri/`.
-- **`tiles-cli` sidecar** — bundled in `src-tauri/binaries/`, resolved at startup by `find_tiles_bin()` in `lib.rs`. Falls back to PATH if not found next to the executable.
+- **`tiles-cli` sidecar** — bundled in `src-tauri/binaries/`, resolved at startup by `find_tiles_bin()` in `lib.rs`. Dev prefers `target/debug/tiles-cli` next to the Tauri executable when present, so run `pnpm build:cli`/copy a fresh sidecar after CLI changes before validating through `pnpm dev`. Falls back to PATH if not found next to the executable.
 - **Media server** — runs on a random port chosen at startup (`media::pick_port()`). The port is shared via `MediaPort` state and exposed as the `media_port` Tauri command.
+- **Action progress** — `tiles-cli` emits `TILES_PROGRESS {json}` lines; Tauri streams stdout/stderr in `runner.rs`, parses those lines into `RunningAction.progress`, and the Outputs page renders progress bars/messages. Long `FFmpegPipeline` encodes use ffmpeg `-progress pipe:2` when duration is known and roll in-file percent/ETA into the overall action percent.
+- **Vite+ check** — `pnpm check` includes Vite+ formatting analysis and may report broad pre-existing formatting drift. Use `pnpm lint`, `pnpm exec tsc --noEmit`, and Cargo checks for targeted validation unless the task is explicitly to format the whole repo.
 - **Video thumbnails** — served by the embedded media server (HTTP, fine for images). Source video files are served via the `streamfile://` custom URI scheme to avoid WKWebView mixed-content blocking.
 - **App is not notarized** — users need `xattr -dr com.apple.quarantine /Applications/tiles.app` on first launch.
 - **`GH_PAT`** secret (not `GITHUB_TOKEN`) is required for the release workflow to push to the homebrew tap repo.

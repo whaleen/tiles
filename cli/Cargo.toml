@@ -8,6 +8,7 @@ license = "MIT"
 [dependencies]
 crossterm = "0.28"
 ratatui = "0.28"
+serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"

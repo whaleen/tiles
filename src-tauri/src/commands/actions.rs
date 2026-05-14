@@ -133,6 +133,13 @@ pub async fn run_action(
         project,
         started_epoch: now,
         targets: req.targets.clone(),
+        progress: Some(crate::models::ActionProgress {
+            phase: "Running".to_string(),
+            current: None,
+            total: None,
+            percent: None,
+            message: Some("Preparing output…".to_string()),
+        }),
     };
     if let Ok(mut guard) = state.running_actions.lock() {
         guard.push(running);
@@ -140,9 +147,19 @@ pub async fn run_action(
 
     let root = state.root.read().unwrap().clone();
     let tiles_bin = state.tiles_bin.clone();
-    let result = tokio::task::spawn_blocking(move || runner::run_action(&root, &tiles_bin, &req))
-        .await
-        .map_err(|e| e.to_string())?;
+    let running_actions = state.running_actions.clone();
+    let progress_id = id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        runner::run_action(&root, &tiles_bin, &req, move |progress| {
+            if let Ok(mut guard) = running_actions.lock() {
+                if let Some(item) = guard.iter_mut().find(|item| item.id == progress_id) {
+                    item.progress = Some(progress);
+                }
+            }
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     if let Ok(mut guard) = state.running_actions.lock() {
         guard.retain(|item| item.id != id);

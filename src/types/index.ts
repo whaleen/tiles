@@ -136,6 +136,14 @@ export interface ActionRunResult {
   log_file: string;
 }
 
+export interface ActionProgress {
+  phase: string;
+  current?: number | null;
+  total?: number | null;
+  percent?: number | null;
+  message?: string | null;
+}
+
 export interface RunningAction {
   id: string;
   action: string;
@@ -144,6 +152,7 @@ export interface RunningAction {
   project?: string | null;
   started_epoch: number;
   targets: string[];
+  progress?: ActionProgress | null;
 }
 
 export interface HealthStatus {

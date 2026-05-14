@@ -22,7 +22,6 @@ interface ActionFormProps {
 export function TranscribeForm({
   targetsOverride,
   targetsSummary,
-  allowOutput,
   allowOverwrite,
   allowAlongside,
   onRunComplete,

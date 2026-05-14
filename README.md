@@ -1,6 +1,6 @@
 # tiles
 
-A macOS desktop app for video tile layouts and tiled renders. Built with Tauri + React.
+A macOS desktop app for video tile layouts and tiled renders. Built with Tauri + React + Vite+.
 
 ## Install
 
@@ -52,22 +52,45 @@ When a new version is available, tiles will show a banner in the top of the app 
 
 ## Development
 
-`tiles-cli` is a Rust sidecar that must be compiled before running the app. The binary is not committed — build it first:
+This repo uses pnpm and Vite+ (`vp`). `tiles-cli` is a Rust sidecar that must be compiled before running the app. The binary is not committed — build it first:
 
 ```bash
-npm install
-npm run build:cli  # compiles cli/ and copies binary to src-tauri/binaries/
-npm run dev
+pnpm install
+pnpm build:cli  # compiles cli/ and copies binary to src-tauri/binaries/
+pnpm dev        # Tauri desktop app + Vite+ dev server
 ```
 
-`npm run dev` uses the local `@tauri-apps/cli` from `node_modules` — not any globally installed Tauri. You don't need Tauri on your PATH.
+Useful scripts:
+
+```bash
+pnpm dev:web    # frontend-only Vite+ dev server
+pnpm lint       # ESLint
+pnpm check      # Vite+ check/format analysis
+pnpm build      # production Tauri app bundle
+```
+
+`pnpm dev` uses the local `@tauri-apps/cli` from `node_modules` — not any globally installed Tauri. You don't need Tauri on your PATH.
+
+### Agent / human-in-the-loop iteration workflow
+
+When an agent is changing UI or behavior, iterate with a human against the lightest useful target first:
+
+1. Prefer dev mode while designing and reviewing small changes:
+
+```bash
+pnpm dev
+```
+
+2. The human should keep the app open, try the change, and give feedback. Repeat until the chunk is approved.
+3. Only after a meaningful chunk is approved, build the production bundle and test that directly.
+4. Replace `/Applications/tiles.app` only after the built bundle has been approved.
 
 ### Build and test a production bundle
 
 **1. Build**
 
 ```bash
-npm run build
+pnpm build
 ```
 
 The app bundle lands at `target/release/bundle/macos/tiles.app` (the Cargo workspace puts `target/` at the repo root, not inside `src-tauri/`).

@@ -147,6 +147,29 @@ pub fn move_folder(
 }
 
 #[tauri::command]
+pub fn reveal_folder(state: State<AppState>, project: String, path: String) -> Result<(), String> {
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
+    let rel = normalize_rel(&path);
+    if !is_valid_rel_folder(&rel, true) {
+        return Err("invalid path".to_string());
+    }
+    let dir = if rel.is_empty() {
+        project_dir
+    } else {
+        project_dir.join(&rel)
+    };
+    if !dir.exists() || !dir.is_dir() {
+        return Err("not found".to_string());
+    }
+    std::process::Command::new("open")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn delete_folder(state: State<AppState>, project: String, path: String) -> Result<(), String> {
     let root = state.root.read().unwrap().clone();
     let project_dir = get_project_dir(&root, &project)?;

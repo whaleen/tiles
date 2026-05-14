@@ -167,16 +167,44 @@ export function OutputsPage({ project }: { project?: string }) {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {visibleRunning.map(run => {
               const Icon = getActionIcon(run.action);
+              const percent = run.progress?.percent;
+              const progressLabel = formatProgressLabel(
+                percent,
+                run.progress?.current,
+                run.progress?.total
+              );
               return (
                 <div key={run.id} className="bg-background border rounded-lg p-3 flex items-center gap-3 shadow-sm">
                   <div className="bg-primary/10 p-2 rounded-lg">
                     <Icon className="h-4 w-4 text-primary" />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-bold truncate">{formatActionName(run.action)}</div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="text-xs font-bold truncate">{formatActionName(run.action)}</div>
+                      {run.progress?.phase && (
+                        <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[9px] leading-none">
+                          {run.progress.phase}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" />
                       Started {timeAgo(run.started_epoch)}
+                    </div>
+                    {run.output && (
+                      <div className="text-[10px] text-muted-foreground truncate" title={run.output}>
+                        → {run.output}
+                      </div>
+                    )}
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-primary transition-all duration-500 animate-pulse"
+                        style={{ width: percent != null ? `${percent}%` : "35%" }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                      <span className="truncate">{run.progress?.message ?? run.progress?.phase ?? "Running…"}</span>
+                      {progressLabel && <span className="shrink-0 font-mono">{progressLabel}</span>}
                     </div>
                   </div>
                   <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -543,6 +571,17 @@ function getToolFromPath(relPath: string): string | null {
     if (parts.length >= 2) return parts[1];
   }
   return null;
+}
+
+function formatProgressLabel(
+  percent?: number | null,
+  current?: number | null,
+  total?: number | null
+) {
+  const parts: string[] = [];
+  if (percent != null) parts.push(`${Math.round(percent)}%`);
+  if (current != null && total != null && total > 0) parts.push(`${current}/${total}`);
+  return parts.join(" • ");
 }
 
 function timeAgo(epoch: number) {

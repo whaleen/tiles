@@ -10,7 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{exit, Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::execute;
@@ -348,6 +348,35 @@ const IMAGE_EXTENSIONS: &[&str] = &[
 const SOURCE_OUTPUT_TOKEN: &str = "__source_outputs__";
 const ALONGSIDE_TOKEN: &str = "__alongside__";
 
+fn emit_progress(phase: &str, current: u64, total: u64, message: impl Into<String>) {
+    let percent = if total > 0 {
+        Some(((current as f64 / total as f64) * 100.0).clamp(0.0, 100.0))
+    } else {
+        None
+    };
+    emit_progress_value(phase, current, total, percent, message);
+}
+
+fn emit_progress_value(
+    phase: &str,
+    current: u64,
+    total: u64,
+    percent: Option<f64>,
+    message: impl Into<String>,
+) {
+    println!(
+        "TILES_PROGRESS {}",
+        serde_json::json!({
+            "phase": phase,
+            "current": if total > 0 { Some(current) } else { None },
+            "total": if total > 0 { Some(total) } else { None },
+            "percent": percent.map(|p| p.clamp(0.0, 100.0)),
+            "message": message.into(),
+        })
+    );
+    let _ = io::stdout().flush();
+}
+
 #[derive(Debug, Clone)]
 struct ConcatOptions {
     folders: Vec<String>,
@@ -534,6 +563,18 @@ struct FFmpegPipeline {
     // Output codec args deferred in Complex mode so they are emitted
     // AFTER -filter_complex and -map, which ffmpeg requires.
     output_args: Vec<std::ffi::OsString>,
+    progress: Option<FFmpegProgress>,
+}
+
+#[derive(Debug, Clone)]
+struct FFmpegProgress {
+    phase: String,
+    current: u64,
+    total: u64,
+    base_current: f64,
+    span: f64,
+    duration: f64,
+    message: String,
 }
 
 impl FFmpegPipeline {
@@ -548,6 +589,7 @@ impl FFmpegPipeline {
             has_audio: false,
             mode: PipelineMode::Simple,
             output_args: Vec::new(),
+            progress: None,
         }
     }
 
@@ -574,9 +616,19 @@ impl FFmpegPipeline {
     }
 
     fn apply_video_output_codec_args(&mut self) -> &mut Self {
-        let args: &[&str] = &["-fps_mode", "cfr", "-c:v", "libx264", "-preset", "medium", "-crf", "23"];
+        let args: &[&str] = &[
+            "-fps_mode",
+            "cfr",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            "23",
+        ];
         if matches!(self.mode, PipelineMode::Complex { .. }) {
-            self.output_args.extend(args.iter().map(std::ffi::OsString::from));
+            self.output_args
+                .extend(args.iter().map(std::ffi::OsString::from));
         } else {
             self.cmd.args(args);
         }
@@ -616,7 +668,8 @@ impl FFmpegPipeline {
             // Enforce fixed sample rate and layout
             let args: &[&str] = &["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"];
             if is_complex {
-                self.output_args.extend(args.iter().map(std::ffi::OsString::from));
+                self.output_args
+                    .extend(args.iter().map(std::ffi::OsString::from));
             } else {
                 self.cmd.args(args);
             }
@@ -634,6 +687,41 @@ impl FFmpegPipeline {
 
     fn set_duration(&mut self, duration: f64) -> &mut Self {
         self.cmd.arg("-t").arg(format!("{duration:.6}"));
+        self
+    }
+
+    fn with_progress(
+        &mut self,
+        phase: impl Into<String>,
+        current: u64,
+        total: u64,
+        duration: f64,
+        message: impl Into<String>,
+    ) -> &mut Self {
+        self.with_weighted_progress(phase, current, total, current as f64, 1.0, duration, message)
+    }
+
+    fn with_weighted_progress(
+        &mut self,
+        phase: impl Into<String>,
+        current: u64,
+        total: u64,
+        base_current: f64,
+        span: f64,
+        duration: f64,
+        message: impl Into<String>,
+    ) -> &mut Self {
+        if total > 0 && span > 0.0 && duration.is_finite() && duration > 0.0 {
+            self.progress = Some(FFmpegProgress {
+                phase: phase.into(),
+                current,
+                total,
+                base_current,
+                span,
+                duration,
+                message: message.into(),
+            });
+        }
         self
     }
 
@@ -655,19 +743,180 @@ impl FFmpegPipeline {
             PipelineMode::Simple => {}
         }
         self.cmd.arg("-movflags").arg("+faststart");
+        if self.progress.is_some() {
+            self.cmd.args(["-progress", "pipe:2", "-nostats"]);
+        }
         self.cmd.arg("-y").arg(output);
-        match self.cmd.output() {
-            Ok(o) => {
-                if !o.status.success() {
-                    eprintln!("ffmpeg stderr:\n{}", String::from_utf8_lossy(&o.stderr));
+
+        if let Some(progress) = self.progress {
+            run_ffmpeg_with_progress(self.cmd, progress)
+        } else {
+            match self.cmd.output() {
+                Ok(o) => {
+                    if !o.status.success() {
+                        eprintln!("ffmpeg stderr:\n{}", String::from_utf8_lossy(&o.stderr));
+                    }
+                    o.status.success()
                 }
-                o.status.success()
-            }
-            Err(e) => {
-                eprintln!("error running ffmpeg: {e}");
-                false
+                Err(e) => {
+                    eprintln!("error running ffmpeg: {e}");
+                    false
+                }
             }
         }
+    }
+}
+
+fn run_ffmpeg_with_progress(mut cmd: Command, progress: FFmpegProgress) -> bool {
+    cmd.stderr(Stdio::piped());
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            eprintln!("error running ffmpeg: {e}");
+            return false;
+        }
+    };
+
+    let stderr = child.stderr.take();
+    let (tx, rx) = mpsc::channel::<String>();
+    let reader = stderr.map(|stderr| {
+        thread::spawn(move || {
+            let reader = io::BufReader::new(stderr);
+            for line in reader.lines().map_while(Result::ok) {
+                let _ = tx.send(line);
+            }
+        })
+    });
+
+    let started = Instant::now();
+    let mut stderr_lines = Vec::<String>::new();
+    let mut last_percent = -1.0_f64;
+    let mut last_emit = Instant::now()
+        .checked_sub(Duration::from_secs(2))
+        .unwrap_or_else(Instant::now);
+
+    while let Ok(line) = rx.recv() {
+        if let Some(seconds) = parse_ffmpeg_progress_seconds(&line) {
+            let file_fraction = (seconds / progress.duration).clamp(0.0, 1.0);
+            let rolled_current = progress.base_current + file_fraction * progress.span;
+            let percent = if progress.total > 0 {
+                Some((rolled_current / progress.total as f64) * 100.0)
+            } else {
+                None
+            };
+            let percent_value = percent.unwrap_or(0.0);
+            if (percent_value - last_percent).abs() >= 0.5
+                || last_emit.elapsed() >= Duration::from_secs(2)
+                || file_fraction >= 1.0
+            {
+                let eta = format_ffmpeg_eta(started.elapsed().as_secs_f64(), file_fraction);
+                let detail = format!(
+                    "{} ({:.0}% of file{})",
+                    progress.message,
+                    file_fraction * 100.0,
+                    eta.map(|eta| format!(", ETA {eta}")).unwrap_or_default()
+                );
+                emit_progress_value(
+                    &progress.phase,
+                    progress.current,
+                    progress.total,
+                    percent,
+                    detail,
+                );
+                last_percent = percent_value;
+                last_emit = Instant::now();
+            }
+        } else if !is_ffmpeg_progress_line(&line) {
+            stderr_lines.push(line);
+        }
+    }
+
+    if let Some(reader) = reader {
+        let _ = reader.join();
+    }
+
+    match child.wait() {
+        Ok(status) => {
+            if !status.success() {
+                eprintln!("ffmpeg stderr:\n{}", stderr_lines.join("\n"));
+            }
+            status.success()
+        }
+        Err(e) => {
+            eprintln!("error waiting for ffmpeg: {e}");
+            false
+        }
+    }
+}
+
+fn parse_ffmpeg_progress_seconds(line: &str) -> Option<f64> {
+    if let Some(value) = line.strip_prefix("out_time_ms=") {
+        // ffmpeg's -progress output uses microseconds despite the historical key name.
+        return value.trim().parse::<f64>().ok().map(|v| v / 1_000_000.0);
+    }
+    if let Some(value) = line.strip_prefix("out_time_us=") {
+        return value.trim().parse::<f64>().ok().map(|v| v / 1_000_000.0);
+    }
+    if let Some(value) = line.strip_prefix("out_time=") {
+        return parse_ffmpeg_timecode(value.trim());
+    }
+    parse_ffmpeg_stderr_time(line)
+}
+
+fn is_ffmpeg_progress_line(line: &str) -> bool {
+    matches!(
+        line.split_once('=').map(|(key, _)| key),
+        Some(
+            "frame"
+                | "fps"
+                | "stream_0_0_q"
+                | "bitrate"
+                | "total_size"
+                | "out_time_us"
+                | "out_time_ms"
+                | "out_time"
+                | "dup_frames"
+                | "drop_frames"
+                | "speed"
+                | "progress"
+        )
+    )
+}
+
+fn parse_ffmpeg_stderr_time(line: &str) -> Option<f64> {
+    let marker = "time=";
+    let start = line.find(marker)? + marker.len();
+    let value = line[start..].split_whitespace().next()?;
+    parse_ffmpeg_timecode(value)
+}
+
+fn parse_ffmpeg_timecode(value: &str) -> Option<f64> {
+    let mut parts = value.split(':');
+    let hours = parts.next()?.parse::<f64>().ok()?;
+    let minutes = parts.next()?.parse::<f64>().ok()?;
+    let seconds = parts.next()?.parse::<f64>().ok()?;
+    Some(hours * 3600.0 + minutes * 60.0 + seconds)
+}
+
+fn format_ffmpeg_eta(elapsed: f64, fraction: f64) -> Option<String> {
+    if elapsed < 1.0 || !(0.02..1.0).contains(&fraction) {
+        return None;
+    }
+    let remaining = elapsed * (1.0 - fraction) / fraction;
+    if !remaining.is_finite() || remaining < 1.0 {
+        return None;
+    }
+    Some(format_duration_short(remaining))
+}
+
+fn format_duration_short(seconds: f64) -> String {
+    let total = seconds.round() as u64;
+    let minutes = total / 60;
+    let secs = total % 60;
+    if minutes > 0 {
+        format!("{minutes}m {secs}s")
+    } else {
+        format!("{secs}s")
     }
 }
 
@@ -8762,8 +9011,17 @@ fn run_concat(args: &[OsString]) -> i32 {
     }
 
     let mut failures = 0;
-    for folder_input in &opts.folders {
+    let total = opts.folders.len() as u64;
+    emit_progress("Preparing", 0, total, "Preparing concat inputs…");
+    for (index, folder_input) in opts.folders.iter().enumerate() {
+        let current = index as u64 + 1;
         let folder = resolve_folder_path(&root, folder_input);
+        emit_progress(
+            "Encoding",
+            current.saturating_sub(1),
+            total,
+            format!("Concatenating {}", folder.display()),
+        );
         let files = get_video_files(&folder);
         if files.is_empty() {
             eprintln!("No video files found in {}", folder.display());
@@ -8859,6 +9117,7 @@ fn run_concat(args: &[OsString]) -> i32 {
     if failures > 0 {
         1
     } else {
+        emit_progress("Complete", total, total, "Concat complete");
         0
     }
 }
@@ -8942,7 +9201,15 @@ fn run_loop(args: &[OsString]) -> i32 {
     }
 
     let mut failures = 0;
-    for video in &video_files {
+    let total = video_files.len() as u64;
+    emit_progress("Preparing", 0, total, "Preparing loop inputs…");
+    for (index, video) in video_files.iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            index as u64,
+            total,
+            format!("Looping {}", video.display()),
+        );
         let stem = video
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
@@ -9018,6 +9285,7 @@ fn run_loop(args: &[OsString]) -> i32 {
     if failures > 0 {
         1
     } else {
+        emit_progress("Complete", total, total, "Loop complete");
         0
     }
 }
@@ -9099,7 +9367,15 @@ fn run_trim(args: &[OsString]) -> i32 {
     );
 
     let mut failures = 0usize;
-    for input in &opts.folders {
+    let total_inputs = opts.folders.len() as u64;
+    emit_progress("Preparing", 0, total_inputs, "Preparing trim inputs…");
+    for (input_index, input) in opts.folders.iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            input_index as u64,
+            total_inputs,
+            format!("Trimming {input}"),
+        );
         let as_path = PathBuf::from(input);
         if as_path.exists() && as_path.is_file() && is_video_file(&as_path) {
             let base_dir = as_path.parent().unwrap_or(&root);
@@ -9247,6 +9523,7 @@ fn run_trim(args: &[OsString]) -> i32 {
     if failures > 0 {
         1
     } else {
+        emit_progress("Complete", total_inputs, total_inputs, "Trim complete");
         0
     }
 }
@@ -9402,7 +9679,15 @@ fn run_detect(args: &[OsString]) -> i32 {
     );
 
     let mut processed_ok = 0usize;
-    for video in &videos {
+    let total = videos.len() as u64;
+    emit_progress("Preparing", 0, total, "Preparing scene detection…");
+    for (index, video) in videos.iter().enumerate() {
+        emit_progress(
+            "Detecting",
+            index as u64,
+            total,
+            format!("Detecting scenes in {}", video.display()),
+        );
         println!("\n============================================================");
         println!("Processing: {}", video.display());
         println!("============================================================");
@@ -9467,6 +9752,7 @@ fn run_detect(args: &[OsString]) -> i32 {
         processed_ok,
         videos.len()
     );
+    emit_progress("Complete", total, total, "Scene detection complete");
     0
 }
 
@@ -9550,7 +9836,15 @@ fn run_split_detect(args: &[OsString]) -> i32 {
     }
 
     let mut failures = 0usize;
-    for (video, base_dir) in targets {
+    let total = targets.len() as u64;
+    emit_progress("Preparing", 0, total, "Preparing split detection…");
+    for (index, (video, base_dir)) in targets.into_iter().enumerate() {
+        emit_progress(
+            "Splitting",
+            index as u64,
+            total,
+            format!("Detecting splits in {}", video.display()),
+        );
         let base_output = if alongside {
             base_dir.clone()
         } else if let Some(subdir) = &source_subdir {
@@ -9636,6 +9930,7 @@ fn run_split_detect(args: &[OsString]) -> i32 {
     if failures > 0 {
         1
     } else {
+        emit_progress("Complete", total, total, "Split detection complete");
         0
     }
 }
@@ -9681,7 +9976,15 @@ fn run_yt_import(args: &[OsString]) -> i32 {
     println!("Output directory: {}", output_dir.display());
 
     let mut failures = 0usize;
-    for url in &opts.urls {
+    let total = opts.urls.len() as u64;
+    emit_progress("Preparing", 0, total, "Preparing URL imports…");
+    for (index, url) in opts.urls.iter().enumerate() {
+        emit_progress(
+            "Downloading",
+            index as u64,
+            total,
+            format!("Downloading {url}"),
+        );
         println!("\nFetching: {url}");
         let before_dirs = list_immediate_dirs(&output_dir);
         let output_template = output_dir
@@ -9787,6 +10090,7 @@ fn run_yt_import(args: &[OsString]) -> i32 {
     if failures > 0 {
         1
     } else {
+        emit_progress("Complete", total, total, "URL import complete");
         0
     }
 }
@@ -9874,7 +10178,15 @@ fn run_strip_audio(args: &[OsString]) -> i32 {
     }
 
     let mut failures = 0usize;
-    for (video, base_dir) in targets {
+    let total = targets.len() as u64;
+    emit_progress("Preparing", 0, total, "Preparing audio stripping…");
+    for (index, (video, base_dir)) in targets.into_iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            index as u64,
+            total,
+            format!("Stripping audio from {}", video.display()),
+        );
         let base_output = if overwrite {
             base_dir.clone()
         } else if alongside {
@@ -9925,6 +10237,7 @@ fn run_strip_audio(args: &[OsString]) -> i32 {
     if failures > 0 {
         1
     } else {
+        emit_progress("Complete", total, total, "Strip audio complete");
         0
     }
 }
@@ -10053,7 +10366,14 @@ fn run_doctor_reencode(args: &[OsString]) -> i32 {
     let mut processed = 0usize;
     let mut lines = Vec::<String>::new();
     let total = targets.len();
-    for (file, base_dir) in targets {
+    emit_progress("Preparing", 0, total as u64, "Preparing re-encode inputs…");
+    for (index, (file, base_dir)) in targets.into_iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            format!("Re-encoding {}", file.display()),
+        );
         let out_dir = if overwrite {
             base_dir.clone()
         } else if alongside {
@@ -10094,6 +10414,14 @@ fn run_doctor_reencode(args: &[OsString]) -> i32 {
         pipeline.cmd.arg("-vf").arg(format!("fps={fps}"));
         pipeline.apply_video_output_codec_args();
         pipeline.apply_canonical_audio_params(keep_audio);
+        let duration = get_video_duration(&file, base).unwrap_or(0.0);
+        pipeline.with_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            duration,
+            format!("Re-encoding {}", file.display()),
+        );
         let ok = pipeline.run(&target);
         if ok && overwrite {
             let _ = fs::rename(&target, &file);
@@ -10107,6 +10435,7 @@ fn run_doctor_reencode(args: &[OsString]) -> i32 {
     }
     let log_path = tool_log_path("doctor_reencode");
     write_tool_log(&log_path, &lines);
+    emit_progress("Complete", total as u64, total as u64, "Re-encode complete");
     0
 }
 
@@ -10210,7 +10539,19 @@ fn run_doctor_trim_start(args: &[OsString]) -> i32 {
     let mut processed = 0usize;
     let mut lines = Vec::<String>::new();
     let total = targets.len();
-    for (file, base_dir) in targets {
+    emit_progress(
+        "Preparing",
+        0,
+        total as u64,
+        "Preparing doctor trim inputs…",
+    );
+    for (index, (file, base_dir)) in targets.into_iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            format!("Doctor-trimming {}", file.display()),
+        );
         let out_dir = if overwrite {
             base_dir.clone()
         } else if alongside {
@@ -10247,6 +10588,16 @@ fn run_doctor_trim_start(args: &[OsString]) -> i32 {
         pipeline.cmd.arg("-ss").arg(format!("{seconds:.3}"));
         pipeline.apply_canonical_video_params();
         pipeline.apply_canonical_audio_params(keep_audio);
+        let duration = get_video_duration(&file, base)
+            .map(|d| (d - seconds).max(0.0))
+            .unwrap_or(0.0);
+        pipeline.with_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            duration,
+            format!("Trimming {}", file.display()),
+        );
         let ok = pipeline.run(&target);
         if ok && overwrite {
             let _ = fs::rename(&target, &file);
@@ -10260,6 +10611,12 @@ fn run_doctor_trim_start(args: &[OsString]) -> i32 {
     }
     let log_path = tool_log_path("doctor_trim");
     write_tool_log(&log_path, &lines);
+    emit_progress(
+        "Complete",
+        total as u64,
+        total as u64,
+        "Doctor trim complete",
+    );
     0
 }
 
@@ -10421,7 +10778,19 @@ fn run_slowmo(args: &[OsString]) -> i32 {
     let mut lines = Vec::<String>::new();
     let mut processed = 0usize;
     let total = targets.len();
-    for (file, base_dir) in targets {
+    emit_progress(
+        "Preparing",
+        0,
+        total as u64,
+        "Preparing slow motion inputs…",
+    );
+    for (index, (file, base_dir)) in targets.into_iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            format!("Slowing {}", file.display()),
+        );
         let out_dir = if overwrite {
             base_dir.clone()
         } else if alongside {
@@ -10466,6 +10835,16 @@ fn run_slowmo(args: &[OsString]) -> i32 {
             pipeline.apply_canonical_audio_params(false);
         }
 
+        let duration = get_video_duration(&file, base)
+            .map(|d| if factor.abs() > 1e-6 { d / factor } else { d })
+            .unwrap_or(0.0);
+        pipeline.with_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            duration,
+            format!("Creating slow motion {}", file.display()),
+        );
         let ok = pipeline.run(&target);
 
         if ok && overwrite {
@@ -10480,6 +10859,12 @@ fn run_slowmo(args: &[OsString]) -> i32 {
     }
     let log_path = tool_log_path("slowmo");
     write_tool_log(&log_path, &lines);
+    emit_progress(
+        "Complete",
+        total as u64,
+        total as u64,
+        "Slow motion complete",
+    );
     0
 }
 
@@ -10612,7 +10997,14 @@ fn run_crop(args: &[OsString]) -> i32 {
     let mut lines = Vec::<String>::new();
     let mut processed = 0usize;
     let total = targets.len();
-    for (file, base_dir) in targets {
+    emit_progress("Preparing", 0, total as u64, "Preparing crop inputs…");
+    for (index, (file, base_dir)) in targets.into_iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            format!("Cropping {}", file.display()),
+        );
         // Validate crop region against video dimensions
         let info = get_video_info(&file, base);
         if let Some(ref info) = info {
@@ -10668,6 +11060,14 @@ fn run_crop(args: &[OsString]) -> i32 {
         let crop_filter = format!("crop={w}:{h}:{crop_x}:{crop_y}");
         pipeline.apply_video_params(Some(crop_filter));
         pipeline.apply_canonical_audio_params(has_audio_stream(&file, base));
+        let duration = get_video_duration(&file, base).unwrap_or(0.0);
+        pipeline.with_progress(
+            "Encoding",
+            index as u64,
+            total as u64,
+            duration,
+            format!("Cropping {}", file.display()),
+        );
 
         let ok = pipeline.run(&target);
 
@@ -10683,6 +11083,7 @@ fn run_crop(args: &[OsString]) -> i32 {
     }
     let log_path = tool_log_path("crop");
     write_tool_log(&log_path, &lines);
+    emit_progress("Complete", total as u64, total as u64, "Crop complete");
     0
 }
 
@@ -10753,7 +11154,15 @@ fn run_chop(args: &[OsString]) -> i32 {
 
     let mut lines = Vec::<String>::new();
     let mut failures = 0usize;
-    for input in &opts.folders {
+    let total_inputs = opts.folders.len() as u64;
+    emit_progress("Preparing", 0, total_inputs, "Preparing chop inputs…");
+    for (input_index, input) in opts.folders.iter().enumerate() {
+        emit_progress(
+            "Encoding",
+            input_index as u64,
+            total_inputs,
+            format!("Chopping {input}"),
+        );
         let as_path = PathBuf::from(input);
         if as_path.exists() && as_path.is_file() && is_video_file(&as_path) {
             let base_dir = as_path.parent().unwrap_or(&root);
@@ -10815,6 +11224,7 @@ fn run_chop(args: &[OsString]) -> i32 {
     if failures > 0 {
         1
     } else {
+        emit_progress("Complete", total_inputs, total_inputs, "Chop complete");
         0
     }
 }
@@ -10893,6 +11303,13 @@ fn chop_video(
 
         pipeline.apply_canonical_video_params();
         pipeline.apply_canonical_audio_params(has_audio_stream(input, root));
+        pipeline.with_progress(
+            "Encoding",
+            (segment_idx - 1) as u64,
+            segment_count_for_progress(total_duration, segment_duration),
+            this_duration,
+            format!("Creating segment {segment_idx} for {}", input.display()),
+        );
 
         if !pipeline.run(&out_path) {
             let msg = format!(
@@ -10919,6 +11336,13 @@ fn chop_video(
     }
 
     success
+}
+
+fn segment_count_for_progress(total_duration: f64, segment_duration: f64) -> u64 {
+    if total_duration <= 0.0 || segment_duration <= 0.0 {
+        return 0;
+    }
+    (total_duration / segment_duration).ceil().max(1.0) as u64
 }
 
 fn parse_chop_args(args: &[OsString]) -> Result<Option<ChopOptions>, String> {
@@ -11309,7 +11733,15 @@ fn run_tile(args: &[OsString]) -> i32 {
 
     let mut tile_crop_positions: Vec<String> = Vec::new();
     let mut used_sources_global = HashSet::<PathBuf>::new();
+    let progress_total = tile_count as u64 + 1;
+    emit_progress("Preparing", 0, progress_total, "Preparing tile render…");
     for (i, folder) in folders.iter().enumerate() {
+        emit_progress(
+            "Rendering tiles",
+            i as u64,
+            progress_total,
+            format!("Rendering tile {}/{}", i + 1, tile_count),
+        );
         let tile_mode = loaded_settings
             .tile_modes
             .get(i)
@@ -11459,6 +11891,14 @@ fn run_tile(args: &[OsString]) -> i32 {
                 tile_speed,
                 opts.force_cfr,
                 trim_duration,
+                Some(TileProgressContext {
+                    current: i as u64,
+                    total: progress_total,
+                    base_current: i as f64,
+                    span: 1.0,
+                    tile_index: i + 1,
+                    tile_count,
+                }),
             ) {
                 eprintln!("error: failed creating tile {}", i + 1);
                 cleanup_temp_files(&tile_paths, &temp_dir);
@@ -11513,11 +11953,31 @@ fn run_tile(args: &[OsString]) -> i32 {
         custom_dims.as_ref().or(adaptive_dims.as_ref()),
     );
     println!("[Final] Compositing tiled output...");
+    emit_progress(
+        "Compositing",
+        tile_count as u64,
+        progress_total,
+        "Compositing tiled output…",
+    );
+    let mut final_pipeline = final_pipeline;
+    final_pipeline.with_progress(
+        "Compositing",
+        tile_count as u64,
+        progress_total,
+        target_duration,
+        "Compositing tiled output…",
+    );
     let final_ok = final_pipeline.run(&output_path);
     cleanup_temp_files(&tile_paths, &temp_dir);
 
     if final_ok {
         println!("✓ Created {}", output_path.display());
+        emit_progress(
+            "Complete",
+            progress_total,
+            progress_total,
+            "Tile render complete",
+        );
         0
     } else {
         eprintln!("✗ Failed creating tiled output");
@@ -12424,7 +12884,22 @@ fn cleanup_temp_files(tile_paths: &[PathBuf], temp_dir: &Path) {
     let _ = fs::remove_dir(temp_dir);
 }
 
-fn create_tile_video_simple(files: &[PathBuf], output: &Path, root: &Path) -> bool {
+#[derive(Debug, Clone, Copy)]
+struct TileProgressContext {
+    current: u64,
+    total: u64,
+    base_current: f64,
+    span: f64,
+    tile_index: usize,
+    tile_count: usize,
+}
+
+fn create_tile_video_simple(
+    files: &[PathBuf],
+    output: &Path,
+    root: &Path,
+    progress: Option<TileProgressContext>,
+) -> bool {
     if files.is_empty() {
         return false;
     }
@@ -12433,8 +12908,24 @@ fn create_tile_video_simple(files: &[PathBuf], output: &Path, root: &Path) -> bo
         pipeline.add_input(&files[0], false);
         pipeline.apply_canonical_video_params();
         pipeline.apply_canonical_audio_params(has_audio_stream(&files[0], root));
-        return pipeline.run(output);
-    }
+        if let Some(progress) = progress {
+            let duration = get_video_duration(&files[0], root).unwrap_or(0.0);
+            pipeline.with_weighted_progress(
+                "Rendering tiles",
+                progress.current,
+                progress.total,
+                progress.base_current,
+                progress.span,
+                duration,
+                format!(
+                    "Rendering tile {}/{} from {}",
+                    progress.tile_index,
+                    progress.tile_count,
+                    files[0].display()
+                ),
+            );
+        }
+        return pipeline.run(output);    }
 
     let mut pipeline = FFmpegPipeline::new(root);
     for f in files {
@@ -12473,6 +12964,21 @@ fn create_tile_video_simple(files: &[PathBuf], output: &Path, root: &Path) -> bo
     pipeline.with_filter_complex(filter_parts.join(";"), "[outv]", Some("[outa]"));
     pipeline.apply_canonical_video_params();
     pipeline.apply_canonical_audio_params(true);
+    if let Some(progress) = progress {
+        let duration = files
+            .iter()
+            .filter_map(|f| get_video_duration(f, root))
+            .sum::<f64>();
+        pipeline.with_weighted_progress(
+            "Rendering tiles",
+            progress.current,
+            progress.total,
+            progress.base_current,
+            progress.span,
+            duration,
+            format!("Rendering tile {}/{}", progress.tile_index, progress.tile_count),
+        );
+    }
     pipeline.run(output)
 }
 
@@ -12485,6 +12991,7 @@ fn create_tile_video_with_options(
     speed: f64,
     _force_cfr: bool, // Ignored: now always enforced by contract
     trim_duration: Option<f64>,
+    progress: Option<TileProgressContext>,
 ) -> bool {
     if files.is_empty() {
         return false;
@@ -12530,6 +13037,25 @@ fn create_tile_video_with_options(
             pipeline.apply_canonical_audio_params(false);
         }
 
+        if let Some(progress) = progress {
+            let file_count = files.len().max(1) as f64;
+            let duration = trim_duration.unwrap_or_else(|| get_video_duration(file, root).unwrap_or(0.0));
+            pipeline.with_weighted_progress(
+                "Rendering tiles",
+                progress.current,
+                progress.total,
+                progress.base_current + progress.span * 0.7 * (i as f64 / file_count),
+                progress.span * 0.7 / file_count,
+                duration,
+                format!(
+                    "Preparing tile {}/{} from {}",
+                    progress.tile_index,
+                    progress.tile_count,
+                    file.display()
+                ),
+            );
+        }
+
         if !pipeline.run(&tmp) {
             eprintln!("error: normalization failed for {}", file.display());
             for p in &intermediate_files {
@@ -12541,7 +13067,16 @@ fn create_tile_video_with_options(
     }
 
     let ok = if transition == "cut" || intermediate_files.len() <= 1 {
-        create_tile_video_simple(&intermediate_files, output, root)
+        create_tile_video_simple(
+            &intermediate_files,
+            output,
+            root,
+            progress.map(|p| TileProgressContext {
+                base_current: p.base_current + p.span * 0.7,
+                span: p.span * 0.3,
+                ..p
+            }),
+        )
     } else {
         let transitioned = concat_with_transitions(
             &intermediate_files,
@@ -12557,7 +13092,16 @@ fn create_tile_video_with_options(
                 "warning: transition '{}' failed for tile segment; falling back to cut",
                 transition
             );
-            create_tile_video_simple(&intermediate_files, output, root)
+            create_tile_video_simple(
+                &intermediate_files,
+                output,
+                root,
+                progress.map(|p| TileProgressContext {
+                    base_current: p.base_current + p.span * 0.7,
+                    span: p.span * 0.3,
+                    ..p
+                }),
+            )
         }
     };
 
@@ -15616,6 +16160,13 @@ fn trim_video(
 
     pipeline.apply_canonical_video_params();
     pipeline.apply_canonical_audio_params(!no_audio);
+    pipeline.with_progress(
+        "Encoding",
+        0,
+        1,
+        new_duration,
+        format!("Trimming {}", input.display()),
+    );
 
     pipeline.run(output)
 }

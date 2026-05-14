@@ -1,22 +1,26 @@
 use std::ffi::OsString;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, io};
 
-use crate::models::{ActionRunRequest, ActionRunResult};
+use crate::models::{ActionProgress, ActionRunRequest, ActionRunResult};
 
 pub fn run_action(
     root: &Path,
     tiles_bin: &Path,
     req: &ActionRunRequest,
+    on_progress: impl Fn(ActionProgress) + Send + Sync + 'static,
 ) -> Result<ActionRunResult, io::Error> {
     if req.action == "transcribe" {
-        return run_transcribe(root, req);
+        return run_transcribe(root, req, &on_progress);
     }
     let args = build_args(req);
-    let (exit_code, output, log_path) = run_subcommand(root, tiles_bin, &req.action, &args)?;
+    let (exit_code, output, log_path) =
+        run_subcommand(root, tiles_bin, &req.action, &args, on_progress)?;
     Ok(ActionRunResult {
         exit_code,
         output,
@@ -44,9 +48,17 @@ pub(crate) fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
             }
         }
         "global" => {
-            if req.target_type != "settings" && action_supports_output(&req.action) {
+            if action_supports_output(&req.action) {
                 args.push("--output".into());
-                args.push(format!("outputs/{}", req.action).into());
+                args.push(
+                    req.params
+                        .get("output")
+                        .and_then(|v| v.as_str())
+                        .filter(|v| !v.is_empty())
+                        .map(String::from)
+                        .unwrap_or_else(|| format!("outputs/{}", req.action))
+                        .into(),
+                );
             }
         }
         "custom" => {
@@ -71,8 +83,17 @@ pub(crate) fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
         }
         _ => {
             if action_supports_output(&req.action) {
-                if req.target_type != "settings" {
-                    if let Some(output) = project_output_dir(req) {
+                if req.target_type != "settings"
+                    || req.params.get("output").and_then(|v| v.as_str()).is_some()
+                {
+                    if let Some(output) = req
+                        .params
+                        .get("output")
+                        .and_then(|v| v.as_str())
+                        .filter(|v| !v.is_empty())
+                        .map(String::from)
+                        .or_else(|| project_output_dir(req))
+                    {
                         args.push("--output".into());
                         args.push(output.into());
                     } else {
@@ -355,7 +376,11 @@ fn action_supports_overwrite(action: &str) -> bool {
     )
 }
 
-fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult, io::Error> {
+fn run_transcribe(
+    root: &Path,
+    req: &ActionRunRequest,
+    on_progress: &(dyn Fn(ActionProgress) + Send + Sync),
+) -> Result<ActionRunResult, io::Error> {
     let log_dir = root.join("outputs").join("tui-logs");
     let _ = fs::create_dir_all(&log_dir);
     let ts = SystemTime::now()
@@ -438,8 +463,23 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
     combined.push_str(&format!("ffmpeg: {}\n", ffmpeg_bin.display()));
     combined.push_str(&format!("whisper-cli: {}\n\n", whisper_bin.display()));
     let mut exit_code = 0;
+    let total = inputs.len() as u64;
+    on_progress(ActionProgress {
+        phase: "Preparing".to_string(),
+        current: Some(0),
+        total: Some(total),
+        percent: Some(0.0),
+        message: Some("Preparing transcription…".to_string()),
+    });
 
-    for input in &inputs {
+    for (index, input) in inputs.iter().enumerate() {
+        on_progress(ActionProgress {
+            phase: "Transcribing".to_string(),
+            current: Some(index as u64),
+            total: Some(total),
+            percent: Some(((index as f64 / total as f64) * 100.0).clamp(0.0, 100.0)),
+            message: Some(format!("Transcribing {}", input.display())),
+        });
         let file_stem = input
             .file_stem()
             .and_then(|s| s.to_str())
@@ -537,6 +577,18 @@ fn run_transcribe(root: &Path, req: &ActionRunRequest) -> Result<ActionRunResult
         // 4. Clean up temp WAV
         let _ = fs::remove_file(&tmp_wav);
     }
+
+    on_progress(ActionProgress {
+        phase: if exit_code == 0 { "Complete" } else { "Failed" }.to_string(),
+        current: Some(total),
+        total: Some(total),
+        percent: Some(100.0),
+        message: Some(if exit_code == 0 {
+            "Transcription complete".to_string()
+        } else {
+            "Transcription failed".to_string()
+        }),
+    });
 
     let _ = fs::write(&log_path, &combined);
     Ok(ActionRunResult {
@@ -851,6 +903,7 @@ fn run_subcommand(
     tiles_bin: &Path,
     subcommand: &str,
     args: &[OsString],
+    on_progress: impl Fn(ActionProgress) + Send + Sync + 'static,
 ) -> Result<(i32, String, PathBuf), io::Error> {
     let log_dir = root.join("outputs").join("tui-logs");
     let _ = fs::create_dir_all(&log_dir);
@@ -869,8 +922,8 @@ fn run_subcommand(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let output = match cmd.output() {
-        Ok(out) => out,
+    let mut child = match cmd.spawn() {
+        Ok(child) => child,
         Err(err) => {
             let msg = format!("error running subcommand: {err}");
             let _ = fs::write(&log_path, &msg);
@@ -878,26 +931,109 @@ fn run_subcommand(
         }
     };
 
-    let mut combined = String::new();
-    combined.push_str(&format!(
+    let combined = Arc::new(Mutex::new(format!(
         "$ tiles {subcommand} {}\n\n",
         args.iter()
             .map(|a| a.to_string_lossy().to_string())
             .collect::<Vec<_>>()
             .join(" ")
-    ));
-    if !output.stdout.is_empty() {
-        combined.push_str(&String::from_utf8_lossy(&output.stdout));
+    )));
+    let progress: Arc<dyn Fn(ActionProgress) + Send + Sync + 'static> = Arc::new(on_progress);
+    progress.as_ref()(ActionProgress {
+        phase: "Running".to_string(),
+        current: None,
+        total: None,
+        percent: None,
+        message: Some(format!("Running {subcommand}…")),
+    });
+
+    let mut readers = Vec::new();
+    if let Some(stdout) = child.stdout.take() {
+        readers.push(spawn_output_reader(
+            stdout,
+            combined.clone(),
+            progress.clone(),
+        ));
     }
-    if !output.stderr.is_empty() {
-        if !combined.ends_with('\n') {
-            combined.push('\n');
+    if let Some(stderr) = child.stderr.take() {
+        readers.push(spawn_output_reader(
+            stderr,
+            combined.clone(),
+            progress.clone(),
+        ));
+    }
+
+    let status = child.wait().map(|status| status.code().unwrap_or(1))?;
+    for reader in readers {
+        let _ = reader.join();
+    }
+
+    progress.as_ref()(ActionProgress {
+        phase: if status == 0 { "Complete" } else { "Failed" }.to_string(),
+        current: Some(1),
+        total: Some(1),
+        percent: Some(100.0),
+        message: Some(if status == 0 {
+            format!("{subcommand} complete")
+        } else {
+            format!("{subcommand} failed")
+        }),
+    });
+
+    let output = combined.lock().map(|s| s.clone()).unwrap_or_default();
+    let _ = fs::write(&log_path, &output);
+    Ok((status, output, log_path))
+}
+
+fn spawn_output_reader<R: std::io::Read + Send + 'static>(
+    reader: R,
+    combined: Arc<Mutex<String>>,
+    on_progress: Arc<dyn Fn(ActionProgress) + Send + Sync + 'static>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let reader = BufReader::new(reader);
+        for line in reader.lines().map_while(Result::ok) {
+            if let Some(progress) =
+                parse_progress_line(&line).or_else(|| progress_from_text_line(&line))
+            {
+                on_progress.as_ref()(progress);
+            }
+            if let Ok(mut combined) = combined.lock() {
+                combined.push_str(&line);
+                combined.push('\n');
+            }
         }
-        combined.push_str(&String::from_utf8_lossy(&output.stderr));
+    })
+}
+
+fn parse_progress_line(line: &str) -> Option<ActionProgress> {
+    const PREFIX: &str = "TILES_PROGRESS ";
+    let payload = line.strip_prefix(PREFIX)?;
+    serde_json::from_str(payload).ok()
+}
+
+fn progress_from_text_line(line: &str) -> Option<ActionProgress> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
     }
-    let _ = fs::write(&log_path, &combined);
-    let status = output.status.code().unwrap_or(1);
-    Ok((status, combined, log_path))
+    let lower = trimmed.to_lowercase();
+    if !(lower.starts_with("processing")
+        || lower.starts_with("looping")
+        || lower.starts_with("rendering")
+        || lower.starts_with("encoding")
+        || lower.starts_with("downloading")
+        || lower.starts_with("transcribing"))
+    {
+        return None;
+    }
+    Some(ActionProgress {
+        phase: "Running".to_string(),
+        current: None,
+        total: None,
+        percent: None,
+        message: Some(trimmed.to_string()),
+    })
 }
 
 #[cfg(test)]

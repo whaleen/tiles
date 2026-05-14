@@ -222,6 +222,16 @@ pub struct RunningAction {
     pub project: Option<String>,
     pub started_epoch: u64,
     pub targets: Vec<String>,
+    pub progress: Option<ActionProgress>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ActionProgress {
+    pub phase: String,
+    pub current: Option<u64>,
+    pub total: Option<u64>,
+    pub percent: Option<f64>,
+    pub message: Option<String>,
 }
 
 // --- Folder Order ---

@@ -25,6 +25,7 @@ import { bumpMediaCache } from "@/api/client";
 import { toast } from "sonner";
 import type { ActionRunRequest } from "@/types";
 import { ActionCompleteContext } from "@/contexts/action-complete-context";
+import { FolderOutput, Loader2 } from "lucide-react";
 
 interface ActionFormWrapperProps {
   actionName: string;
@@ -62,10 +63,14 @@ export function ActionFormWrapper({
   const onActionComplete = useContext(ActionCompleteContext);
   const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
   const [outputMode, setOutputMode] = useState(
-    fixedOutputMode ?? (targetType === "settings" ? "global" : "overwrite")
+    fixedOutputMode ?? (targetType === "settings" ? "global" : "source")
   );
   const [outputPath, setOutputPath] = useState("");
+  const [outputName, setOutputName] = useState("");
+  const [outputNameTouched, setOutputNameTouched] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     if (fixedOutputMode && outputMode !== fixedOutputMode) {
@@ -88,11 +93,50 @@ export function ActionFormWrapper({
   }, [allowOutput, fixedOutputMode, outputMode]);
 
   const hasOverride = Array.isArray(targetsOverride);
-  const targets = hasOverride
-    ? targetsOverride || []
-    : targetType === "settings"
-      ? []
-      : selectedFolders;
+  const targets = useMemo(
+    () =>
+      hasOverride
+        ? targetsOverride || []
+        : targetType === "settings"
+          ? []
+          : selectedFolders,
+    [hasOverride, selectedFolders, targetType, targetsOverride]
+  );
+
+  const suggestedOutputName = useMemo(
+    () => suggestOutputName(actionName, targets, targetType),
+    [actionName, targets, targetType]
+  );
+
+  useEffect(() => {
+    if (!outputNameTouched || !outputName.trim()) {
+      setOutputName(suggestedOutputName);
+    }
+  }, [outputNameTouched, outputName, suggestedOutputName]);
+
+  useEffect(() => {
+    if (!running) {
+      setRunStartedAt(null);
+      return;
+    }
+    const started = Date.now();
+    setRunStartedAt(started);
+    setNow(started);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [running]);
+
+  const effectiveOutputPath = useMemo(() => {
+    const name = outputName.trim();
+    if (!name || !allowOutput || fixedOutputMode) return "";
+    if (outputMode === "custom") return outputPath.trim();
+    if (outputMode === "global") return `outputs/${actionName}/${name}`;
+    if (outputMode === "source" || outputMode === "project") {
+      const projectName = projectFromTargets(targets);
+      return projectName ? `src/${projectName}/outputs/${actionName}/${name}` : "";
+    }
+    return "";
+  }, [actionName, allowOutput, fixedOutputMode, outputMode, outputName, outputPath, targets]);
 
   const handleConfirmOpen = () => {
     if (targetType !== "settings" && targets.length === 0) {
@@ -103,6 +147,24 @@ export function ActionFormWrapper({
       toast.error("Enter a custom output path");
       return;
     }
+    if (
+      allowOutput &&
+      !fixedOutputMode &&
+      ["source", "project", "global"].includes(outputMode) &&
+      !outputName.trim()
+    ) {
+      toast.error("Enter an output name");
+      return;
+    }
+    if (
+      allowOutput &&
+      !fixedOutputMode &&
+      ["source", "project"].includes(outputMode) &&
+      !projectFromTargets(targets)
+    ) {
+      toast.error("Project outputs require targets from one project. Choose a custom or global output for mixed targets.");
+      return;
+    }
     setConfirmOpen(true);
   };
 
@@ -110,10 +172,10 @@ export function ActionFormWrapper({
     setConfirmOpen(false);
     const effectiveOutputMode = fixedOutputMode ?? outputMode;
     const req = buildRequest(targets, effectiveOutputMode);
-    if (!fixedOutputMode && outputMode === "custom") {
+    if (!fixedOutputMode && allowOutput && effectiveOutputPath) {
       req.params = {
         ...(req.params ?? {}),
-        output: outputPath.trim(),
+        output: effectiveOutputPath,
       };
     }
       const res = await runAction(req);
@@ -152,15 +214,12 @@ export function ActionFormWrapper({
     if (!allowOutput) return "Not applicable";
     if (outputMode === "overwrite") return "Overwrite originals";
     if (outputMode === "alongside") return "Save alongside originals";
-    if (outputMode === "source") return "Save to project outputs folder";
-    if (outputMode === "global") return "Save to global outputs folder";
-    if (outputMode === "custom") {
-      return outputPath.trim()
-        ? `Custom path: ${outputPath.trim()}`
-        : "Custom path";
+    if (["source", "project", "global", "custom"].includes(outputMode)) {
+      return effectiveOutputPath ||
+        (outputMode === "custom" ? "Custom path" : "Choose targets to build output path");
     }
     return outputMode;
-  }, [allowOutput, fixedOutputMode, outputMode, outputPath]);
+  }, [allowOutput, effectiveOutputPath, fixedOutputMode, outputMode]);
 
   const toggleFolder = (name: string) => {
     setSelectedFolders((prev) =>
@@ -246,6 +305,40 @@ export function ActionFormWrapper({
           </div>
         )}
 
+        {allowOutput && !fixedOutputMode && ["source", "project", "global"].includes(outputMode) && (
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <Label className="text-sm">{outputNameKind(actionName)}</Label>
+              {outputNameTouched && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => {
+                    setOutputName(suggestedOutputName);
+                    setOutputNameTouched(false);
+                  }}
+                >
+                  Reset suggestion
+                </Button>
+              )}
+            </div>
+            <Input
+              value={outputName}
+              onChange={(e) => {
+                setOutputName(e.target.value);
+                setOutputNameTouched(true);
+              }}
+              placeholder={suggestedOutputName}
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1 truncate">
+              {effectiveOutputPath || "Select targets to build the project output path."}
+            </p>
+          </div>
+        )}
+
         {allowOutput && !fixedOutputMode && outputMode === "custom" && (
           <div>
             <Label className="text-sm">Output Path</Label>
@@ -261,9 +354,30 @@ export function ActionFormWrapper({
 
       {children({ targets })}
 
-      <Button onClick={handleConfirmOpen} disabled={running} className="w-full">
-        {running ? "Running..." : `Run ${actionName}`}
-      </Button>
+      <div className="space-y-2">
+        <Button onClick={handleConfirmOpen} disabled={running} className="w-full gap-2">
+          {running ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Running {formatElapsed(runStartedAt ? now - runStartedAt : 0)}
+            </>
+          ) : (
+            `Run ${actionName}`
+          )}
+        </Button>
+        {running && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full gap-2"
+            onClick={() => navigateToOutputs(projectFromTargets(targets))}
+          >
+            <FolderOutput className="h-4 w-4" />
+            View active job in Outputs
+          </Button>
+        )}
+      </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
@@ -328,5 +442,67 @@ export function ActionFormWrapper({
         </div>
       )}
     </div>
+  );
+}
+
+function outputNameKind(actionName: string) {
+  return singleFileOutputActions.has(actionName) ? "Output file" : "Output folder";
+}
+
+const singleFileOutputActions = new Set(["tile", "run", "yolo"]);
+
+function suggestOutputName(actionName: string, targets: string[], targetType: string) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = targetType === "settings"
+    ? "tile"
+    : targets.length === 1
+      ? lastPathSegment(targets[0])
+      : targets.length > 1
+        ? `${projectFromTargets(targets) ?? "mixed"}_${targets.length}_items`
+        : "output";
+  const safeBase = slugify(base || "output");
+  const safeAction = slugify(actionName);
+  const name = `${safeBase}_${safeAction}_${stamp}`;
+  return singleFileOutputActions.has(actionName) ? `${name}.mp4` : name;
+}
+
+function projectFromTargets(targets: string[]) {
+  let project: string | null = null;
+  for (const target of targets) {
+    const parts = target.replaceAll("\\", "/").split("/").filter(Boolean);
+    const candidate = parts[0] === "src" ? parts[1] : parts[0];
+    if (!candidate) continue;
+    if (project && project !== candidate) return null;
+    project = candidate;
+  }
+  return project;
+}
+
+function lastPathSegment(path: string) {
+  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "output";
+}
+
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "output";
+}
+
+function formatElapsed(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function navigateToOutputs(project?: string | null) {
+  window.dispatchEvent(
+    new CustomEvent("tiles:navigate", {
+      detail: { tab: "outputs", project: project ?? null },
+    })
   );
 }

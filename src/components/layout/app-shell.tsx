@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import {
   SidebarInset,
@@ -47,6 +47,17 @@ function PageFallback() {
 export function AppShell({ onChangeWorkspace }: { onChangeWorkspace?: () => void }) {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [project, setProject] = useState<string | undefined>();
+
+  useEffect(() => {
+    function handleNavigate(event: Event) {
+      const detail = (event as CustomEvent<{ tab?: string; project?: string | null }>).detail;
+      if (!detail?.tab) return;
+      setActiveTab(detail.tab);
+      if ("project" in detail) setProject(detail.project ?? undefined);
+    }
+    window.addEventListener("tiles:navigate", handleNavigate);
+    return () => window.removeEventListener("tiles:navigate", handleNavigate);
+  }, []);
 
   return (
     <SidebarProvider className="h-svh overflow-hidden">

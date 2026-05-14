@@ -5,6 +5,10 @@ import { queryKeys } from "@/lib/query-keys";
 import { errorMessage } from "@/lib/errors";
 import type { ActionRunRequest, ActionRunResult } from "@/types";
 
+type AudioContextWindow = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
 export function useActionRunner(scopeKey = "__default__") {
   const [runningCount, setRunningCount] = useState(0);
   const [result, setResult] = useState<ActionRunResult | null>(null);
@@ -50,7 +54,9 @@ export function useActionRunner(scopeKey = "__default__") {
 
 function playPing() {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextCtor = window.AudioContext || (window as AudioContextWindow).webkitAudioContext;
+    if (!AudioContextCtor) return;
+    const ctx = new AudioContextCtor();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";

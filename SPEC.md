@@ -18,6 +18,7 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 - [x] Workspace subdirs (`src/`, `outputs/`, `configs/`) are created automatically on workspace set
 - [x] Video thumbnails served by embedded Axum media server on a random port
 - [x] Running actions tracked in `AppState` — can list in-progress jobs
+- [x] Running action progress streamed from `tiles-cli`/Tauri into the Outputs page (`TILES_PROGRESS` JSON lines; includes ffmpeg in-file percent for long encodes where duration is known)
 - [x] Project metadata stored as JSON alongside project folder
 - [x] Folder ordering persisted per-project (timeline ordering, drag-and-drop)
 - [x] Tile builder settings saved to `configs/tile_videos_settings.json` in workspace
@@ -41,7 +42,6 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 
 - App notarization (removes Gatekeeper friction)
 - Drag-and-drop video import into workspace (file picker import exists; drag-and-drop is not implemented)
-- Progress bar for long-running ffmpeg actions
 - Multiple tile settings configs
 - Workspace change UI (no manual prefs delete required)
 
@@ -50,3 +50,4 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 - App not notarized — requires `xattr -dr com.apple.quarantine /Applications/tiles.app` on first launch
 - Single tile settings config (`configs/tile_videos_settings.json`) — no multi-config support yet
 - Images in library are listed alongside videos but most actions silently skip them
+- Progress remains per action item/stage for non-ffmpeg work and for ffmpeg calls that do not yet provide a known duration to `FFmpegPipeline`

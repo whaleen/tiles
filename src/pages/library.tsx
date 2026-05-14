@@ -379,6 +379,15 @@ export function LibraryPage({
     }
   }
 
+  async function revealFolder(folderPath: string) {
+    if (!project) return;
+    try {
+      await invoke("reveal_folder", { project, path: folderPath });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reveal failed");
+    }
+  }
+
   async function importFilesToFolder(folderPath: string) {
     if (!project) return;
     const picked = await open({
@@ -685,6 +694,7 @@ export function LibraryPage({
                           onMove={(path) => void moveFolder(path)}
                           onDelete={(path) => void deleteFolder(path)}
                           onImport={(path) => void importFilesToFolder(path)}
+                          onReveal={(path) => void revealFolder(path)}
                           disabled={folderBusy}
                         >
                           <button
@@ -774,6 +784,8 @@ export function LibraryPage({
                         onRename={(path) => void renameFolder(path)}
                         onMove={(path) => void moveFolder(path)}
                         onDelete={(path) => void deleteFolder(path)}
+                        onImport={(path) => void importFilesToFolder(path)}
+                        onReveal={(path) => void revealFolder(path)}
                         disabled={folderBusy}
                       >
                         <button
@@ -1023,8 +1035,8 @@ function buildFolderCards(
 
   const videoIndex = new Map<string, VideoEntry[]>();
   for (const v of videos) {
-    if (!v.folder.startsWith(`${project}/`)) continue;
-    const rel = v.folder.slice(project.length + 1);
+    const rel = folderRelativeToProject(v.folder, project);
+    if (rel === null) continue;
     if (!videoIndex.has(rel)) videoIndex.set(rel, []);
     videoIndex.get(rel)!.push(v);
   }
@@ -1036,9 +1048,8 @@ function buildFolderCards(
     if (candidates.length === 0) {
       const childPrefix = `${entry.path}/`;
       candidates = videos.filter((v) => {
-        if (!v.folder.startsWith(`${project}/`)) return false;
-        const rel = v.folder.slice(project.length + 1);
-        return rel.startsWith(childPrefix);
+        const rel = folderRelativeToProject(v.folder, project);
+        return rel !== null && rel.startsWith(childPrefix);
       });
     }
     const thumbs = candidates.slice(0, 4).map((v) => thumbUrl(v.rel_path));
@@ -1058,18 +1069,25 @@ function buildFolderPreviewThumbs(
   project: string | undefined
 ) {
   if (!project) return [] as string[];
-  const prefix = `${project}/`;
-  const direct = videos.filter((v) => v.folder === `${project}/${folderPath}`);
+  const direct = videos.filter((v) => folderRelativeToProject(v.folder, project) === folderPath);
   if (direct.length > 0) {
     return direct.slice(0, 4).map((v) => thumbUrl(v.rel_path));
   }
   const descendantPrefix = folderPath ? `${folderPath}/` : "";
   const candidates = videos.filter((v) => {
-    if (!v.folder.startsWith(prefix)) return false;
-    const rel = v.folder.slice(prefix.length);
-    return descendantPrefix ? rel.startsWith(descendantPrefix) : true;
+    const rel = folderRelativeToProject(v.folder, project);
+    return rel !== null && (descendantPrefix ? rel.startsWith(descendantPrefix) : true);
   });
   return candidates.slice(0, 4).map((v) => thumbUrl(v.rel_path));
+}
+
+function folderRelativeToProject(folder: string, project: string) {
+  if (folder === project) return "";
+  if (folder.startsWith(`${project}/`)) return folder.slice(project.length + 1);
+  // Project-scoped list_videos currently returns project-prefixed folders, but
+  // tolerate already-relative folders so thumbnail mosaics do not depend on the
+  // Library root/all filter or scanner call shape.
+  return folder;
 }
 
 const FolderThumbMosaic = memo(function FolderThumbMosaic({ thumbs, label }: { thumbs: string[]; label: string }) {

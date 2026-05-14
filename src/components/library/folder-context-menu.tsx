@@ -6,7 +6,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { FolderOpen, Pencil, FolderOutput, Trash2, Download } from "lucide-react";
+import { FolderOpen, Pencil, FolderOutput, Trash2, Download, ExternalLink } from "lucide-react";
 
 interface FolderContextMenuProps {
   children: ReactNode;
@@ -16,7 +16,8 @@ interface FolderContextMenuProps {
   onRename: (path: string) => void;
   onMove: (path: string) => void;
   onDelete: (path: string) => void;
-  onImport: (path: string) => void;
+  onImport?: (path: string) => void;
+  onReveal?: (path: string) => void;
   disabled?: boolean;
 }
 
@@ -29,6 +30,7 @@ export function FolderContextMenu({
   onMove,
   onDelete,
   onImport,
+  onReveal,
   disabled,
 }: FolderContextMenuProps) {
   return (
@@ -43,14 +45,26 @@ export function FolderContextMenu({
           Open "{folderLabel}"
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem
-          onClick={() => onImport(folderPath)}
-          disabled={disabled}
-          className="gap-2"
-        >
-          <Download className="h-3.5 w-3.5" />
-          Import files here
-        </ContextMenuItem>
+        {onImport && (
+          <ContextMenuItem
+            onClick={() => onImport(folderPath)}
+            disabled={disabled}
+            className="gap-2"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Import files here
+          </ContextMenuItem>
+        )}
+        {onReveal && (
+          <ContextMenuItem
+            onClick={() => onReveal(folderPath)}
+            disabled={disabled}
+            className="gap-2"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Reveal in Finder
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem
           onClick={() => onRename(folderPath)}

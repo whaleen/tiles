@@ -53,14 +53,27 @@ impl TestWorkspace {
         let path = dir.join(name);
         let out = Command::new("ffmpeg")
             .args([
-                "-f", "lavfi",
-                "-i", &format!("testsrc=duration={duration}:size=320x240:rate=30"),
-                "-f", "lavfi",
-                "-i", &format!("sine=frequency=440:duration={duration}"),
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "35",
-                "-c:a", "aac", "-b:a", "64k",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("testsrc=duration={duration}:size=320x240:rate=30"),
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("sine=frequency=440:duration={duration}"),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "35",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "64k",
                 "-shortest",
-                "-y", path.to_str().unwrap(),
+                "-y",
+                path.to_str().unwrap(),
             ])
             .output()
             .expect("ffmpeg not found — install ffmpeg to run integration tests");
@@ -95,10 +108,14 @@ fn tiles_bin() -> PathBuf {
 fn ffprobe_duration(path: &Path, stream: &str) -> Option<f64> {
     let out = Command::new("ffprobe")
         .args([
-            "-v", "error",
-            "-select_streams", stream,
-            "-show_entries", "stream=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
+            "-v",
+            "error",
+            "-select_streams",
+            stream,
+            "-show_entries",
+            "stream=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
             path.to_str().unwrap(),
         ])
         .output()
@@ -119,7 +136,11 @@ fn audio_duration(path: &Path) -> f64 {
 
 /// The core invariant: video and audio must end within 150ms of each other.
 fn assert_av_sync(path: &Path) {
-    assert!(path.exists(), "output file does not exist: {}", path.display());
+    assert!(
+        path.exists(),
+        "output file does not exist: {}",
+        path.display()
+    );
     let v = video_duration(path);
     let a = audio_duration(path);
     assert!(v > 0.0, "output has no video track: {}", path.display());
@@ -166,11 +187,18 @@ fn test_concat_cut_3_equal_clips() {
     fs::create_dir_all(ws.root().join("src/clips/outputs/concat")).unwrap();
 
     let out = ws.run(&[
-        "concat", "src/clips",
-        "--output", "src/clips/outputs/concat",
-        "--transition", "cut",
+        "concat",
+        "src/clips",
+        "--output",
+        "src/clips/outputs/concat",
+        "--transition",
+        "cut",
     ]);
-    assert!(out.status.success(), "tiles concat cut failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles concat cut failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let output_dir = ws.root().join("src/clips/outputs/concat");
     let file = first_mp4(&output_dir).expect("no output file found");
@@ -186,12 +214,20 @@ fn test_concat_dissolve_3_equal_clips() {
     fs::create_dir_all(ws.root().join("src/clips/outputs/concat")).unwrap();
 
     let out = ws.run(&[
-        "concat", "src/clips",
-        "--output", "src/clips/outputs/concat",
-        "--transition", "dissolve",
-        "--duration", "1",
+        "concat",
+        "src/clips",
+        "--output",
+        "src/clips/outputs/concat",
+        "--transition",
+        "dissolve",
+        "--duration",
+        "1",
     ]);
-    assert!(out.status.success(), "tiles concat dissolve failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles concat dissolve failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let output_dir = ws.root().join("src/clips/outputs/concat");
     let file = first_mp4(&output_dir).expect("no output file found");
@@ -213,12 +249,20 @@ fn test_concat_dissolve_mixed_durations() {
     fs::create_dir_all(ws.root().join("src/mixed/outputs/concat")).unwrap();
 
     let out = ws.run(&[
-        "concat", "src/mixed",
-        "--output", "src/mixed/outputs/concat",
-        "--transition", "dissolve",
-        "--duration", "1",
+        "concat",
+        "src/mixed",
+        "--output",
+        "src/mixed/outputs/concat",
+        "--transition",
+        "dissolve",
+        "--duration",
+        "1",
     ]);
-    assert!(out.status.success(), "tiles concat dissolve mixed failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles concat dissolve mixed failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let output_dir = ws.root().join("src/mixed/outputs/concat");
     let file = first_mp4(&output_dir).expect("no output file found");
@@ -234,12 +278,20 @@ fn test_concat_fadeblack_3_clips() {
     fs::create_dir_all(ws.root().join("src/clips/outputs/concat")).unwrap();
 
     let out = ws.run(&[
-        "concat", "src/clips",
-        "--output", "src/clips/outputs/concat",
-        "--transition", "fadeblack",
-        "--duration", "1",
+        "concat",
+        "src/clips",
+        "--output",
+        "src/clips/outputs/concat",
+        "--transition",
+        "fadeblack",
+        "--duration",
+        "1",
     ]);
-    assert!(out.status.success(), "tiles concat fadeblack failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles concat fadeblack failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let output_dir = ws.root().join("src/clips/outputs/concat");
     let file = first_mp4(&output_dir).expect("no output file found");
@@ -258,12 +310,20 @@ fn test_loop_cut_3x() {
     fs::create_dir_all(ws.root().join("src/clips/outputs/loop")).unwrap();
 
     let out = ws.run(&[
-        "loop", "src/clips",
-        "--output", "src/clips/outputs/loop",
-        "--count", "3",
-        "--transition", "cut",
+        "loop",
+        "src/clips",
+        "--output",
+        "src/clips/outputs/loop",
+        "--count",
+        "3",
+        "--transition",
+        "cut",
     ]);
-    assert!(out.status.success(), "tiles loop cut failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles loop cut failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let output_dir = ws.root().join("src/clips/outputs/loop");
     let file = first_mp4(&output_dir).expect("no output file found");
@@ -279,13 +339,22 @@ fn test_loop_dissolve_3x() {
     fs::create_dir_all(ws.root().join("src/clips/outputs/loop")).unwrap();
 
     let out = ws.run(&[
-        "loop", "src/clips",
-        "--output", "src/clips/outputs/loop",
-        "--count", "3",
-        "--transition", "dissolve",
-        "--duration", "1",
+        "loop",
+        "src/clips",
+        "--output",
+        "src/clips/outputs/loop",
+        "--count",
+        "3",
+        "--transition",
+        "dissolve",
+        "--duration",
+        "1",
     ]);
-    assert!(out.status.success(), "tiles loop dissolve failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles loop dissolve failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let output_dir = ws.root().join("src/clips/outputs/loop");
     let file = first_mp4(&output_dir).expect("no output file found");
@@ -306,11 +375,19 @@ fn test_tile_2x1_two_folders() {
     fs::create_dir_all(ws.root().join("outputs/tile")).unwrap();
 
     let out = ws.run(&[
-        "tile", "src/left", "src/right",
-        "--layout", "2x1",
-        "--output", "outputs/tile/out.mp4",
+        "tile",
+        "src/left",
+        "src/right",
+        "--layout",
+        "2x1",
+        "--output",
+        "outputs/tile/out.mp4",
     ]);
-    assert!(out.status.success(), "tiles tile 2x1 failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles tile 2x1 failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let file = ws.root().join("outputs/tile/out.mp4");
     assert_av_sync(&file);
@@ -326,11 +403,21 @@ fn test_tile_2x2_four_folders() {
     fs::create_dir_all(ws.root().join("outputs/tile")).unwrap();
 
     let out = ws.run(&[
-        "tile", "src/a", "src/b", "src/c", "src/d",
-        "--layout", "2x2",
-        "--output", "outputs/tile/out.mp4",
+        "tile",
+        "src/a",
+        "src/b",
+        "src/c",
+        "src/d",
+        "--layout",
+        "2x2",
+        "--output",
+        "outputs/tile/out.mp4",
     ]);
-    assert!(out.status.success(), "tiles tile 2x2 failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles tile 2x2 failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let file = ws.root().join("outputs/tile/out.mp4");
     assert_av_sync(&file);
@@ -347,11 +434,18 @@ fn test_slowmo_half_speed() {
     fs::create_dir_all(ws.root().join("src/clips/outputs/slowmo")).unwrap();
 
     let out = ws.run(&[
-        "slowmo", "src/clips",
-        "--output", "src/clips/outputs/slowmo",
-        "--factor", "0.5",
+        "slowmo",
+        "src/clips",
+        "--output",
+        "src/clips/outputs/slowmo",
+        "--factor",
+        "0.5",
     ]);
-    assert!(out.status.success(), "tiles slowmo failed:\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "tiles slowmo failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let output_dir = ws.root().join("src/clips/outputs/slowmo");
     let file = first_mp4(&output_dir).expect("no output file found");

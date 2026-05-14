@@ -79,11 +79,23 @@ When using global mode, each action writes to a folder under `outputs/`:
 
 ## Source Output Paths
 
-When using source mode, each action creates a timestamped run folder under the project's outputs directory:
+When using source mode, each action writes under the project's outputs directory. The UI can now pass an editable suggested output file/folder name, so paths commonly look like:
 
 ```text
-src/<project>/outputs/<action>/
+src/<project>/outputs/<action>/<user-or-suggested-name>
 ```
+
+Some CLI source-output fallbacks still create timestamped run folders for multi-source modes.
+
+## Action Progress
+
+During long-running actions, `tiles-cli` writes structured progress lines to stdout:
+
+```text
+TILES_PROGRESS {"phase":"Encoding","current":1,"total":4,"percent":25,"message":"Encoding clip.mp4"}
+```
+
+These lines are preserved in logs and parsed by the Tauri runner to update active jobs in the UI.
 
 ## Log Paths
 

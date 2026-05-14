@@ -20,7 +20,7 @@ All video actions as cards. Click to open a form with folder/video selection, pa
 
 ### Outputs
 
-Browse all generated outputs in the workspace `outputs/` folder. Includes a log viewer for reviewing stdout/stderr from any action run.
+Browse all generated outputs in the workspace `outputs/` folder. Includes active action cards with streamed progress/message updates plus a log viewer for reviewing stdout/stderr from any action run.
 
 ### Import
 
@@ -57,11 +57,15 @@ See [actions.md](actions.md) for descriptions and parameters.
 
 | Mode | Label | Behavior |
 | --- | --- | --- |
-| `source` | Save alongside originals | `src/<project>/outputs/<action>/` |
+| `source` | Save to project outputs folder | `src/<project>/outputs/<action>/` |
 | `global` | Save to outputs folder | `outputs/<action>/` |
 | `alongside` | Save next to originals | Same directory as source files |
 | `custom` | Custom path | User-specified relative path |
 | `overwrite` | Overwrite originals | Replaces source files in place |
+
+## Action Progress
+
+Actions emit structured progress as stdout lines prefixed with `TILES_PROGRESS `. Tauri streams action stdout/stderr, parses the JSON payload into `RunningAction.progress`, and the frontend polls `list_running_actions` to update the active job cards. Long `FFmpegPipeline` encodes now attach ffmpeg `-progress pipe:2` reporting where durations are known, roll the in-file percent into the overall action percent, and include a short per-file percent/ETA in the progress message. Non-ffmpeg work still reports per input file, URL, tile, or stage.
 
 ## In-App Updates
 
