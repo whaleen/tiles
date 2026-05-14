@@ -59,7 +59,7 @@ fn output_kind(path: &Path) -> String {
 fn should_skip_source_dir(path: &Path) -> bool {
     matches!(
         path.file_name().and_then(|s| s.to_str()),
-        Some("outputs" | ".thumbs" | ".tiles" | ".git")
+        Some(".thumbs" | ".tiles" | ".git")
     )
 }
 
@@ -212,14 +212,16 @@ pub fn list_videos(
             }
 
             let has_transcript = check_has_transcript(&root, &rel_path);
+            let duration = if is_video_file(&path) {
+                crate::services::ffprobe::get_video_duration(&path, root)
+            } else {
+                None
+            };
             out.push(VideoEntry {
                 folder,
                 name,
                 rel_path,
-                // Keep directory scans cheap. Duration probing shells out to ffprobe and
-                // made Library/Tile Builder navigation pinwheel on large projects.
-                // Detailed metadata is still available through get_video_info when needed.
-                duration: None,
+                duration,
                 has_transcript,
             });
         }

@@ -72,7 +72,7 @@ export const VideoCard = memo(function VideoCard({
     <Card
       ref={sortableRef}
       style={sortableStyle}
-      className={`group cursor-grab active:cursor-grabbing overflow-hidden transition-all hover:scale-[1.02] ${
+      className={`group cursor-grab active:cursor-grabbing overflow-hidden rounded-none border-0 p-0 transition-all hover:scale-[1.02] ${
         selected ? "ring-2 ring-primary" : "hover:ring-2 hover:ring-primary/50"
       }`}
       onClick={onClick}
@@ -167,9 +167,16 @@ export const VideoCard = memo(function VideoCard({
         <p className="text-xs font-medium truncate" title={video.name}>
           {video.name}
         </p>
-        <Badge variant="secondary" className="text-[10px] mt-1">
-          {video.folder || "root"}
-        </Badge>
+        <div className="mt-1 flex items-center gap-1.5 min-w-0">
+          <Badge variant="secondary" className="max-w-full truncate text-[10px]">
+            {video.folder || "root"}
+          </Badge>
+          {durationLabel && (
+            <Badge variant="outline" className="shrink-0 text-[10px] font-mono">
+              {durationLabel}
+            </Badge>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
