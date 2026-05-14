@@ -4,7 +4,7 @@
 //   1. Builds a temporary workspace (src/, outputs/, configs/) so find_repo_root() succeeds
 //   2. Generates synthetic clips with ffmpeg's lavfi source — no real video files needed
 //   3. Runs the tiles binary against that workspace
-//   4. Verifies output with ffprobe: file exists, video/audio durations match
+//   4. Verifies output with ffprobe and a full ffmpeg decode pass
 //
 // Run with: cargo test -p tiles-cli -- --test-threads=1
 // (--test-threads=1 avoids contention on ffmpeg CPU; remove for faster parallel runs)
@@ -50,31 +50,40 @@ impl TestWorkspace {
 
     /// Create a single synthetic clip at the given absolute path.
     fn create_clip(&self, dir: &Path, name: &str, duration: f64) -> PathBuf {
+        self.create_clip_custom(dir, name, duration, "320x240", "30", true)
+    }
+
+    fn create_clip_custom(
+        &self,
+        dir: &Path,
+        name: &str,
+        duration: f64,
+        size: &str,
+        rate: &str,
+        audio: bool,
+    ) -> PathBuf {
         let path = dir.join(name);
-        let out = Command::new("ffmpeg")
-            .args([
-                "-f",
-                "lavfi",
-                "-i",
-                &format!("testsrc=duration={duration}:size=320x240:rate=30"),
+        let mut cmd = Command::new("ffmpeg");
+        cmd.args([
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("testsrc=duration={duration}:size={size}:rate={rate}"),
+        ]);
+        if audio {
+            cmd.args([
                 "-f",
                 "lavfi",
                 "-i",
                 &format!("sine=frequency=440:duration={duration}"),
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-crf",
-                "35",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "64k",
-                "-shortest",
-                "-y",
-                path.to_str().unwrap(),
-            ])
+            ]);
+        }
+        cmd.args(["-c:v", "libx264", "-preset", "ultrafast", "-crf", "35"]);
+        if audio {
+            cmd.args(["-c:a", "aac", "-b:a", "64k", "-shortest"]);
+        }
+        let out = cmd
+            .args(["-y", path.to_str().unwrap()])
             .output()
             .expect("ffmpeg not found — install ffmpeg to run integration tests");
         assert!(
@@ -134,13 +143,27 @@ fn audio_duration(path: &Path) -> f64 {
     ffprobe_duration(path, "a:0").unwrap_or(0.0)
 }
 
-/// The core invariant: video and audio must end within 150ms of each other.
+fn assert_decodes_cleanly(path: &Path) {
+    let out = Command::new("ffmpeg")
+        .args(["-v", "error", "-i", path.to_str().unwrap(), "-f", "null", "-"])
+        .output()
+        .expect("ffmpeg not found — install ffmpeg to run integration tests");
+    assert!(
+        out.status.success(),
+        "output failed full decode pass {}:\n{}",
+        path.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// The core invariant: file decodes fully and video/audio end within 150ms.
 fn assert_av_sync(path: &Path) {
     assert!(
         path.exists(),
         "output file does not exist: {}",
         path.display()
     );
+    assert_decodes_cleanly(path);
     let v = video_duration(path);
     let a = audio_duration(path);
     assert!(v > 0.0, "output has no video track: {}", path.display());
@@ -296,7 +319,41 @@ fn test_concat_fadeblack_3_clips() {
     let output_dir = ws.root().join("src/clips/outputs/concat");
     let file = first_mp4(&output_dir).expect("no output file found");
     assert_av_sync(&file);
-    assert_duration_approx(&file, 15.0, 1.5);
+    // Segment-based fadeblack is a real crossfade, so total duration shrinks.
+    assert_duration_approx(&file, 13.0, 1.5);
+}
+
+#[test]
+fn test_concat_dissolve_mixed_dimensions_and_missing_audio() {
+    let ws = TestWorkspace::new();
+    let folder = ws.root().join("src/messy");
+    fs::create_dir_all(&folder).unwrap();
+    ws.create_clip_custom(&folder, "a_audio_24fps.mp4", 2.3, "320x180", "24", true);
+    ws.create_clip_custom(&folder, "b_noaudio_30fps.mp4", 3.1, "640x360", "30", false);
+    ws.create_clip_custom(&folder, "c_audio_25fps.mp4", 1.7, "480x270", "25", true);
+    fs::create_dir_all(ws.root().join("src/messy/outputs/concat")).unwrap();
+
+    let out = ws.run(&[
+        "concat",
+        "src/messy",
+        "--output",
+        "src/messy/outputs/concat",
+        "--transition",
+        "dissolve",
+        "--duration",
+        "0.5",
+    ]);
+    assert!(
+        out.status.success(),
+        "tiles concat dissolve messy failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let output_dir = ws.root().join("src/messy/outputs/concat");
+    let file = first_mp4(&output_dir).expect("no output file found");
+    assert_av_sync(&file);
+    assert_duration_approx(&file, 6.1, 1.0);
 }
 
 // ---------------------------------------------------------------------------

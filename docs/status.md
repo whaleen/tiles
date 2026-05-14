@@ -16,7 +16,7 @@ Settings are saved to `configs/tile_videos_settings.json` in the workspace.
 
 ### Actions
 
-All video actions as cards. Click to open a form with folder/video selection, parameters, and output mode. See [actions.md](actions.md) for the full action list.
+All video actions as cards. Click to open a form with folder/video selection, parameters, and output mode. See [actions.md](actions.md) for the full action list. Concat and loop transitions use a conservative segment-based ffmpeg path and validate the final file with a full decode pass before reporting success.
 
 ### Outputs
 

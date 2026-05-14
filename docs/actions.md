@@ -4,7 +4,9 @@ Video actions available in tiles. All actions are invoked via Tauri commands tha
 
 ## Concatenate (`concat`)
 
-Join all videos in a folder into a single file, in filename order. Supports transitions between clips: cut (hard cut, default), fade (crossfade), or fade to black.
+Join all videos in a folder into a single file, in filename order. Supports transitions between clips: cut (hard cut, default), fade, dissolve, or fade to black.
+
+Transition renders use a conservative segment-based ffmpeg pipeline: source clips are normalized, each body/transition segment is rendered independently, then the safe segments are concatenated and decode-validated. Transition duration is clamped when clips are too short.
 
 **Parameters**: transition type, transition duration (seconds).
 
@@ -84,7 +86,7 @@ Create slow-motion versions of videos. A 2x slowdown makes a 10-second clip last
 
 ## Loop (`loop`)
 
-Loop a video a set number of times. Transitions apply between each loop iteration.
+Loop a video a set number of times. Transitions apply between each loop iteration and use the same segment-based, decode-validated transition pipeline as concat.
 
 **Parameters**: count (number of loops), transition type, transition duration.
 

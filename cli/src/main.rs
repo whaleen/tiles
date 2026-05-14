@@ -9091,6 +9091,7 @@ fn run_concat(args: &[OsString]) -> i32 {
 
         let ok = if normalized_files.len() == 1 || opts.transition == "cut" {
             concat_simple_cut(&normalized_files, &output_path, &root)
+                && validate_video_output(&output_path, &root)
         } else {
             // IMPORTANT: Metadata must come from the normalized files to ensure perfectly accurate xfade offsets
             concat_with_transitions(
@@ -9262,6 +9263,7 @@ fn run_loop(args: &[OsString]) -> i32 {
 
         let ok = if opts.count == 1 || opts.transition == "cut" {
             concat_simple_cut(&repeated, &output_path, &root)
+                && validate_video_output(&output_path, &root)
         } else {
             concat_with_transitions(
                 &repeated,
@@ -15820,14 +15822,14 @@ fn concat_with_transitions(
     root: &Path,
 ) -> bool {
     if files.len() < 2 {
-        return concat_simple_cut(files, output, root);
+        return concat_simple_cut(files, output, root) && validate_video_output(output, root);
     }
 
     let mut infos = Vec::new();
     for file in files {
         let mut info = match get_video_info(file, root) {
-            Some(i) => i,
-            None => {
+            Some(i) if i.duration.is_finite() && i.duration > 0.0 => i,
+            _ => {
                 eprintln!("error: could not read video info for {}", file.display());
                 return false;
             }
@@ -15837,161 +15839,266 @@ fn concat_with_transitions(
         infos.push(info);
     }
 
-    let width = infos[0].width;
-    let height = infos[0].height;
-    let mut use_duration = duration;
+    let Some((width, height)) = transition_canvas(&infos) else {
+        eprintln!("error: could not determine concat output dimensions");
+        return false;
+    };
+
+    let transition_duration = clamp_transition_duration(duration, &infos);
+    if transition_duration <= 0.05 {
+        eprintln!("warning: transition too short for inputs; falling back to cut concat");
+        return concat_simple_cut(files, output, root) && validate_video_output(output, root);
+    }
+
+    let temp_dir = env::temp_dir().join(format!(
+        "tiles_concat_segments_{}_{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+    if let Err(err) = fs::create_dir_all(&temp_dir) {
+        eprintln!("error: failed to create temp dir {}: {err}", temp_dir.display());
+        return false;
+    }
+
+    let transition_name = ffmpeg_xfade_transition(transition);
+    let mut segments = Vec::<PathBuf>::new();
+    let mut ok = true;
+    let mut segment_index = 0usize;
+
+    for i in 0..files.len() {
+        let info = &infos[i];
+        let body_start = if i == 0 { 0.0 } else { transition_duration };
+        let body_end = if i + 1 == files.len() {
+            info.duration
+        } else {
+            info.duration - transition_duration
+        };
+
+        if body_end - body_start > 0.05 {
+            let segment = temp_dir.join(format!("segment_{segment_index:04}_body.mp4"));
+            segment_index += 1;
+            if render_concat_body_segment(
+                &files[i],
+                &segment,
+                body_start,
+                body_end,
+                width,
+                height,
+                root,
+            ) {
+                segments.push(segment);
+            } else {
+                eprintln!("error: failed rendering concat body segment {}", i + 1);
+                ok = false;
+                break;
+            }
+        }
+
+        if i + 1 < files.len() {
+            let segment = temp_dir.join(format!("segment_{segment_index:04}_transition.mp4"));
+            segment_index += 1;
+            if render_concat_transition_segment(
+                &files[i],
+                &files[i + 1],
+                &infos[i],
+                &infos[i + 1],
+                &segment,
+                transition_name,
+                transition_duration,
+                width,
+                height,
+                root,
+            ) {
+                segments.push(segment);
+            } else {
+                eprintln!("error: failed rendering transition {} -> {}", i + 1, i + 2);
+                ok = false;
+                break;
+            }
+        }
+    }
+
+    if ok && segments.is_empty() {
+        ok = false;
+    }
+
+    if ok {
+        ok = concat_simple_cut(&segments, output, root) && validate_video_output(output, root);
+    }
+
+    if !ok {
+        let _ = fs::remove_file(output);
+    }
+    for segment in &segments {
+        let _ = fs::remove_file(segment);
+    }
+    let _ = fs::remove_dir(&temp_dir);
+
+    ok
+}
+
+fn transition_canvas(infos: &[ClipInfo]) -> Option<(u32, u32)> {
+    let first = infos.first()?;
+    if first.width > 0 && first.height > 0 {
+        Some((first.width, first.height))
+    } else {
+        None
+    }
+}
+
+fn clamp_transition_duration(requested: f64, infos: &[ClipInfo]) -> f64 {
     let min_duration = infos
         .iter()
         .map(|i| i.duration)
+        .filter(|d| d.is_finite() && *d > 0.0)
         .fold(f64::INFINITY, f64::min);
-    let max_transition = (min_duration - 0.05).max(0.01);
-    if use_duration > max_transition {
-        use_duration = max_transition;
+    if !min_duration.is_finite() || min_duration <= 0.2 {
+        return 0.0;
     }
-
-    let filter = if transition == "dissolve" || transition == "fade" {
-        build_xfade_filter(&infos, use_duration, width, height)
+    let requested = if requested.is_finite() && requested > 0.0 {
+        requested
     } else {
-        build_fadeblack_filter(&infos, use_duration, width, height)
+        0.5
     };
+    // Segment-based transitions consume a tail and a head from each middle clip.
+    // Keep the transition comfortably below half the shortest clip so every clip
+    // can still contribute non-transition body frames.
+    let max_duration = ((min_duration - 0.1) / 2.0).max(0.0);
+    requested.min(max_duration)
+}
 
-    let mut pipeline = FFmpegPipeline::new(root);
-    for file in files {
-        pipeline.add_input(file, false);
+fn ffmpeg_xfade_transition(transition: &str) -> &'static str {
+    match transition {
+        "dissolve" => "dissolve",
+        "fadeblack" => "fadeblack",
+        "fade" => "fade",
+        _ => "fade",
     }
-    pipeline.with_filter_complex(filter, "[outv]", Some("[outa]"));
+}
+
+fn render_concat_body_segment(
+    input: &Path,
+    output: &Path,
+    start: f64,
+    end: f64,
+    width: u32,
+    height: u32,
+    root: &Path,
+) -> bool {
+    let duration = end - start;
+    if duration <= 0.05 {
+        return false;
+    }
+    let mut pipeline = FFmpegPipeline::new(root);
+    pipeline.add_input(input, false);
+    let mut parts = vec![format!(
+        "[0:v:0]trim=start={start:.6}:end={end:.6},settb=AVTB,setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[outv]"
+    )];
+    if has_audio_stream(input, root) {
+        parts.push(format!(
+            "[0:a:0]atrim=start={start:.6}:end={end:.6},asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo[outa]"
+        ));
+    } else {
+        parts.push(format!(
+            "anullsrc=r=48000:cl=stereo:d={duration:.6},asetpts=PTS-STARTPTS[outa]"
+        ));
+    }
+    pipeline.with_filter_complex(parts.join(";"), "[outv]", Some("[outa]"));
     pipeline.apply_canonical_video_params();
     pipeline.apply_canonical_audio_params(true);
-    pipeline.run(output)
+    pipeline.run(output) && validate_video_output(output, root)
 }
 
-fn build_xfade_filter(infos: &[ClipInfo], duration: f64, width: u32, height: u32) -> String {
-    let mut parts: Vec<String> = Vec::new();
+fn render_concat_transition_segment(
+    left: &Path,
+    right: &Path,
+    left_info: &ClipInfo,
+    _right_info: &ClipInfo,
+    output: &Path,
+    transition: &str,
+    duration: f64,
+    width: u32,
+    height: u32,
+    root: &Path,
+) -> bool {
+    let left_start = (left_info.duration - duration).max(0.0);
+    let mut pipeline = FFmpegPipeline::new(root);
+    pipeline.add_input(left, false);
+    pipeline.add_input(right, false);
+    let mut parts = vec![
+        format!(
+            "[0:v:0]trim=start={left_start:.6}:end={:.6},settb=AVTB,setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[lv]",
+            left_info.duration
+        ),
+        format!(
+            "[1:v:0]trim=start=0:end={duration:.6},settb=AVTB,setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[rv]"
+        ),
+        format!(
+            "[lv][rv]xfade=transition={transition}:duration={duration:.6}:offset=0[outv]"
+        ),
+    ];
 
-    for (i, info) in infos.iter().enumerate() {
+    if has_audio_stream(left, root) {
         parts.push(format!(
-            "[{i}:v:0]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS[v{i}]"
+            "[0:a:0]atrim=start={left_start:.6}:end={:.6},asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo[la]",
+            left_info.duration
         ));
-
-        if info.has_audio {
-            // Force audio duration to match video duration exactly to prevent sync drift in transitions
-            parts.push(format!(
-                "[{i}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS,atrim=duration={:.3}[a{i}]",
-                info.duration
-            ));
-        } else {
-            parts.push(format!(
-                "anullsrc=r=48000:cl=stereo:d={:.3},asetpts=PTS-STARTPTS[a{i}]",
-                info.duration
-            ));
-        }
-    }
-
-    let mut offsets: Vec<f64> = vec![0.0];
-    let mut current_offset = 0.0;
-    for info in infos.iter().take(infos.len() - 1) {
-        current_offset += info.duration - duration;
-        offsets.push(current_offset);
-    }
-
-    let mut current_v = "v0".to_string();
-    let mut current_a = "a0".to_string();
-
-    for i in 1..infos.len() {
-        let next_v = if i < infos.len() - 1 {
-            format!("v{i}{i}")
-        } else {
-            "outv".to_string()
-        };
-        let next_a = if i < infos.len() - 1 {
-            format!("a{i}{i}")
-        } else {
-            "outa".to_string()
-        };
-
-        // Use the specified transition (defaulting to fade for xfade if not 'dissolve')
+    } else {
         parts.push(format!(
-            "[{current_v}][v{i}]xfade=transition=fade:duration={duration}:offset={:.3}[{next_v}]",
-            offsets[i]
+            "anullsrc=r=48000:cl=stereo:d={duration:.6},asetpts=PTS-STARTPTS[la]"
         ));
-
-        // Ensure audio fades are consistent
+    }
+    if has_audio_stream(right, root) {
         parts.push(format!(
-            "[{current_a}][a{i}]acrossfade=d={duration}:curve1=exp:curve2=exp[{next_a}]"
+            "[1:a:0]atrim=start=0:end={duration:.6},asetpts=PTS-STARTPTS,aformat=sample_rates=48000:channel_layouts=stereo[ra]"
         ));
-
-        current_v = next_v;
-        current_a = next_a;
+    } else {
+        parts.push(format!(
+            "anullsrc=r=48000:cl=stereo:d={duration:.6},asetpts=PTS-STARTPTS[ra]"
+        ));
     }
-
-    parts.join(";")
-}
-
-fn build_fadeblack_filter(infos: &[ClipInfo], duration: f64, width: u32, height: u32) -> String {
-    let fade_time = duration / 2.0;
-    let mut parts: Vec<String> = Vec::new();
-    let mut concat_inputs: Vec<String> = Vec::new();
-
-    for (i, info) in infos.iter().enumerate() {
-        let st = (info.duration - fade_time).max(0.0);
-
-        if i == 0 {
-            parts.push(format!(
-                "[{i}:v:{}]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS,fade=t=out:st={st:.3}:d={fade_time:.3}[v{i}]",
-                info.video_stream_index
-            ));
-            if info.has_audio {
-                parts.push(format!(
-                    "[{i}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,aresample=48000,asetpts=PTS-STARTPTS,afade=t=out:st={st:.3}:d={fade_time:.3}[a{i}]"
-                ));
-            } else {
-                parts.push(format!(
-                    "anullsrc=r=48000:cl=stereo:d={:.3},asetpts=PTS-STARTPTS,afade=t=out:st={st:.3}:d={fade_time:.3}[a{i}]",
-                    info.duration
-                ));
-            }
-        } else if i == infos.len() - 1 {
-            parts.push(format!(
-                "[{i}:v:{}]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS,fade=t=in:st=0:d={fade_time:.3}[v{i}]",
-                info.video_stream_index
-            ));
-            if info.has_audio {
-                parts.push(format!(
-                    "[{i}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,aresample=48000,asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade_time:.3}[a{i}]"
-                ));
-            } else {
-                parts.push(format!(
-                    "anullsrc=r=48000:cl=stereo:d={:.3},asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade_time:.3}[a{i}]",
-                    info.duration
-                ));
-            }
-        } else {
-            parts.push(format!(
-                "[{i}:v:{}]scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS,fade=t=in:st=0:d={fade_time:.3},fade=t=out:st={st:.3}:d={fade_time:.3}[v{i}]",
-                info.video_stream_index
-            ));
-            if info.has_audio {
-                parts.push(format!(
-                    "[{i}:a:0]aformat=sample_rates=48000:channel_layouts=stereo,aresample=48000,asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade_time:.3},afade=t=out:st={st:.3}:d={fade_time:.3}[a{i}]"
-                ));
-            } else {
-                parts.push(format!(
-                    "anullsrc=r=48000:cl=stereo:d={:.3},asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade_time:.3},afade=t=out:st={st:.3}:d={fade_time:.3}[a{i}]",
-                    info.duration
-                ));
-            }
-        }
-
-        concat_inputs.push(format!("[v{i}][a{i}]"));
-    }
-
     parts.push(format!(
-        "{}concat=n={}:v=1:a=1[outv][outa]",
-        concat_inputs.join(""),
-        infos.len()
+        "[la][ra]acrossfade=d={duration:.6}:c1=tri:c2=tri[outa]"
     ));
 
-    parts.join(";")
+    pipeline.with_filter_complex(parts.join(";"), "[outv]", Some("[outa]"));
+    pipeline.apply_canonical_video_params();
+    pipeline.apply_canonical_audio_params(true);
+    pipeline.run(output) && validate_video_output(output, root)
+}
+
+fn validate_video_output(output: &Path, root: &Path) -> bool {
+    if !output.exists() || fs::metadata(output).map(|m| m.len() == 0).unwrap_or(true) {
+        return false;
+    }
+    if get_video_duration(output, root).filter(|d| *d > 0.0).is_none() {
+        eprintln!("error: output has no readable duration: {}", output.display());
+        return false;
+    }
+    match Command::new("ffmpeg")
+        .current_dir(root)
+        .args(["-v", "error", "-i"])
+        .arg(output)
+        .args(["-f", "null", "-"])
+        .output()
+    {
+        Ok(result) if result.status.success() => true,
+        Ok(result) => {
+            eprintln!(
+                "error: output failed decode validation {}:\n{}",
+                output.display(),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            false
+        }
+        Err(err) => {
+            eprintln!("error: failed to validate output {}: {err}", output.display());
+            false
+        }
+    }
 }
 
 fn get_video_info(path: &Path, root: &Path) -> Option<ClipInfo> {

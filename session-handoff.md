@@ -77,6 +77,12 @@ Fine-grained ffmpeg progress is implemented around `FFmpegPipeline` in `cli/src/
 - Messages include per-file percent and a short ETA when enough progress has elapsed.
 - Tile rendering wires progress through per-tile normalization/prep, per-tile assembly, and final compositing so the Outputs card moves throughout long tile jobs.
 
+Concat/loop transitions are intentionally conservative:
+- Non-cut transitions render body and transition pieces as separate normalized MP4 segments.
+- Each transition uses only the tail of the left clip and head of the right clip, with `xfade` offset `0`, avoiding fragile chained-offset graphs.
+- The safe segments are concatenated and the final output must pass a full `ffmpeg -v error -i output -f null -` decode validation before the action reports success.
+- Transition duration is clamped below half of the shortest clip so short clips do not produce invalid graphs.
+
 Also implemented in this work:
 - Editable suggested output file/folder names in action forms.
 - Default output mode is project outputs instead of overwrite.
