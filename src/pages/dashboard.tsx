@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useProjects } from "@/hooks/use-projects";
@@ -89,9 +89,12 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
   const { map: metas } = useProjectMetasMap(projectNames);
 
   const [search, setSearch] = useState("");
+  const [modelslabKey, setModelslabKey] = useState("");
+  const [savingModelslabKey, setSavingModelslabKey] = useState(false);
 
   const [settingsProject, setSettingsProject] = useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsDeleting, setSettingsDeleting] = useState(false);
   const [coverCandidates, setCoverCandidates] = useState<CoverCandidate[]>([]);
   const [pickerScope, setPickerScope] = useState<"all" | "library" | "outputs">("all");
   const [pickerSearch, setPickerSearch] = useState("");
@@ -111,6 +114,24 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
     if (r.project) (acc[r.project] ||= []).push(r);
     return acc;
   }, {});
+
+  useEffect(() => {
+    invoke<string | null>("get_modelslab_key")
+      .then((key) => setModelslabKey(key ?? ""))
+      .catch(() => setModelslabKey(""));
+  }, []);
+
+  const saveModelslabKey = async () => {
+    setSavingModelslabKey(true);
+    try {
+      await invoke("set_modelslab_key", { key: modelslabKey });
+      toast.success("ModelsLab API key saved");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to save ModelsLab API key"));
+    } finally {
+      setSavingModelslabKey(false);
+    }
+  };
 
   const normalizedSearch = search.trim().toLowerCase();
   const filteredProjects = normalizedSearch
@@ -190,10 +211,34 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
   }
 
   function handleCloseSettings() {
-    if (settingsSaving) return;
+    if (settingsSaving || settingsDeleting) return;
     setSettingsProject(null);
     setCoverCandidates([]);
     setPickerSearch("");
+  }
+
+  async function handleDeleteProject() {
+    if (!settingsProject || settingsDeleting) return;
+    const confirmation = window.prompt(
+      `Delete project "${settingsProject}" and all source files inside it? Type the project name to confirm.`
+    );
+    if (confirmation !== settingsProject) return;
+
+    setSettingsDeleting(true);
+    try {
+      await invoke("delete_project", { name: settingsProject });
+      toast.success("Project deleted", { description: settingsProject });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      queryClient.removeQueries({ queryKey: queryKeys.projects.detail(settingsProject) });
+      queryClient.removeQueries({ queryKey: queryKeys.projects.meta(settingsProject) });
+      onProjectChange(undefined);
+      setSettingsProject(null);
+      setCoverCandidates([]);
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to delete project"));
+    } finally {
+      setSettingsDeleting(false);
+    }
   }
 
   async function handleSaveSettings() {
@@ -281,14 +326,30 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
           />
         </div>
 
-        <div className="relative max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search projects..."
-            className="pl-9"
-          />
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="relative max-w-sm flex-1">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search projects..."
+              className="pl-9"
+            />
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3 lg:w-[420px]">
+            <div className="text-xs font-medium mb-1">ModelsLab API Key</div>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={modelslabKey}
+                onChange={(e) => setModelslabKey(e.target.value)}
+                placeholder="ModelsLab key"
+              />
+              <Button size="sm" onClick={saveModelslabKey} disabled={savingModelslabKey}>
+                {savingModelslabKey ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -568,11 +629,27 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
             </div>
           </div>
 
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+            <div className="text-sm font-medium text-destructive">Danger zone</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Delete this project and all source files inside its workspace folder. This cannot be undone.
+            </p>
+            <Button
+              variant="destructive"
+              size="sm"
+              className="mt-3"
+              onClick={handleDeleteProject}
+              disabled={settingsSaving || settingsDeleting}
+            >
+              {settingsDeleting ? "Deleting..." : "Delete Project"}
+            </Button>
+          </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={handleCloseSettings} disabled={settingsSaving}>
+            <Button variant="outline" onClick={handleCloseSettings} disabled={settingsSaving || settingsDeleting}>
               Cancel
             </Button>
-            <Button onClick={handleSaveSettings} disabled={settingsSaving}>
+            <Button onClick={handleSaveSettings} disabled={settingsSaving || settingsDeleting}>
               {settingsSaving ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>

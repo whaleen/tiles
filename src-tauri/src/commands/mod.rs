@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod folders;
 pub mod health;
+pub mod image_actions;
 pub mod logs;
 pub mod outputs;
 pub mod projects;

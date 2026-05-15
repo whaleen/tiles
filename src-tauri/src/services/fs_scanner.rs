@@ -217,12 +217,14 @@ pub fn list_videos(
             } else {
                 None
             };
+            let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
             out.push(VideoEntry {
                 folder,
                 name,
                 rel_path,
                 duration,
                 has_transcript,
+                size_bytes,
             });
         }
     }

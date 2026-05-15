@@ -69,9 +69,8 @@ fn apply_workspace(
         std::fs::create_dir_all(path.join(subdir)).map_err(|e| e.to_string())?;
     }
 
-    let prefs = crate::prefs::Prefs {
-        workspace: Some(path.to_string_lossy().to_string()),
-    };
+    let mut prefs = crate::prefs::read_prefs(app);
+    prefs.workspace = Some(path.to_string_lossy().to_string());
     crate::prefs::write_prefs(app, &prefs)?;
 
     let mut root = state.root.write().unwrap();

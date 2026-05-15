@@ -102,12 +102,15 @@ pub fn run() {
             commands::projects::list_projects,
             commands::projects::get_project,
             commands::projects::create_project,
+            commands::projects::delete_project,
             commands::projects::get_project_meta,
             commands::projects::put_project_meta,
             // videos
             commands::videos::list_videos,
             commands::videos::get_video_info,
             commands::videos::get_transcript,
+            commands::videos::rename_media,
+            commands::videos::reveal_media,
             commands::videos::delete_video,
             // folders
             commands::folders::create_folder,
@@ -122,6 +125,8 @@ pub fn run() {
             // settings
             commands::settings::get_settings,
             commands::settings::put_settings,
+            commands::settings::get_modelslab_key,
+            commands::settings::set_modelslab_key,
             commands::settings::list_layouts,
             // outputs
             commands::outputs::list_outputs,
@@ -137,6 +142,7 @@ pub fn run() {
             commands::actions::list_actions,
             commands::actions::run_action,
             commands::actions::list_running_actions,
+            commands::image_actions::flux_img2img,
             // logs
             commands::logs::list_logs,
             commands::logs::get_log,

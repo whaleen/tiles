@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useActions } from "@/hooks/use-actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +24,8 @@ import { ChopForm } from "@/components/actions/chop-form";
 import { LoopForm } from "@/components/actions/loop-form";
 import { CropForm } from "@/components/actions/crop-form";
 import { DoctorReencodeForm } from "@/components/actions/doctor-reencode-form";
-import { actionCapabilities } from "@/components/actions/action-capabilities";
+import { FluxImg2ImgForm } from "@/components/actions/flux-img2img-form";
+import { actionCapabilities, actionSupportsMedia } from "@/components/actions/action-capabilities";
 
 interface LibraryActionPanelProps {
   selectedVideos: VideoEntry[];
@@ -56,13 +57,31 @@ export function LibraryActionPanel({
     [baseVideos]
   );
 
+  const presentTypes = useMemo(() => {
+    const types = new Set<"video" | "image">();
+    if (videoCount > 0) types.add("video");
+    if (imageCount > 0) types.add("image");
+    return types;
+  }, [videoCount, imageCount]);
+
   const selectedActionInfo = useMemo(
     () => actions.find((a) => a.name === selectedAction) || null,
     [actions, selectedAction]
   );
 
+  useEffect(() => {
+    if (selectedAction && !actionSupportsMedia(selectedAction, presentTypes)) {
+      setSelectedAction(null);
+    }
+  }, [presentTypes, selectedAction]);
+
+  const firstImage = useMemo(
+    () => baseVideos.find((v) => isImage(v.rel_path)) || null,
+    [baseVideos]
+  );
+
   const videoTargets = useMemo(
-    () => baseVideos.map((v) => v.rel_path),
+    () => baseVideos.filter((v) => !isImage(v.rel_path)).map((v) => v.rel_path),
     [baseVideos]
   );
 
@@ -90,6 +109,9 @@ export function LibraryActionPanel({
         ? `Project: ${currentProject}`
         : "Select a project in the sidebar";
     }
+    if (selectedActionInfo.name === "flux-img2img") {
+      return firstImage ? `Image: ${firstImage.name}` : "No image selected";
+    }
     const scopeLabel =
       selectedVideos.length > 0 ? "from selection" : "from displayed";
     if (selectedActionInfo.target_type === "folders") {
@@ -102,6 +124,7 @@ export function LibraryActionPanel({
     videoCount,
     selectedVideos.length,
     currentProject,
+    firstImage,
   ]);
 
   const formProps = {
@@ -133,6 +156,9 @@ export function LibraryActionPanel({
           currentProject={currentProject}
         />
       ),
+    "flux-img2img": firstImage ? (
+      <FluxImg2ImgForm image={firstImage} currentProject={currentProject} />
+    ) : null,
   };
 
   return (
@@ -161,11 +187,23 @@ export function LibraryActionPanel({
                   <SelectValue placeholder="Select an action" />
                 </SelectTrigger>
                 <SelectContent>
-                  {actions.map((action) => (
-                    <SelectItem key={action.name} value={action.name}>
-                      {action.label}
-                    </SelectItem>
-                  ))}
+                  {actions.map((action) => {
+                    const supported = actionSupportsMedia(action.name, presentTypes);
+                    const caps = actionCapabilities(action.name);
+                    const reason = caps.mediaTypes.includes("video") && !caps.mediaTypes.includes("image")
+                      ? "Requires video"
+                      : caps.mediaTypes.includes("image") && !caps.mediaTypes.includes("video")
+                        ? "Requires image"
+                        : "Not compatible";
+                    return (
+                      <SelectItem key={action.name} value={action.name} disabled={!supported}>
+                        <span className="flex items-center justify-between gap-2">
+                          <span>{action.label}</span>
+                          {!supported && <span className="text-[10px] text-muted-foreground">{reason}</span>}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               {selectedAction && (
@@ -183,10 +221,9 @@ export function LibraryActionPanel({
         </div>
       </div>
 
-      {selectedAction && imageCount > 0 && (
+      {selectedAction && (
         <p className="mt-2 text-xs text-muted-foreground">
-          {imageCount} image{imageCount !== 1 ? "s" : ""} in selection will be
-          skipped — this action only processes videos.
+          Scope: {videoCount} video{videoCount !== 1 ? "s" : ""}, {imageCount} image{imageCount !== 1 ? "s" : ""}.
         </p>
       )}
 

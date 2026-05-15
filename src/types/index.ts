@@ -23,6 +23,7 @@ export interface VideoEntry {
   rel_path: string;
   duration?: number | null;
   has_transcript?: boolean;
+  size_bytes?: number;
 }
 
 export interface VideoInfo {
@@ -120,6 +121,7 @@ export interface ActionInfo {
   label: string;
   description: string;
   target_type: string;
+  media_types?: string[];
 }
 
 export interface ActionRunRequest {

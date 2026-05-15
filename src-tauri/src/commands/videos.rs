@@ -1,9 +1,16 @@
-use std::path::Path;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
 use tauri::State;
 
 use crate::models::{VideoEntry, VideoInfo};
 use crate::services::ffprobe;
 use crate::state::AppState;
+
+#[derive(Debug, Serialize)]
+pub struct MovedVideoPath {
+    pub from: String,
+    pub to: String,
+}
 
 #[tauri::command]
 pub fn list_videos(
@@ -19,6 +26,54 @@ pub fn list_videos(
         folder.as_deref(),
         recursive,
     )
+}
+
+#[tauri::command]
+pub fn rename_media(
+    state: State<AppState>,
+    project: String,
+    path: String,
+    new_name: String,
+) -> Result<MovedVideoPath, String> {
+    let root = state.root.read().unwrap().clone();
+    let rel = normalize_media_rel(&path, &project)?;
+    let new_name = new_name.trim();
+    if !is_valid_file_name(new_name) {
+        return Err("invalid file name".to_string());
+    }
+
+    let src_full = root.join("src").join(&rel);
+    if !src_full.exists() || !src_full.is_file() {
+        return Err("not found".to_string());
+    }
+    let parent = src_full.parent().ok_or_else(|| "invalid path".to_string())?;
+    let dest_full = parent.join(new_name);
+    if dest_full.exists() {
+        return Err("already exists".to_string());
+    }
+    std::fs::rename(&src_full, &dest_full).map_err(|e| e.to_string())?;
+    let dest_rel = dest_full
+        .strip_prefix(root.join("src"))
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .map_err(|_| "path error".to_string())?;
+    state.invalidate_video_cache();
+    Ok(MovedVideoPath { from: rel, to: dest_rel })
+}
+
+#[tauri::command]
+pub fn reveal_media(state: State<AppState>, project: String, path: String) -> Result<(), String> {
+    let root = state.root.read().unwrap().clone();
+    let rel = normalize_media_rel(&path, &project)?;
+    let full = root.join("src").join(&rel);
+    if !full.exists() || !full.is_file() {
+        return Err("not found".to_string());
+    }
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(&full)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -91,4 +146,31 @@ pub fn delete_video(state: State<AppState>, path: String) -> Result<(), String> 
     std::fs::remove_file(&full).map_err(|e| e.to_string())?;
     state.invalidate_video_cache();
     Ok(())
+}
+
+fn normalize_media_rel(path: &str, project: &str) -> Result<String, String> {
+    let rel = path.replace('\\', "/");
+    if rel.is_empty() || rel.contains("..") || Path::new(&rel).is_absolute() {
+        return Err("invalid path".to_string());
+    }
+    if !rel.starts_with(&format!("{project}/")) {
+        return Err("path is outside project".to_string());
+    }
+    if PathBuf::from(&rel)
+        .components()
+        .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err("invalid path".to_string());
+    }
+    Ok(rel)
+}
+
+fn is_valid_file_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && !name.contains("..")
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !Path::new(name).is_absolute()
+        && name.chars().all(|c| !c.is_control())
 }

@@ -9,12 +9,14 @@ import { queryKeys } from "@/lib/query-keys";
 import { errorMessage } from "@/lib/errors";
 import { toast } from "sonner";
 import { EditorActionPanel } from "./editor-action-panel";
+import { ImageActionPanel } from "./image-action-panel";
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize, Trash2 } from "lucide-react";
 import type { VideoEntry } from "@/types";
 
 interface VideoEditorProps {
   video: VideoEntry;
   videos: VideoEntry[];
+  currentProject?: string;
   onBack: () => void;
   onRemoveVideo: (relPath: string) => void;
 }
@@ -22,6 +24,7 @@ interface VideoEditorProps {
 export function VideoEditor({
   video,
   videos,
+  currentProject,
   onBack,
   onRemoveVideo,
 }: VideoEditorProps) {
@@ -234,9 +237,7 @@ export function VideoEditor({
           <div className="border-l min-h-0 overflow-y-auto flex flex-col">
             <div className="p-4">
               {activeIsImage ? (
-                <div className="text-xs text-muted-foreground">
-                  Actions are only available for videos.
-                </div>
+                <ImageActionPanel image={video} currentProject={currentProject} />
               ) : (
                 <EditorActionPanel
                   video={video}

@@ -37,6 +37,7 @@ pub struct VideoEntry {
     pub rel_path: String,
     pub duration: Option<f64>,
     pub has_transcript: bool,
+    pub size_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -264,6 +265,7 @@ pub struct ActionInfo {
     pub label: String,
     pub description: String,
     pub target_type: String,
+    pub media_types: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -40,15 +40,16 @@ export function EditorActionPanel({
   onRenderOverlay,
 }: EditorActionPanelProps) {
   const { actions: allActions, loading, error } = useActions();
+  const isImg = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(video.rel_path);
   const actions = useMemo(
     () =>
-      allActions.filter(
-        (a) =>
-          a.target_type !== "settings" &&
-          a.target_type !== "url" &&
-          a.target_type !== "folders"
-      ),
-    [allActions]
+      allActions.filter((a) => {
+        if (a.target_type === "settings" || a.target_type === "url" || a.target_type === "folders") return false;
+        const caps = actionCapabilities(a.name);
+        if (isImg) return caps.mediaTypes.includes("image") || caps.mediaTypes.includes("any");
+        return caps.mediaTypes.includes("video") || caps.mediaTypes.includes("any");
+      }),
+    [allActions, isImg]
   );
 
   // Clear timeline/overlay when there's no visual tool

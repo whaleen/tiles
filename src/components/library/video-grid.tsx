@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { VideoCard } from "./video-card";
+import { MediaContextMenu } from "./media-context-menu";
 import { Film } from "lucide-react";
 import type { VideoEntry } from "@/types";
 
@@ -27,6 +28,10 @@ interface VideoGridProps {
   onVideoClick: (video: VideoEntry) => void;
   onVideoDragStart?: (video: VideoEntry, event: DragEvent<HTMLDivElement>) => void;
   onVideoDragEnd?: (event: DragEvent<HTMLDivElement>) => void;
+  onRenameVideo?: (video: VideoEntry) => void;
+  onMoveVideo?: (video: VideoEntry) => void;
+  onDeleteVideo?: (video: VideoEntry) => void;
+  onRevealVideo?: (video: VideoEntry) => void;
   onReorder?: (newOrder: string[]) => void;
   reorderEnabled?: boolean;
 }
@@ -38,6 +43,10 @@ export const VideoGrid = memo(function VideoGrid({
   onVideoClick,
   onVideoDragStart,
   onVideoDragEnd,
+  onRenameVideo,
+  onMoveVideo,
+  onDeleteVideo,
+  onRevealVideo,
   onReorder,
   reorderEnabled = false,
 }: VideoGridProps) {
@@ -81,15 +90,24 @@ export const VideoGrid = memo(function VideoGrid({
         >
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {videos.map((v) => (
-              <SortableVideoCard
+              <MediaContextMenu
                 key={v.rel_path}
-                video={v}
-                selected={selectedPaths.has(v.rel_path)}
-                onToggleSelect={(shiftKey) => onToggleSelect(v.rel_path, shiftKey)}
-                onClick={() => onVideoClick(v)}
-                onDragStart={(event) => onVideoDragStart?.(v, event)}
-                onDragEnd={onVideoDragEnd}
-              />
+                media={v}
+                onRename={(video) => onRenameVideo?.(video)}
+                onMove={(video) => onMoveVideo?.(video)}
+                onDelete={(video) => onDeleteVideo?.(video)}
+                onReveal={(video) => onRevealVideo?.(video)}
+                disabled={!onRenameVideo && !onMoveVideo && !onDeleteVideo && !onRevealVideo}
+              >
+                <SortableVideoCard
+                  video={v}
+                  selected={selectedPaths.has(v.rel_path)}
+                  onToggleSelect={(shiftKey) => onToggleSelect(v.rel_path, shiftKey)}
+                  onClick={() => onVideoClick(v)}
+                  onDragStart={(event) => onVideoDragStart?.(v, event)}
+                  onDragEnd={onVideoDragEnd}
+                />
+              </MediaContextMenu>
             ))}
           </div>
         </SortableContext>
@@ -100,15 +118,24 @@ export const VideoGrid = memo(function VideoGrid({
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
       {videos.map((v) => (
-        <VideoCard
+        <MediaContextMenu
           key={v.rel_path}
-          video={v}
-          selected={selectedPaths.has(v.rel_path)}
-          onToggleSelect={(shiftKey) => onToggleSelect(v.rel_path, shiftKey)}
-          onClick={() => onVideoClick(v)}
-          onDragStart={(event) => onVideoDragStart?.(v, event)}
-          onDragEnd={onVideoDragEnd}
-        />
+          media={v}
+          onRename={(video) => onRenameVideo?.(video)}
+          onMove={(video) => onMoveVideo?.(video)}
+          onDelete={(video) => onDeleteVideo?.(video)}
+          onReveal={(video) => onRevealVideo?.(video)}
+          disabled={!onRenameVideo && !onMoveVideo && !onDeleteVideo && !onRevealVideo}
+        >
+          <VideoCard
+            video={v}
+            selected={selectedPaths.has(v.rel_path)}
+            onToggleSelect={(shiftKey) => onToggleSelect(v.rel_path, shiftKey)}
+            onClick={() => onVideoClick(v)}
+            onDragStart={(event) => onVideoDragStart?.(v, event)}
+            onDragEnd={onVideoDragEnd}
+          />
+        </MediaContextMenu>
       ))}
     </div>
   );

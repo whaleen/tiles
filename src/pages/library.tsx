@@ -83,6 +83,7 @@ export function LibraryPage({
   const [editorVideo, setEditorVideo] = useState<VideoEntry | null>(null);
   const [folderBusy, setFolderBusy] = useState(false);
   const [movingVideos, setMovingVideos] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [dragRelPath, setDragRelPath] = useState<string | null>(null);
   const dragRelPathRef = useRef<string | null>(null);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
@@ -92,6 +93,8 @@ export function LibraryPage({
   const [showTimeline, setShowTimeline] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [rootOnly, setRootOnly] = useState(true);
+  const [mediaFilter, setMediaFilter] = useState<"all" | "video" | "image">("all");
+  const [sortBy, setSortBy] = useState<"default" | "name" | "name-desc" | "size" | "size-desc">("default");
   const videoScope = useMemo(() => {
     if (selectedFolder) {
       return { folder: selectedFolder, recursive: false, search };
@@ -158,6 +161,10 @@ export function LibraryPage({
     setDragOverFolderPath(null);
   }, [selectedFolder]);
 
+  useEffect(() => {
+    setSelectedPaths(new Set());
+  }, [mediaFilter]);
+
   // Listen for editor navigation events (prev/next inside editor)
   const handleEditorNavigate = useCallback((e: Event) => {
     const video = (e as CustomEvent<VideoEntry>).detail;
@@ -169,20 +176,43 @@ export function LibraryPage({
       window.removeEventListener("editor-navigate", handleEditorNavigate);
   }, [handleEditorNavigate]);
 
-  const filteredVideos = videos;
+  const mediaCounts = useMemo(() => {
+    let image = 0;
+    let video = 0;
+    for (const item of videos) {
+      if (isImage(item.rel_path)) image += 1;
+      else video += 1;
+    }
+    return { image, video };
+  }, [videos]);
+
+  const filteredVideos = useMemo(() => {
+    if (mediaFilter === "video") return videos.filter((v) => !isImage(v.rel_path));
+    if (mediaFilter === "image") return videos.filter((v) => isImage(v.rel_path));
+    return videos;
+  }, [videos, mediaFilter]);
 
   const orderedVideos = useMemo(() => {
-    if (order.length === 0) return filteredVideos;
-    const orderIndex = new Map(order.map((relPath, i) => [relPath, i]));
-    return [...filteredVideos].sort((a, b) => {
-      const ai = orderIndex.get(a.rel_path);
-      const bi = orderIndex.get(b.rel_path);
-      if (ai !== undefined && bi !== undefined) return ai - bi;
-      if (ai !== undefined) return -1;
-      if (bi !== undefined) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [filteredVideos, order]);
+    let base: VideoEntry[];
+    if (order.length === 0) {
+      base = filteredVideos;
+    } else {
+      const orderIndex = new Map(order.map((relPath, i) => [relPath, i]));
+      base = [...filteredVideos].sort((a, b) => {
+        const ai = orderIndex.get(a.rel_path);
+        const bi = orderIndex.get(b.rel_path);
+        if (ai !== undefined && bi !== undefined) return ai - bi;
+        if (ai !== undefined) return -1;
+        if (bi !== undefined) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    }
+    if (sortBy === "name") return [...base].sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === "name-desc") return [...base].sort((a, b) => b.name.localeCompare(a.name));
+    if (sortBy === "size") return [...base].sort((a, b) => (a.size_bytes ?? 0) - (b.size_bytes ?? 0));
+    if (sortBy === "size-desc") return [...base].sort((a, b) => (b.size_bytes ?? 0) - (a.size_bytes ?? 0));
+    return base;
+  }, [filteredVideos, order, sortBy]);
 
   const folderCards = useMemo(
     () => buildFolderCards(selectedFolder || "", detail?.subfolders, thumbVideos, project),
@@ -376,6 +406,82 @@ export function LibraryPage({
       toast.error(message);
     } finally {
       setFolderBusy(false);
+    }
+  }
+
+  async function renameMedia(media: VideoEntry) {
+    if (!project || mediaBusy) return;
+    const name = window.prompt("Rename file", media.name);
+    if (!name) return;
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === media.name) return;
+    setMediaBusy(true);
+    try {
+      const res = await invoke<{ from: string; to: string }>("rename_media", {
+        project,
+        path: media.rel_path,
+        new_name: trimmed,
+      });
+      setSelectedPaths((prev) => {
+        const next = new Set(prev);
+        if (next.delete(res.from)) next.add(res.to);
+        return next;
+      });
+      if (editorVideo?.rel_path === res.from) {
+        setEditorVideo(null);
+      }
+      toast.success("File renamed");
+      bumpMediaCache();
+      await refreshLibraryData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to rename file");
+    } finally {
+      setMediaBusy(false);
+    }
+  }
+
+  async function moveMedia(media: VideoEntry) {
+    if (!project || movingVideos) return;
+    const currentParent = media.folder || media.rel_path.split("/").slice(1, -1).join("/");
+    const targetParentInput = window.prompt(
+      "Move file to folder path (blank for project root)",
+      currentParent
+    );
+    if (targetParentInput === null) return;
+    await moveVideosToFolder(targetParentInput.trim(), [media.rel_path]);
+  }
+
+  async function deleteMedia(media: VideoEntry) {
+    if (mediaBusy) return;
+    if (!window.confirm(`Delete "${media.name}"? This cannot be undone.`)) return;
+    setMediaBusy(true);
+    try {
+      await invoke("delete_video", { path: media.rel_path });
+      removeVideo(media.rel_path);
+      setSelectedPaths((prev) => {
+        const next = new Set(prev);
+        next.delete(media.rel_path);
+        return next;
+      });
+      if (editorVideo?.rel_path === media.rel_path) setEditorVideo(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.videos.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      toast.success("File deleted", { description: media.name });
+      bumpMediaCache();
+      void refreshLibraryData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete file");
+    } finally {
+      setMediaBusy(false);
+    }
+  }
+
+  async function revealMedia(media: VideoEntry) {
+    if (!project) return;
+    try {
+      await invoke("reveal_media", { project, path: media.rel_path });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reveal failed");
     }
   }
 
@@ -827,6 +933,7 @@ export function LibraryPage({
                   <VideoEditor
                     video={editorVideo}
                     videos={orderedVideos}
+                    currentProject={project}
                     onBack={() => setEditorVideo(null)}
                     onRemoveVideo={(relPath) => {
                       removeVideo(relPath);
@@ -888,6 +995,40 @@ export function LibraryPage({
                           </div>
                         </div>
                       )}
+                      <div className="flex items-center gap-2 px-1">
+                        <div className="flex rounded-md border overflow-hidden text-xs">
+                          {(["all", "video", "image"] as const).map((f) => (
+                            <button
+                              key={f}
+                              type="button"
+                              onClick={() => setMediaFilter(f)}
+                              className={`px-2.5 py-1 capitalize ${
+                                mediaFilter === f
+                                  ? "bg-primary text-primary-foreground"
+                                  : "hover:bg-accent"
+                              }`}
+                            >
+                              {f === "all"
+                                ? `All (${videos.length})`
+                                : f === "video"
+                                  ? `Videos (${mediaCounts.video})`
+                                  : `Images (${mediaCounts.image})`}
+                            </button>
+                          ))}
+                        </div>
+                        <Select value={sortBy} onValueChange={(value) => setSortBy(value as typeof sortBy)}>
+                          <SelectTrigger className="h-7 text-xs w-36">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Default order</SelectItem>
+                            <SelectItem value="name">Name A-Z</SelectItem>
+                            <SelectItem value="name-desc">Name Z-A</SelectItem>
+                            <SelectItem value="size">Size (small first)</SelectItem>
+                            <SelectItem value="size-desc">Size (large first)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                       <VideoGrid
                         videos={orderedVideos}
                         selectedPaths={selectedPaths}
@@ -922,6 +1063,10 @@ export function LibraryPage({
                             requestAnimationFrame(() => badge.remove());
                           }
                         }}
+                        onRenameVideo={(video) => void renameMedia(video)}
+                        onMoveVideo={(video) => void moveMedia(video)}
+                        onDeleteVideo={(video) => void deleteMedia(video)}
+                        onRevealVideo={(video) => void revealMedia(video)}
                         onVideoDragEnd={() => {
                           dragRelPathRef.current = null;
                           setDragRelPath(null);

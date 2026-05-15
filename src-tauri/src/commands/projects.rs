@@ -18,6 +18,21 @@ pub fn get_project(state: State<AppState>, name: String) -> Result<ProjectDetail
 }
 
 #[tauri::command]
+pub fn delete_project(state: State<AppState>, name: String) -> Result<(), String> {
+    let root = state.root.read().unwrap().clone();
+    if !is_valid_project_name(&name) {
+        return Err("invalid project".to_string());
+    }
+    let project_dir = root.join("src").join(&name);
+    if !project_dir.exists() || !project_dir.is_dir() {
+        return Err("not found".to_string());
+    }
+    std::fs::remove_dir_all(project_dir).map_err(|e| e.to_string())?;
+    state.invalidate_video_cache();
+    Ok(())
+}
+
+#[tauri::command]
 pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSummary, String> {
     let root = state.root.read().unwrap().clone();
     let name = name.trim().to_string();

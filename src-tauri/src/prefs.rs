@@ -5,6 +5,7 @@ use tauri::Manager;
 #[derive(Serialize, Deserialize, Default)]
 pub struct Prefs {
     pub workspace: Option<String>,
+    pub modelslab_api_key: Option<String>,
 }
 
 pub fn prefs_path(app: &tauri::AppHandle) -> PathBuf {

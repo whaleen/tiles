@@ -4908,9 +4908,10 @@ dependencies = [
 
 [[package]]
 name = "tiles-tauri"
-version = "0.1.1"
+version = "0.1.4"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
