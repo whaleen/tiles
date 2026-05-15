@@ -1,12 +1,13 @@
 {
   "name": "tiles-tauri",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
     "dev": "tauri dev",
     "dev:web": "vp dev",
+    "prebuild": "node scripts/bump-version.mjs",
     "build": "pnpm build:cli && tauri build",
     "build:web": "vp build",
     "build:cli": "cargo build --release -p tiles-cli && cp target/release/tiles src-tauri/binaries/tiles-cli-aarch64-apple-darwin && cp target/release/tiles src-tauri/binaries/tiles-cli-x86_64-apple-darwin",

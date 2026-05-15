@@ -10,6 +10,7 @@ import {
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
 import { ProjectSwitcher } from "@/components/project-switcher"
+import { useAppVersion } from "@/hooks/use-app-version"
 import {
   Sidebar,
   SidebarContent,
@@ -41,6 +42,7 @@ export function AppSidebar({
   onProjectChange: (project?: string) => void
   onChangeWorkspace?: () => void
 }) {
+  const version = useAppVersion()
   const user = {
     name: "Local",
     email: "local",
@@ -71,6 +73,11 @@ export function AppSidebar({
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} onChangeWorkspace={onChangeWorkspace} />
+        {version && (
+          <div className="px-3 pb-1 group-data-[collapsible=icon]:hidden">
+            <span className="text-xs text-muted-foreground/60">v{version}</span>
+          </div>
+        )}
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
