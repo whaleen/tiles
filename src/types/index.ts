@@ -163,6 +163,50 @@ export interface HealthStatus {
   tiles_bin: string;
 }
 
+export interface YtDlpStatus {
+  yt_dlp: boolean;
+  yt_dlp_version?: string | null;
+  ffmpeg: boolean;
+  ffmpeg_version?: string | null;
+}
+
+export interface UrlImportAnalysis {
+  sources: UrlImportSourceAnalysis[];
+}
+
+export interface UrlImportSourceAnalysis {
+  url: string;
+  title?: string | null;
+  kind: string;
+  candidate_count: number;
+  candidates: UrlImportCandidate[];
+  error?: string | null;
+}
+
+export interface UrlImportCandidate {
+  id?: string | null;
+  title: string;
+  url: string;
+  webpage_url?: string | null;
+  uploader?: string | null;
+  duration?: number | null;
+  duration_string?: string | null;
+  thumbnail?: string | null;
+  ext?: string | null;
+  resolution?: string | null;
+  playlist_index?: number | null;
+  kind: string;
+  format_count: number;
+  has_formats: boolean;
+  subtitles: string[];
+  automatic_captions: string[];
+}
+
+export interface UrlImportDownloadResult {
+  downloaded: string[];
+  failures: string[];
+}
+
 export interface FolderPathResponse {
   path: string;
 }

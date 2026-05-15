@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ActionFormWrapper } from "./action-form-wrapper";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -64,9 +65,10 @@ export function SplitDetectForm({
           <div className="flex items-center gap-2">
             <Switch checked={forceTwoPanel} onCheckedChange={setForceTwoPanel} />
             <Label className="text-sm">Force two-panel split (left/right)</Label>
+            <FieldInfo label="" info="Skip automatic detection and always crop each video into left and right halves." className="contents" labelClassName="hidden" />
           </div>
           <div>
-            <Label className="text-sm">Quality</Label>
+            <FieldInfo label="Quality" info="Encoding quality for exported split clips. Higher quality keeps more detail but produces larger files and slower renders." labelClassName="text-sm" />
             <Select value={quality} onValueChange={setQuality}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -80,7 +82,7 @@ export function SplitDetectForm({
             </Select>
           </div>
           <div>
-            <Label className="text-sm">Clip seconds (for fast tests)</Label>
+            <FieldInfo label="Clip seconds (for fast tests)" info="Optional render limit for quick tests. Leave blank to process the full video." labelClassName="text-sm" />
             <Input
               type="number"
               min={1}
@@ -94,6 +96,7 @@ export function SplitDetectForm({
           <div className="flex items-center gap-2">
             <Switch checked={fastPreview} onCheckedChange={setFastPreview} />
             <Label className="text-sm">Fast preview (downscale + low fps)</Label>
+            <FieldInfo label="" info="Creates quicker low-resolution previews while testing split detection settings." className="contents" labelClassName="hidden" />
           </div>
         </div>
       )}

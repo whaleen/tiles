@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -58,7 +58,7 @@ export function ChopForm({
             Split long videos into smaller segments by duration or count.
           </p>
           <div>
-            <Label className="text-sm">Split Mode</Label>
+            <FieldInfo label="Split Mode" info="Choose whether to cut each video into fixed-length chunks or into a fixed number of equal-ish segments." labelClassName="text-sm" />
             <Select value={mode} onValueChange={(v) => setMode(v as "duration" | "count")}>
               <SelectTrigger className="mt-2">
                 <SelectValue />
@@ -71,7 +71,7 @@ export function ChopForm({
           </div>
           {mode === "duration" ? (
             <div>
-              <Label className="text-sm">Segment Duration (seconds)</Label>
+              <FieldInfo label="Segment Duration (seconds)" info="Length of each output segment. The last segment may be shorter if the source video does not divide evenly." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={1}
@@ -85,7 +85,7 @@ export function ChopForm({
             </div>
           ) : (
             <div>
-              <Label className="text-sm">Number of Segments</Label>
+              <FieldInfo label="Number of Segments" info="How many pieces to split each video into. Segment lengths are calculated from each source video duration." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={1}

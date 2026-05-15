@@ -129,6 +129,10 @@ pub fn run() {
             commands::outputs::resolve_transcript_source,
             commands::outputs::get_output_text,
             commands::outputs::delete_output,
+            // url import
+            commands::url_import::check_ytdlp,
+            commands::url_import::analyze_url_import,
+            commands::url_import::download_url_import,
             // actions
             commands::actions::list_actions,
             commands::actions::run_action,

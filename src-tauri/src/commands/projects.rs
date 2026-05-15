@@ -31,7 +31,7 @@ pub fn create_project(state: State<AppState>, name: String) -> Result<ProjectSum
     if dest.exists() {
         return Err("project already exists".to_string());
     }
-    std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(dest.join("imports")).map_err(|e| e.to_string())?;
     let rel_path = format!("src/{name}");
     Ok(ProjectSummary {
         name,

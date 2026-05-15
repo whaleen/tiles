@@ -176,6 +176,86 @@ pub struct OutputEntry {
     pub kind: String,
 }
 
+// --- URL Import ---
+
+#[derive(Debug, Serialize)]
+pub struct YtDlpStatus {
+    pub yt_dlp: bool,
+    pub yt_dlp_version: Option<String>,
+    pub ffmpeg: bool,
+    pub ffmpeg_version: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UrlImportAnalysis {
+    pub sources: Vec<UrlImportSourceAnalysis>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UrlImportSourceAnalysis {
+    pub url: String,
+    pub title: Option<String>,
+    pub kind: String,
+    pub candidate_count: usize,
+    pub candidates: Vec<UrlImportCandidate>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UrlImportCandidate {
+    pub id: Option<String>,
+    pub title: String,
+    pub url: String,
+    pub webpage_url: Option<String>,
+    pub uploader: Option<String>,
+    pub duration: Option<f64>,
+    pub duration_string: Option<String>,
+    pub thumbnail: Option<String>,
+    pub ext: Option<String>,
+    pub resolution: Option<String>,
+    pub playlist_index: Option<usize>,
+    pub kind: String,
+    pub format_count: usize,
+    pub has_formats: bool,
+    pub subtitles: Vec<String>,
+    pub automatic_captions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UrlImportDownloadRequest {
+    pub project: String,
+    #[serde(default)]
+    pub folder: String,
+    #[serde(default)]
+    pub urls: Vec<String>,
+    #[serde(default)]
+    pub options: Option<UrlImportOptions>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct UrlImportOptions {
+    #[serde(default)]
+    pub quality: Option<String>,
+    #[serde(default)]
+    pub write_subtitles: Option<bool>,
+    #[serde(default)]
+    pub write_auto_captions: Option<bool>,
+    #[serde(default)]
+    pub subtitle_languages: Option<String>,
+    #[serde(default)]
+    pub write_thumbnail: Option<bool>,
+    #[serde(default)]
+    pub write_info_json: Option<bool>,
+    #[serde(default)]
+    pub cookies_from_browser: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UrlImportDownloadResult {
+    pub downloaded: Vec<String>,
+    pub failures: Vec<String>,
+}
+
 // --- Actions ---
 
 #[derive(Debug, Serialize)]

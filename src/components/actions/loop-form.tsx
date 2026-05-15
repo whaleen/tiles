@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -60,7 +60,7 @@ export function LoopForm({
             each loop iteration.
           </p>
           <div>
-            <Label className="text-sm">Loop Count</Label>
+            <FieldInfo label="Loop Count" info="Total number of times each video should play in the output. 2 means the original plus one repeat." labelClassName="text-sm" />
             <Input
               type="number"
               min={2}
@@ -72,7 +72,7 @@ export function LoopForm({
             />
           </div>
           <div>
-            <Label className="text-sm">Transition</Label>
+            <FieldInfo label="Transition" info="Effect inserted between loop repetitions. Cut keeps the loop abrupt; fades/dissolves make repeated clips blend together." labelClassName="text-sm" />
             <Select value={transition} onValueChange={setTransition}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -87,7 +87,7 @@ export function LoopForm({
           </div>
           {transition !== "cut" && (
             <div>
-              <Label className="text-sm">Duration (seconds)</Label>
+              <FieldInfo label="Duration (seconds)" info="How long each transition lasts between loop repetitions." labelClassName="text-sm" />
               <Input
                 type="number"
                 step="0.1"

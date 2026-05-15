@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -46,7 +47,7 @@ export function RunForm({ targetsOverride, targetsSummary }: ActionFormProps) {
             A quick way to re-render without opening the builder.
           </p>
           <div>
-            <Label className="text-sm">Render Mode</Label>
+            <FieldInfo label="Render Mode" info="Preview renders faster at practical quality; Fast Preview is lower-res for quick checks; Full is intended for final exports." labelClassName="text-sm" />
             <Select value={renderMode} onValueChange={setRenderMode}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -61,10 +62,12 @@ export function RunForm({ targetsOverride, targetsSummary }: ActionFormProps) {
           <div className="flex items-center gap-2">
             <Switch checked={noOverwrite} onCheckedChange={setNoOverwrite} />
             <Label className="text-sm">Skip if output already exists</Label>
+            <FieldInfo label="" info="Prevents replacing an existing render with the same output path." className="contents" labelClassName="hidden" />
           </div>
           <div className="flex items-center gap-2">
             <Switch checked={forceCfr} onCheckedChange={setForceCfr} />
             <Label className="text-sm">Force constant frame rate</Label>
+            <FieldInfo label="" info="Normalizes variable-frame-rate source clips before/while rendering to avoid timing drift and choppy playback." className="contents" labelClassName="hidden" />
           </div>
         </div>
       )}

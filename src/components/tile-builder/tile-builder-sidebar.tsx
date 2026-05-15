@@ -111,7 +111,10 @@ export function TileBuilderSidebar({
 
             <div className="grid grid-cols-1 gap-3 pt-1">
               <div>
-                <Label className="text-[10px] text-muted-foreground uppercase font-bold">Canvas Size</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Canvas Size</Label>
+                  <InfoHover text="Final output resolution and aspect ratio. Match this to the destination platform, e.g. 16:9 landscape, 9:16 vertical, or square." />
+                </div>
                 <div className="flex items-center gap-2 mt-1">
                   <Select
                     value={canvasPresetKey(safeSettings.canvas_width, safeSettings.canvas_height)}
@@ -233,7 +236,10 @@ export function TileBuilderSidebar({
 
             <div className="space-y-3">
               <div>
-                <Label className="text-[10px] text-muted-foreground uppercase font-bold">Duration Mode</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Duration Mode</Label>
+                  <InfoHover text="Decides how long the final composition runs: stop at the shortest tile, loop shorter tiles until the longest ends, or use a fixed duration." />
+                </div>
                 <Select
                   value={outputLengthPolicy}
                   onValueChange={(v) =>
@@ -256,7 +262,10 @@ export function TileBuilderSidebar({
 
               {outputLengthPolicy === "fixed" && (
                 <div className="animate-in fade-in slide-in-from-top-1 bg-muted/30 p-2 rounded-lg border border-dashed">
-                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Target Duration (s)</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">Target Duration (s)</Label>
+                    <InfoHover text="Exact final composition length in seconds when Duration Mode is Fixed Duration." />
+                  </div>
                   <Input
                     type="number"
                     step="0.1"
@@ -276,7 +285,10 @@ export function TileBuilderSidebar({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Distribution</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">Distribution</Label>
+                    <InfoHover text="How clips are chosen from assigned folders: default order, round-robin across folders, sequential, random, or shuffled round-robin." />
+                  </div>
                   <Select
                     value={safeSettings.distribution_mode ?? "none"}
                     onValueChange={(v) =>
@@ -296,7 +308,10 @@ export function TileBuilderSidebar({
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Reuse Clips</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">Reuse Clips</Label>
+                    <InfoHover text="Controls whether the same source clip may be reused. Global prevents reuse anywhere in the composition; Per Tile prevents reuse within one tile." />
+                  </div>
                   <Select
                     value={sourceRepeatPolicy}
                     onValueChange={(v) =>
@@ -321,7 +336,10 @@ export function TileBuilderSidebar({
               </div>
 
               <div>
-                <Label className="text-[10px] text-muted-foreground uppercase font-bold">Max Clip Length (s)</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Max Clip Length (s)</Label>
+                  <InfoHover text="Caps how much of any single source clip is used. Leave blank for no per-clip limit." />
+                </div>
                 <Input
                   type="number"
                   step="0.1"
@@ -352,7 +370,10 @@ export function TileBuilderSidebar({
             <div className="grid grid-cols-1 gap-2.5">
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/20 border">
                 <div className="space-y-0.5">
-                  <Label className="text-xs">Audio Mix</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs">Audio Mix</Label>
+                    <InfoHover text="Include audio in the rendered composition. Individual tile audio choices are controlled from tile menus in the preview." />
+                  </div>
                   <p className="text-[10px] text-muted-foreground italic">Enable sound in output</p>
                 </div>
                 <Switch
@@ -363,7 +384,10 @@ export function TileBuilderSidebar({
 
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/20 border">
                 <div className="space-y-0.5">
-                  <Label className="text-xs">Safety Mode</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs">Safety Mode</Label>
+                    <InfoHover text="Skip renders when the intended output already exists, protecting previous exports from accidental replacement." />
+                  </div>
                   <p className="text-[10px] text-muted-foreground italic">Skip existing renders</p>
                 </div>
                 <Switch
@@ -377,7 +401,10 @@ export function TileBuilderSidebar({
 
               <div className="flex items-center justify-between p-2 rounded-lg bg-muted/20 border">
                 <div className="space-y-0.5">
-                  <Label className="text-xs">Global Export</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs">Global Export</Label>
+                    <InfoHover text="Save renders to the workspace-level outputs folder instead of this project's outputs folder." />
+                  </div>
                   <p className="text-[10px] text-muted-foreground italic">Save to root outputs</p>
                 </div>
                 <Switch
@@ -403,7 +430,10 @@ export function TileBuilderSidebar({
           </div>
 
           <div>
+            <div className="flex items-center gap-1.5">
             <Label className="text-[10px] text-muted-foreground uppercase font-bold">Render Quality</Label>
+            <InfoHover text="Render preset for final generation. Fast Preview is lowest quality and quickest; Standard Preview is balanced; High Quality Production is for final exports." />
+          </div>
             <Select
               value={renderMode}
               onValueChange={(value) => {

@@ -5,5 +5,6 @@ pub mod logs;
 pub mod outputs;
 pub mod projects;
 pub mod settings;
+pub mod url_import;
 pub mod videos;
 pub mod workspace;

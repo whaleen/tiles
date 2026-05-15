@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { ActionFormWrapper } from "./action-form-wrapper";
@@ -49,9 +50,12 @@ export function SlowmoForm({
             10-second clip last 20 seconds.
           </p>
           <div>
-            <Label className="text-sm">
-              Slowdown: {factor.toFixed(1)}x slower
-            </Label>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-sm">
+                Slowdown: {factor.toFixed(1)}x slower
+              </Label>
+              <FieldInfo label="" info="Playback slowdown multiplier. Higher values stretch the video longer and may require more render time." className="contents" labelClassName="hidden" />
+            </div>
             <Slider
               min={1.5}
               max={8}
@@ -64,6 +68,7 @@ export function SlowmoForm({
           <div className="flex items-center gap-2">
             <Switch checked={noAudio} onCheckedChange={setNoAudio} />
             <Label className="text-sm">No Audio</Label>
+            <FieldInfo label="" info="Drops audio from the slow-motion output. Useful when slowed audio would sound distorted or distracting." className="contents" labelClassName="hidden" />
           </div>
         </div>
       )}

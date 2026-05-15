@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import { ActionFormWrapper } from "./action-form-wrapper";
 
@@ -51,7 +51,7 @@ export function CropForm({
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm">X offset</Label>
+              <FieldInfo label="X offset" info="Left edge of the crop rectangle in pixels, measured from the source video's left side." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={0}
@@ -61,7 +61,7 @@ export function CropForm({
               />
             </div>
             <div>
-              <Label className="text-sm">Y offset</Label>
+              <FieldInfo label="Y offset" info="Top edge of the crop rectangle in pixels, measured from the source video's top edge." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={0}
@@ -71,7 +71,7 @@ export function CropForm({
               />
             </div>
             <div>
-              <Label className="text-sm">Width</Label>
+              <FieldInfo label="Width" info="Width of the crop rectangle in pixels. Must fit within the source video after the X offset." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={1}
@@ -81,7 +81,7 @@ export function CropForm({
               />
             </div>
             <div>
-              <Label className="text-sm">Height</Label>
+              <FieldInfo label="Height" info="Height of the crop rectangle in pixels. Must fit within the source video after the Y offset." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={1}

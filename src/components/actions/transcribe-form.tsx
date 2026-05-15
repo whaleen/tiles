@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ActionFormWrapper } from "./action-form-wrapper";
-import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -59,7 +59,7 @@ export function TranscribeForm({
             <code className="text-xs">brew install whisper-cpp</code>.
           </p>
           <div>
-            <Label className="text-sm">Language</Label>
+            <FieldInfo label="Language" info="Whisper language hint. Use auto to detect, or a language code like en/es/fr to improve accuracy when you know the source language." labelClassName="text-sm" />
             <Input
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
@@ -72,7 +72,7 @@ export function TranscribeForm({
             </p>
           </div>
           <div>
-            <Label className="text-sm">Output Format</Label>
+            <FieldInfo label="Output Format" info="Transcript file format. Text is easiest to read; SRT/VTT include timestamps for subtitles; JSON preserves structured metadata." labelClassName="text-sm" />
             <Select value={format} onValueChange={setFormat}>
               <SelectTrigger className="mt-1">
                 <SelectValue />

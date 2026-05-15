@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -55,7 +56,7 @@ export function CleanForm({
             (by content hash), rename files to a clean numbered sequence, or both.
           </p>
           <div>
-            <Label className="text-sm">Mode</Label>
+            <FieldInfo label="Mode" info="Choose whether to remove duplicate files, rename files into a clean sequence, or do both in one pass." labelClassName="text-sm" />
             <Select value={mode} onValueChange={setMode}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -70,6 +71,7 @@ export function CleanForm({
           <div className="flex items-center gap-2">
             <Switch checked={addNumber} onCheckedChange={setAddNumber} />
             <Label className="text-sm">Add Number Prefix</Label>
+            <FieldInfo label="" info="Adds leading numbers to filenames so clips sort consistently in file browsers and concat/tile workflows." className="contents" labelClassName="hidden" />
           </div>
         </div>
       )}

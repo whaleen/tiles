@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -58,7 +58,7 @@ export function ConcatForm({
             in filename order. Pick a transition to smooth the cuts between clips.
           </p>
           <div>
-            <Label className="text-sm">Transition</Label>
+            <FieldInfo label="Transition" info="Effect used between clips. Cut is fastest and preserves hard edits; fades/dissolves overlap adjacent clips by the transition duration." labelClassName="text-sm" />
             <Select value={transition} onValueChange={setTransition}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -73,7 +73,7 @@ export function ConcatForm({
           </div>
           {transition !== "cut" && (
             <div>
-              <Label className="text-sm">Duration (seconds)</Label>
+              <FieldInfo label="Duration (seconds)" info="How long the transition lasts between clips. Longer transitions are smoother but consume more of adjacent clip edges." labelClassName="text-sm" />
               <Input
                 type="number"
                 step="0.1"

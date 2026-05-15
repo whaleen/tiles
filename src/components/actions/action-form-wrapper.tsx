@@ -1,6 +1,6 @@
 import { useContext, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -239,7 +239,7 @@ export function ActionFormWrapper({
         )}
         {targetType !== "settings" && !hasOverride && (
           <div>
-            <Label className="text-sm">Folders</Label>
+            <FieldInfo label="Folders" info="Choose which project folders this action should process. When individual videos are selected in the Library, this folder picker is replaced by that selection." labelClassName="text-sm" />
             {projects.length === 0 ? (
               <div className="text-xs text-muted-foreground mt-1">
                 No projects found. Scan a project folder to get started.
@@ -272,7 +272,7 @@ export function ActionFormWrapper({
 
         {allowOutput && !fixedOutputMode && (
           <div>
-            <Label className="text-sm">Output</Label>
+            <FieldInfo label="Output" info="Controls where generated files are written. Project outputs stay with the selected project; global outputs go to the workspace-level outputs folder; overwrite changes source files directly." labelClassName="text-sm" />
             <Select value={outputMode} onValueChange={setOutputMode}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -308,7 +308,7 @@ export function ActionFormWrapper({
         {allowOutput && !fixedOutputMode && ["source", "project", "global"].includes(outputMode) && (
           <div>
             <div className="flex items-center justify-between gap-2">
-              <Label className="text-sm">{outputNameKind(actionName)}</Label>
+              <FieldInfo label={outputNameKind(actionName)} info="Name used for the generated run, folder, or output file. The suggested name is safe to use, but you can customize it before running." labelClassName="text-sm" />
               {outputNameTouched && (
                 <Button
                   type="button"
@@ -341,7 +341,7 @@ export function ActionFormWrapper({
 
         {allowOutput && !fixedOutputMode && outputMode === "custom" && (
           <div>
-            <Label className="text-sm">Output Path</Label>
+            <FieldInfo label="Output Path" info="Custom output path relative to the workspace root. Use this when project/global output presets do not fit the job." labelClassName="text-sm" />
             <Input
               value={outputPath}
               onChange={(e) => setOutputPath(e.target.value)}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { ActionFormWrapper } from "./action-form-wrapper";
@@ -65,7 +66,7 @@ export function TrimForm({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-sm">Trim Start (s)</Label>
+              <FieldInfo label="Trim Start (s)" info="Seconds removed from the beginning of each video. Use this to remove intro frames, countdowns, or bad starts." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={0}
@@ -78,7 +79,7 @@ export function TrimForm({
               />
             </div>
             <div>
-              <Label className="text-sm">Trim End (s)</Label>
+              <FieldInfo label="Trim End (s)" info="Seconds removed from the end of each video. Use this to remove outros, dead air, or recording tails." labelClassName="text-sm" />
               <Input
                 type="number"
                 min={0}
@@ -96,6 +97,7 @@ export function TrimForm({
             <div className="flex items-center gap-2">
               <Switch checked={noAudio} onCheckedChange={setNoAudio} />
               <Label className="text-sm">Strip Audio</Label>
+              <FieldInfo label="" info="Removes audio from the trimmed output while keeping the video track." className="contents" labelClassName="hidden" />
             </div>
           </div>
         </div>

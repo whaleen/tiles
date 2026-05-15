@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import { ActionFormWrapper } from "./action-form-wrapper";
 import type { ActionRunRequest } from "@/types";
@@ -31,7 +31,7 @@ export function DoctorReencodeForm(props: Props) {
     >
       {() => (
         <div>
-          <Label className="text-sm">Frame rate</Label>
+          <FieldInfo label="Frame rate" info="Target constant frame rate for re-encoding. 30 fps is a safe default for fixing variable-frame-rate clips without creating huge files." labelClassName="text-sm" />
           <Input
             type="number"
             min={1}

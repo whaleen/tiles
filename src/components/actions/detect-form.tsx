@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -61,7 +62,7 @@ export function DetectForm({
             clips at each cut point. Lower thresholds detect more scenes.
           </p>
           <div>
-            <Label className="text-sm">Threshold</Label>
+            <FieldInfo label="Threshold" info="Scene-change sensitivity. Lower values create more cuts; higher values only split on more obvious changes." labelClassName="text-sm" />
             <Input
               type="number"
               step="0.01"
@@ -73,7 +74,7 @@ export function DetectForm({
             />
           </div>
           <div>
-            <Label className="text-sm">Method</Label>
+            <FieldInfo label="Method" info="Content compares frame differences directly. Adaptive adjusts sensitivity over time and can work better on videos with changing motion/lighting." labelClassName="text-sm" />
             <Select value={method} onValueChange={setMethod}>
               <SelectTrigger className="mt-1">
                 <SelectValue />
@@ -87,6 +88,7 @@ export function DetectForm({
           <div className="flex items-center gap-2">
             <Switch checked={listOnly} onCheckedChange={setListOnly} />
             <Label className="text-sm">List Only (no splitting)</Label>
+            <FieldInfo label="" info="Preview detected scene boundaries without writing any split clip files." className="contents" labelClassName="hidden" />
           </div>
         </div>
       )}

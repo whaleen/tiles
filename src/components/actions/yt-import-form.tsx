@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FieldInfo } from "@/components/ui/field-info";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -90,7 +91,7 @@ export function YtImportForm({
         <div className="text-xs text-muted-foreground">{targetsSummary}</div>
       )}
       <div>
-        <Label className="text-sm">URL</Label>
+        <FieldInfo label="URL" info="URL passed to yt-dlp for the legacy split-frame import. Use the main Import page's URL tab for selectable multi-URL imports." labelClassName="text-sm" />
         <Input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
@@ -104,9 +105,10 @@ export function YtImportForm({
       <div className="flex items-center gap-2">
         <Switch checked={forceTwoPanel} onCheckedChange={setForceTwoPanel} />
         <Label className="text-sm">Force two-panel split (left/right)</Label>
+        <FieldInfo label="" info="Skip automatic detection and always crop the downloaded video into left and right halves." className="contents" labelClassName="hidden" />
       </div>
       <div>
-        <Label className="text-sm">Quality</Label>
+        <FieldInfo label="Quality" info="Encoding quality for the split-frame crop outputs after download." labelClassName="text-sm" />
         <Select value={quality} onValueChange={setQuality}>
           <SelectTrigger className="mt-1">
             <SelectValue />
@@ -120,7 +122,7 @@ export function YtImportForm({
         </Select>
       </div>
       <div>
-        <Label className="text-sm">Clip seconds (for fast tests)</Label>
+        <FieldInfo label="Clip seconds (for fast tests)" info="Optional processing limit for quick tests. Leave blank to download/process the full video." labelClassName="text-sm" />
         <Input
           type="number"
           min={1}
@@ -134,10 +136,11 @@ export function YtImportForm({
       <div className="flex items-center gap-2">
         <Switch checked={useBrowserCookies} onCheckedChange={setUseBrowserCookies} />
         <Label className="text-sm">Use browser cookies</Label>
+        <FieldInfo label="" info="Lets yt-dlp read browser cookies for sites that require login, age checks, memberships, or region/session state." className="contents" labelClassName="hidden" />
       </div>
       {useBrowserCookies && (
         <div>
-          <Label className="text-sm">Browser</Label>
+          <FieldInfo label="Browser" info="Browser profile yt-dlp should read cookies from. Pick the browser where you are logged into the source site." labelClassName="text-sm" />
           <Select value={browserChoice} onValueChange={setBrowserChoice}>
             <SelectTrigger className="mt-1">
               <SelectValue />
@@ -155,6 +158,7 @@ export function YtImportForm({
       <div className="flex items-center gap-2">
         <Switch checked={fastPreview} onCheckedChange={setFastPreview} />
         <Label className="text-sm">Fast preview (downscale + low fps)</Label>
+        <FieldInfo label="" info="Speeds up test runs by producing lower-resolution, lower-framerate split outputs." className="contents" labelClassName="hidden" />
       </div>
       <div className="text-xs text-muted-foreground">
         Output: {currentProject ? `src/${currentProject}/outputs/yt-import` : "Select a project"}
