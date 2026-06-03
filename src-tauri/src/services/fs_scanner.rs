@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
+
+use base64::Engine;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -212,17 +214,12 @@ pub fn list_videos(
             }
 
             let has_transcript = check_has_transcript(&root, &rel_path);
-            let duration = if is_video_file(&path) {
-                crate::services::ffprobe::get_video_duration(&path, root)
-            } else {
-                None
-            };
             let size_bytes = entry.metadata().map(|m| m.len()).unwrap_or(0);
             out.push(VideoEntry {
                 folder,
                 name,
                 rel_path,
-                duration,
+                duration: None,
                 has_transcript,
                 size_bytes,
             });
@@ -452,12 +449,14 @@ pub fn list_output_entries(root: &Path, rel_path: Option<&str>) -> Vec<OutputEnt
         } else {
             output_kind(&path)
         };
+        let thumbnail = output_thumbnail_data_url(root, &path, &rel_path, &kind);
         out.push(OutputEntry {
             name,
             rel_path,
             is_dir,
             size_bytes,
             modified_epoch,
+            thumbnail,
             kind,
         });
     }
@@ -536,12 +535,14 @@ pub fn list_all_output_files_recursive(root: &Path, rel_path: &str) -> Vec<Outpu
 
             let kind = output_kind(&path);
 
+            let thumbnail = output_thumbnail_data_url(root, &path, &rel_path_val, &kind);
             out.push(OutputEntry {
                 name,
                 rel_path: rel_path_val,
                 is_dir: false,
                 size_bytes: metadata.len(),
                 modified_epoch,
+                thumbnail,
                 kind,
             });
         }
@@ -549,6 +550,38 @@ pub fn list_all_output_files_recursive(root: &Path, rel_path: &str) -> Vec<Outpu
 
     out.sort_by(|a, b| b.modified_epoch.cmp(&a.modified_epoch));
     out
+}
+
+fn output_thumbnail_data_url(
+    root: &Path,
+    path: &Path,
+    rel_path: &str,
+    kind: &str,
+) -> Option<String> {
+    if kind != "video" && kind != "image" {
+        return None;
+    }
+    let thumb = crate::services::thumbnail::ensure_thumbnail(root, path, rel_path)?;
+    let bytes = fs::read(&thumb).ok()?;
+    let mime = if kind == "image" {
+        match path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("png") => "image/png",
+            Some("webp") => "image/webp",
+            Some("gif") => "image/gif",
+            _ => "image/jpeg",
+        }
+    } else {
+        "image/jpeg"
+    };
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
 }
 
 fn list_output_roots(root: &Path) -> Vec<OutputEntry> {
@@ -570,6 +603,7 @@ fn list_output_roots(root: &Path) -> Vec<OutputEntry> {
             size_bytes: 0,
             modified_epoch,
             kind: "dir".to_string(),
+            thumbnail: None,
         });
     }
 
@@ -602,6 +636,7 @@ fn list_output_roots(root: &Path) -> Vec<OutputEntry> {
                         size_bytes: 0,
                         modified_epoch,
                         kind: "dir".to_string(),
+                        thumbnail: None,
                     });
                 }
             }

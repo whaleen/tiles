@@ -1,4 +1,11 @@
 import { useEffect, useState, lazy, Suspense } from "react";
+
+function readSidebarCookie(): boolean {
+  const match = document.cookie.split("; ").find((c) => c.startsWith("sidebar_state="));
+  if (!match) return true;
+  return match.split("=")[1] === "true";
+}
+import { DownloadProvider } from "@/contexts/download-context";
 import { AppSidebar } from "@/components/app-sidebar";
 import {
   SidebarInset,
@@ -16,7 +23,11 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Loader2 } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { FeedbackDialog } from "@/components/feedback/feedback-dialog";
 
+const WorkspaceHomePage = lazy(() =>
+  import("@/pages/workspace-home").then((m) => ({ default: m.WorkspaceHomePage }))
+);
 const DashboardPage = lazy(() =>
   import("@/pages/dashboard").then((m) => ({ default: m.DashboardPage }))
 );
@@ -35,6 +46,9 @@ const OutputsPage = lazy(() =>
 const LogsPage = lazy(() =>
   import("@/pages/logs").then((m) => ({ default: m.LogsPage }))
 );
+const SettingsPage = lazy(() =>
+  import("@/pages/settings").then((m) => ({ default: m.SettingsPage }))
+);
 
 function PageFallback() {
   return (
@@ -44,9 +58,19 @@ function PageFallback() {
   );
 }
 
-export function AppShell({ onChangeWorkspace }: { onChangeWorkspace?: () => void }) {
+export function AppShell({
+  onChangeWorkspace,
+  onSetWorkspace,
+  workspacePath,
+}: {
+  onChangeWorkspace?: () => void;
+  onSetWorkspace?: (path: string) => void;
+  workspacePath?: string;
+}) {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [project, setProject] = useState<string | undefined>();
+  const [settingsProject, setSettingsProject] = useState<string | undefined>();
+  const workspaceName = workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) || "Workspace";
 
   useEffect(() => {
     function handleNavigate(event: Event) {
@@ -59,8 +83,49 @@ export function AppShell({ onChangeWorkspace }: { onChangeWorkspace?: () => void
     return () => window.removeEventListener("tiles:navigate", handleNavigate);
   }, []);
 
+  if (!project) {
+    return (
+      <DownloadProvider>
+        <div className="min-h-svh">
+          <ErrorBoundary resetKey={`workspace-home:${activeTab}`}>
+            <Suspense fallback={<PageFallback />}>
+              {activeTab === "settings" ? (
+                <div className="min-h-svh bg-background p-6">
+                  <div className="mx-auto mb-4 flex w-full max-w-3xl justify-between">
+                    <button className="text-sm text-muted-foreground hover:text-foreground" onClick={() => setActiveTab("dashboard")} type="button">
+                      ← Workspace
+                    </button>
+                  </div>
+                  <SettingsPage />
+                </div>
+              ) : (
+                <WorkspaceHomePage
+                  workspacePath={workspacePath}
+                  onChangeWorkspace={onChangeWorkspace}
+                  onSetWorkspace={onSetWorkspace}
+                  onOpenProject={(name, tab = "library") => {
+                    setProject(name);
+                    setActiveTab(tab);
+                  }}
+                  onOpenProjectSettings={(name) => {
+                    setSettingsProject(name);
+                    setProject(name);
+                    setActiveTab("dashboard");
+                  }}
+                />
+              )}
+            </Suspense>
+          </ErrorBoundary>
+          <FeedbackDialog activeTab={activeTab} project={project} workspacePath={workspacePath} />
+
+        </div>
+      </DownloadProvider>
+    );
+  }
+
   return (
-    <SidebarProvider className="h-svh overflow-hidden">
+    <DownloadProvider>
+    <SidebarProvider defaultOpen={readSidebarCookie()} className="h-svh overflow-hidden">
       <AppSidebar
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -79,14 +144,25 @@ export function AppShell({ onChangeWorkspace }: { onChangeWorkspace?: () => void
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem className="hidden md:block">
-                  <BreadcrumbLink href="#">tiles</BreadcrumbLink>
+                  <BreadcrumbLink
+                    href="#"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setProject(undefined);
+                      setActiveTab("dashboard");
+                    }}
+                  >
+                    {workspaceName}
+                  </BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
                   <BreadcrumbPage>
-                    {activeTab === "tile-builder"
-                      ? "Tile Builder"
-                      : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                    {activeTab === "dashboard"
+                      ? "Workspace Home"
+                      : activeTab === "tile-builder"
+                        ? "Tile Builder"
+                        : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
                   </BreadcrumbPage>
                 </BreadcrumbItem>
               </BreadcrumbList>
@@ -97,17 +173,25 @@ export function AppShell({ onChangeWorkspace }: { onChangeWorkspace?: () => void
           <ErrorBoundary resetKey={`${activeTab}:${project ?? "__all__"}`}>
             <Suspense fallback={<PageFallback />}>
               {activeTab === "dashboard" && (
-                <DashboardPage onNavigate={setActiveTab} onProjectChange={setProject} />
+                <DashboardPage
+                  onNavigate={setActiveTab}
+                  onProjectChange={setProject}
+                  settingsProject={settingsProject}
+                  onSettingsProjectChange={setSettingsProject}
+                />
               )}
               {activeTab === "library" && <LibraryPage key={project ?? "__all__"} project={project} />}
               {activeTab === "tile-builder" && <TileBuilderPage key={project ?? "__all__"} project={project} />}
               {activeTab === "import" && <ImportPage key={project ?? "__all__"} project={project} />}
               {activeTab === "outputs" && <OutputsPage key={project ?? "__all__"} project={project} />}
               {activeTab === "logs" && <LogsPage />}
+              {activeTab === "settings" && <SettingsPage />}
             </Suspense>
           </ErrorBoundary>
         </div>
       </SidebarInset>
+      <FeedbackDialog activeTab={activeTab} project={project} workspacePath={workspacePath} />
     </SidebarProvider>
+    </DownloadProvider>
   );
 }

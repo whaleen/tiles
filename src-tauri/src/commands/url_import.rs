@@ -12,13 +12,17 @@ use crate::state::AppState;
 pub async fn check_ytdlp() -> YtDlpStatus {
     let yt_dlp_bin = find_bin("yt-dlp");
     let ffmpeg_bin = find_bin("ffmpeg");
+    let gallery_dl_bin = find_bin("gallery-dl");
     let yt_dlp_version = command_version(&yt_dlp_bin, &["--version"]);
     let ffmpeg_version = command_version(&ffmpeg_bin, &["-version"]);
+    let gallery_dl_version = command_version(&gallery_dl_bin, &["--version"]);
     YtDlpStatus {
         yt_dlp: yt_dlp_version.is_some(),
         yt_dlp_version,
         ffmpeg: ffmpeg_version.is_some(),
         ffmpeg_version,
+        gallery_dl: gallery_dl_version.is_some(),
+        gallery_dl_version,
     }
 }
 
@@ -26,9 +30,11 @@ pub async fn check_ytdlp() -> YtDlpStatus {
 pub async fn analyze_url_import(
     urls: Vec<String>,
     mode: String,
+    tool: Option<String>,
     cookies_from_browser: Option<String>,
 ) -> Result<UrlImportAnalysis, String> {
     let deep = mode == "deep";
+    let use_gallery_dl = tool.as_deref() == Some("gallery-dl");
     let mut sources = Vec::new();
     for raw_url in urls {
         let url = raw_url.trim().to_string();
@@ -38,7 +44,13 @@ pub async fn analyze_url_import(
         let analyzed = tokio::task::spawn_blocking({
             let url = url.clone();
             let cookies_from_browser = cookies_from_browser.clone();
-            move || analyze_one_url(&url, deep, cookies_from_browser.as_deref())
+            move || {
+                if use_gallery_dl {
+                    analyze_one_url_gallery_dl(&url)
+                } else {
+                    analyze_one_url(&url, deep, cookies_from_browser.as_deref())
+                }
+            }
         })
         .await
         .map_err(|e| e.to_string())?;
@@ -116,7 +128,11 @@ fn analyze_one_url(
             kind: "error".to_string(),
             candidate_count: 0,
             candidates: vec![],
-            error: Some(if err.is_empty() { "yt-dlp analysis failed".to_string() } else { err }),
+            error: Some(if err.is_empty() {
+                "yt-dlp analysis failed".to_string()
+            } else {
+                err
+            }),
         };
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -151,7 +167,9 @@ fn analyze_one_url(
     let kind = if json.get("entries").is_some() {
         "playlist"
     } else {
-        json.get("_type").and_then(|v| v.as_str()).unwrap_or("video")
+        json.get("_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("video")
     };
     UrlImportSourceAnalysis {
         url: url.to_string(),
@@ -168,7 +186,10 @@ fn candidate_from_value(
     playlist_index: Option<usize>,
     deep: bool,
 ) -> Option<UrlImportCandidate> {
-    let title = value.get("title").and_then(|v| v.as_str()).unwrap_or("Untitled");
+    let title = value
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Untitled");
     let webpage_url = value
         .get("webpage_url")
         .or_else(|| value.get("url"))
@@ -195,8 +216,14 @@ fn candidate_from_value(
         id: value.get("id").and_then(|v| v.as_str()).map(String::from),
         title: title.to_string(),
         url: webpage_url,
-        webpage_url: value.get("webpage_url").and_then(|v| v.as_str()).map(String::from),
-        uploader: value.get("uploader").and_then(|v| v.as_str()).map(String::from),
+        webpage_url: value
+            .get("webpage_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        uploader: value
+            .get("uploader")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         duration: value.get("duration").and_then(|v| v.as_f64()),
         duration_string: value
             .get("duration_string")
@@ -204,11 +231,18 @@ fn candidate_from_value(
             .or_else(|| value.get("duration").filter(|v| v.is_string()))
             .and_then(|v| v.as_str())
             .map(String::from),
-        thumbnail: value.get("thumbnail").and_then(|v| v.as_str()).map(String::from),
+        thumbnail: value
+            .get("thumbnail")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         ext,
         resolution,
         playlist_index,
-        kind: value.get("_type").and_then(|v| v.as_str()).unwrap_or("video").to_string(),
+        kind: value
+            .get("_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("video")
+            .to_string(),
         format_count: formats,
         has_formats: if deep { formats > 0 } else { true },
         subtitles,
@@ -254,7 +288,26 @@ fn download_urls(
     urls: &[String],
     options: &UrlImportOptions,
 ) -> Result<UrlImportDownloadResult, String> {
-    let before = list_video_files(dest);
+    if options.tool.as_deref() == Some("gallery-dl") {
+        let mut all_downloaded = Vec::new();
+        let mut all_failures = Vec::new();
+        for url in urls {
+            match download_gallery_dl(dest, url, options) {
+                Ok(r) => {
+                    all_downloaded.extend(r.downloaded);
+                    all_failures.extend(r.failures);
+                }
+                Err(e) => all_failures.push(e),
+            }
+        }
+        return Ok(UrlImportDownloadResult {
+            downloaded: all_downloaded,
+            failures: all_failures,
+        });
+    }
+
+    let include_images = options.include_images.unwrap_or(false);
+    let before = list_media_files(dest, include_images);
     let mut downloaded = Vec::new();
     let mut failures = Vec::new();
 
@@ -262,6 +315,7 @@ fn download_urls(
         let mut cmd = Command::new(find_bin("yt-dlp"));
         cmd.arg("--newline")
             .arg("--ignore-errors")
+            .arg("--no-playlist")
             .arg("--no-overwrites")
             .arg("--restrict-filenames")
             .arg("--windows-filenames")
@@ -290,7 +344,11 @@ fn download_urls(
                 .arg("--sub-format")
                 .arg("vtt/srt/best");
         }
-        if let Some(browser) = options.cookies_from_browser.as_deref().filter(|s| !s.is_empty()) {
+        if let Some(browser) = options
+            .cookies_from_browser
+            .as_deref()
+            .filter(|s| !s.is_empty())
+        {
             cmd.arg("--cookies-from-browser").arg(browser);
         }
         cmd.arg(url);
@@ -304,48 +362,274 @@ fn download_urls(
         }
     }
 
-    for path in list_video_files(dest) {
+    let include_images = options.include_images.unwrap_or(false);
+    for path in list_media_files(dest, include_images) {
         normalize_subtitle_for_video(&path);
         if !before.contains(&path) {
-            downloaded.push(path.file_name().unwrap_or_default().to_string_lossy().to_string());
+            downloaded.push(
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+            );
         }
     }
-    Ok(UrlImportDownloadResult { downloaded, failures })
+    Ok(UrlImportDownloadResult {
+        downloaded,
+        failures,
+    })
 }
 
 fn normalize_subtitle_for_video(video: &Path) {
-    let Some(parent) = video.parent() else { return; };
-    let Some(stem) = video.file_stem().and_then(|s| s.to_str()) else { return; };
-    let Ok(read) = std::fs::read_dir(parent) else { return; };
+    let Some(parent) = video.parent() else {
+        return;
+    };
+    let Some(stem) = video.file_stem().and_then(|s| s.to_str()) else {
+        return;
+    };
+    let Ok(read) = std::fs::read_dir(parent) else {
+        return;
+    };
     let mut candidates = Vec::new();
     for entry in read.flatten() {
         let path = entry.path();
         if !path.is_file() {
             continue;
         }
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
         if !matches!(ext.as_str(), "vtt" | "srt") {
             continue;
         }
-        let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) else { continue; };
+        let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
         if file_stem == stem || file_stem.starts_with(&format!("{stem}.")) {
             candidates.push(path);
         }
     }
     candidates.sort_by_key(|p| {
-        let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         (
             if name.contains(".en") { 0 } else { 1 },
             if name.ends_with(".vtt") { 0 } else { 1 },
             name,
         )
     });
-    let Some(best) = candidates.first() else { return; };
+    let Some(best) = candidates.first() else {
+        return;
+    };
     let ext = best.extension().and_then(|e| e.to_str()).unwrap_or("vtt");
     let canonical = parent.join(format!("{stem}.{ext}"));
     if canonical != *best && !canonical.exists() {
         let _ = std::fs::copy(best, canonical);
     }
+}
+
+fn analyze_one_url_gallery_dl(url: &str) -> UrlImportSourceAnalysis {
+    let mut cmd = Command::new(find_bin("gallery-dl"));
+    cmd.arg("-j").arg("--simulate").arg(url); // -j = dump JSON, --simulate = no download
+    let output = match cmd.output() {
+        Ok(o) => o,
+        Err(err) => {
+            return UrlImportSourceAnalysis {
+                url: url.to_string(),
+                title: None,
+                kind: "error".to_string(),
+                candidate_count: 0,
+                candidates: vec![],
+                error: Some(format!("failed to run gallery-dl: {err}")),
+            };
+        }
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let candidates = parse_gallery_dl_ndjson(&stdout);
+    let title = candidates.first().and_then(|c| c.uploader.clone());
+    let error = if !output.status.success() {
+        let e = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if e.is_empty() {
+            None
+        } else {
+            Some(e)
+        }
+    } else {
+        None
+    };
+    UrlImportSourceAnalysis {
+        url: url.to_string(),
+        title,
+        kind: if candidates.len() > 1 {
+            "gallery"
+        } else {
+            "image"
+        }
+        .to_string(),
+        candidate_count: candidates.len(),
+        candidates,
+        error,
+    }
+}
+
+fn parse_gallery_dl_ndjson(stdout: &str) -> Vec<UrlImportCandidate> {
+    let mut candidates = Vec::new();
+    let mut file_index: usize = 0;
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let arr: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let arr = match arr.as_array() {
+            Some(a) => a,
+            None => continue,
+        };
+        // version 0 = directory/gallery info, skip
+        if arr.first().and_then(|v| v.as_u64()).unwrap_or(0) != 1 {
+            continue;
+        }
+        // metadata is the last element
+        let meta = match arr.last().and_then(|v| v.as_object()) {
+            Some(m) => m,
+            None => continue,
+        };
+        let url = match meta.get("url").and_then(|v| v.as_str()) {
+            Some(u) => u.to_string(),
+            None => continue,
+        };
+        file_index += 1;
+        let filename = meta
+            .get("filename")
+            .and_then(|v| v.as_str())
+            .unwrap_or("untitled");
+        let extension = meta
+            .get("extension")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let title = meta
+            .get("title")
+            .or_else(|| meta.get("description"))
+            .or_else(|| meta.get("content"))
+            .and_then(|v| v.as_str())
+            .map(|s| {
+                let t = s.trim();
+                if t.len() > 120 {
+                    &t[..120]
+                } else {
+                    t
+                }
+            })
+            .map(String::from)
+            .unwrap_or_else(|| format!("{filename}.{}", extension.as_deref().unwrap_or("img")));
+        let resolution = {
+            let w = meta.get("width").and_then(|v| v.as_u64());
+            let h = meta.get("height").and_then(|v| v.as_u64());
+            match (w, h) {
+                (Some(w), Some(h)) => Some(format!("{w}×{h}")),
+                _ => None,
+            }
+        };
+        candidates.push(UrlImportCandidate {
+            id: meta.get("id").map(|v| v.to_string()),
+            title,
+            url,
+            webpage_url: meta
+                .get("post_url")
+                .or_else(|| meta.get("webpage_url"))
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            uploader: meta
+                .get("uploader")
+                .or_else(|| meta.get("account"))
+                .or_else(|| meta.get("artist"))
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            duration: None,
+            duration_string: None,
+            thumbnail: meta
+                .get("thumbnail")
+                .and_then(|v| v.as_str())
+                .map(String::from),
+            ext: extension,
+            resolution,
+            playlist_index: Some(file_index),
+            kind: "image".to_string(),
+            format_count: 0,
+            has_formats: false,
+            subtitles: vec![],
+            automatic_captions: vec![],
+        });
+    }
+    candidates
+}
+
+fn download_gallery_dl(
+    dest: &Path,
+    url: &str,
+    options: &UrlImportOptions,
+) -> Result<UrlImportDownloadResult, String> {
+    let include_images = options.include_images.unwrap_or(true);
+    let before: std::collections::HashSet<_> = list_media_files_recursive(dest, include_images)
+        .into_iter()
+        .collect();
+    let mut cmd = Command::new(find_bin("gallery-dl"));
+    cmd.arg("-d").arg(dest).arg("--no-part").arg(url);
+    let mut failures = Vec::new();
+    match cmd.output() {
+        Ok(out) if out.status.success() => {}
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            if !stderr.is_empty() {
+                failures.push(format!("{url}: {stderr}"));
+            }
+        }
+        Err(err) => failures.push(format!("{url}: {err}")),
+    }
+    let downloaded = list_media_files_recursive(dest, include_images)
+        .into_iter()
+        .filter(|p| !before.contains(p))
+        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .collect();
+    Ok(UrlImportDownloadResult {
+        downloaded,
+        failures,
+    })
+}
+
+fn list_media_files_recursive(dir: &Path, include_images: bool) -> Vec<std::path::PathBuf> {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths = Vec::new();
+    for entry in read.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            paths.extend(list_media_files_recursive(&path, include_images));
+        } else if path.is_file() {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let is_video = matches!(ext.as_str(), "mp4" | "mov" | "mkv" | "webm" | "m4v");
+            let is_image =
+                include_images && matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp");
+            if is_video || is_image {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+    paths
 }
 
 fn format_selector(quality: Option<&str>) -> &'static str {
@@ -360,14 +644,23 @@ fn format_selector(quality: Option<&str>) -> &'static str {
     }
 }
 
-fn list_video_files(dir: &Path) -> Vec<std::path::PathBuf> {
-    let Ok(read) = std::fs::read_dir(dir) else { return Vec::new(); };
+fn list_media_files(dir: &Path, include_images: bool) -> Vec<std::path::PathBuf> {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
     let mut paths = Vec::new();
     for entry in read.flatten() {
         let path = entry.path();
         if path.is_file() {
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
-            if matches!(ext.as_str(), "mp4" | "mov" | "mkv" | "webm" | "m4v") {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            let is_video = matches!(ext.as_str(), "mp4" | "mov" | "mkv" | "webm" | "m4v");
+            let is_image =
+                include_images && matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp");
+            if is_video || is_image {
                 paths.push(path);
             }
         }

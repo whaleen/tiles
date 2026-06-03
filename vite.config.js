@@ -7,7 +7,35 @@ import { defineConfig } from "vite-plus"
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    {
+      name: "normalize-react-transform-config",
+      config(config) {
+        config.oxc ??= {}
+        config.oxc.jsx ??= {}
+        if (!config.oxc.jsx.runtime) config.oxc.jsx.runtime = "automatic"
+        if (!config.oxc.jsx.importSource) config.oxc.jsx.importSource = "react"
+
+        config.optimizeDeps ??= {}
+        config.optimizeDeps.rolldownOptions ??= {}
+        config.optimizeDeps.rolldownOptions.transform ??= {}
+        config.optimizeDeps.rolldownOptions.transform.jsx ??= {}
+        if (!config.optimizeDeps.rolldownOptions.transform.jsx.runtime) {
+          config.optimizeDeps.rolldownOptions.transform.jsx.runtime = "automatic"
+        }
+        if (!config.optimizeDeps.rolldownOptions.transform.jsx.importSource) {
+          config.optimizeDeps.rolldownOptions.transform.jsx.importSource = "react"
+        }
+
+        if ("esbuild" in config) delete config.esbuild
+        if (config.optimizeDeps && "esbuildOptions" in config.optimizeDeps) {
+          delete config.optimizeDeps.esbuildOptions
+        }
+      },
+    },
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

@@ -170,6 +170,8 @@ export interface YtDlpStatus {
   yt_dlp_version?: string | null;
   ffmpeg: boolean;
   ffmpeg_version?: string | null;
+  gallery_dl: boolean;
+  gallery_dl_version?: string | null;
 }
 
 export interface UrlImportAnalysis {

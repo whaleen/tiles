@@ -46,7 +46,9 @@ pub fn rename_media(
     if !src_full.exists() || !src_full.is_file() {
         return Err("not found".to_string());
     }
-    let parent = src_full.parent().ok_or_else(|| "invalid path".to_string())?;
+    let parent = src_full
+        .parent()
+        .ok_or_else(|| "invalid path".to_string())?;
     let dest_full = parent.join(new_name);
     if dest_full.exists() {
         return Err("already exists".to_string());
@@ -57,7 +59,10 @@ pub fn rename_media(
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .map_err(|_| "path error".to_string())?;
     state.invalidate_video_cache();
-    Ok(MovedVideoPath { from: rel, to: dest_rel })
+    Ok(MovedVideoPath {
+        from: rel,
+        to: dest_rel,
+    })
 }
 
 #[tauri::command]

@@ -22,6 +22,7 @@ dist/
 # Temporary files
 *.tmp
 *.swp
+.agent/inbox/feedback.jsonl
 
 # Whisper models
 models/
@@ -45,15 +46,11 @@ models/
 .cntxignore
 .mcp.json
 
-# Pemguin TUI
-.agents/
+# Agent-local/generated state
 .claude/
 .memory/
 .prompts/
 .vite-hooks/
-CLAUDE.md
-GEMINI.md
-skills-lock.json
 
 # pemguin managed
 .pemguin.toml

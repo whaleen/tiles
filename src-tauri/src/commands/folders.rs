@@ -192,21 +192,31 @@ pub fn move_videos(
     project: String,
     video_paths: Vec<String>,
     target_folder: String,
+    dest_project: Option<String>,
 ) -> Result<MoveVideosResponse, String> {
     let root = state.root.read().unwrap().clone();
-    let project_dir = get_project_dir(&root, &project)?;
+    // Source project must already exist.
+    get_project_dir(&root, &project)?;
+
+    // Destination project: use dest_project when provided (may be brand-new),
+    // otherwise fall back to the source project.
+    let dest_proj_name = dest_project.as_deref().unwrap_or(&project);
+    if !is_valid_project_name(dest_proj_name) {
+        return Err("invalid dest_project name".to_string());
+    }
+    let dest_proj_dir = root.join("src").join(dest_proj_name);
+
     let target_rel = normalize_rel(&target_folder);
     if !is_valid_rel_folder(&target_rel, true) {
         return Err("invalid target_folder".to_string());
     }
     let target_dir = if target_rel.is_empty() {
-        project_dir.clone()
+        dest_proj_dir.clone()
     } else {
-        project_dir.join(&target_rel)
+        dest_proj_dir.join(&target_rel)
     };
-    if !target_dir.exists() || !target_dir.is_dir() {
-        return Err("target folder not found".to_string());
-    }
+    // Create destination (and any intermediate dirs) if it does not yet exist.
+    std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
 
     let mut moved = 0usize;
     let mut moved_paths = Vec::new();
@@ -369,6 +379,49 @@ pub fn put_folder_order(
     let path = folder_dir.join(".tiles-folder.json");
     let json = serde_json::to_string_pretty(&order).map_err(|e| e.to_string())?;
     std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn promote_folder_to_project(
+    state: State<AppState>,
+    project: String,
+    folder_path: String,
+    project_name: String,
+) -> Result<String, String> {
+    let root = state.root.read().unwrap().clone();
+    let project_dir = get_project_dir(&root, &project)?;
+
+    let rel = normalize_rel(&folder_path);
+    if !is_valid_rel_folder(&rel, false) {
+        return Err("invalid folder path".to_string());
+    }
+
+    let new_name = project_name.trim().to_string();
+    if new_name.is_empty() {
+        return Err("project name is required".to_string());
+    }
+    if !is_valid_folder_name(&new_name) {
+        return Err("invalid project name".to_string());
+    }
+    const RESERVED: &[&str] = &["src", "outputs", "configs", "logs"];
+    if RESERVED.iter().any(|r| new_name.eq_ignore_ascii_case(r)) {
+        return Err("reserved name".to_string());
+    }
+
+    let src = project_dir.join(&rel);
+    if !src.exists() || !src.is_dir() {
+        return Err("folder not found".to_string());
+    }
+
+    let dest = root.join("src").join(&new_name);
+    if dest.exists() {
+        return Err(format!("\"{new_name}\" already exists as a project"));
+    }
+
+    std::fs::rename(&src, &dest).map_err(|e| e.to_string())?;
+    state.invalidate_video_cache();
+
+    Ok(new_name)
 }
 
 fn get_project_dir(root: &Path, project: &str) -> Result<PathBuf, String> {

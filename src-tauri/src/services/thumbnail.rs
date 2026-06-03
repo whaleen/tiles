@@ -7,12 +7,33 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use super::ffprobe::get_video_duration;
 use super::fs_scanner::{is_image_file, is_video_file};
 
+pub enum ThumbnailEnsureResult {
+    Existing(PathBuf),
+    Generated(PathBuf),
+}
+
+impl ThumbnailEnsureResult {
+    pub fn path(&self) -> &Path {
+        match self {
+            Self::Existing(path) | Self::Generated(path) => path,
+        }
+    }
+}
+
 pub fn ensure_thumbnail(root: &Path, input: &Path, rel: &str) -> Option<PathBuf> {
+    ensure_thumbnail_with_status(root, input, rel).map(|result| result.path().to_path_buf())
+}
+
+pub fn ensure_thumbnail_with_status(
+    root: &Path,
+    input: &Path,
+    rel: &str,
+) -> Option<ThumbnailEnsureResult> {
     if !input.exists() || !input.is_file() {
         return None;
     }
     if is_image_file(input) {
-        return Some(input.to_path_buf());
+        return Some(ThumbnailEnsureResult::Existing(input.to_path_buf()));
     }
     if !is_video_file(input) {
         return None;
@@ -26,13 +47,13 @@ pub fn ensure_thumbnail(root: &Path, input: &Path, rel: &str) -> Option<PathBuf>
         .unwrap_or(0);
     let thumb_path = thumb_cache_path(root, rel, mtime);
     if thumb_path.exists() {
-        return Some(thumb_path);
+        return Some(ThumbnailEnsureResult::Existing(thumb_path));
     }
     if let Some(parent) = thumb_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     if generate_thumbnail(input, &thumb_path, root) {
-        Some(thumb_path)
+        Some(ThumbnailEnsureResult::Generated(thumb_path))
     } else {
         None
     }

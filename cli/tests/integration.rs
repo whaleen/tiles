@@ -145,7 +145,15 @@ fn audio_duration(path: &Path) -> f64 {
 
 fn assert_decodes_cleanly(path: &Path) {
     let out = Command::new("ffmpeg")
-        .args(["-v", "error", "-i", path.to_str().unwrap(), "-f", "null", "-"])
+        .args([
+            "-v",
+            "error",
+            "-i",
+            path.to_str().unwrap(),
+            "-f",
+            "null",
+            "-",
+        ])
         .output()
         .expect("ffmpeg not found — install ffmpeg to run integration tests");
     assert!(

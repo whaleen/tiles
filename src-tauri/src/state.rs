@@ -25,7 +25,7 @@ pub struct AppState {
 }
 
 /// How long cached video lists remain valid.
-const VIDEO_CACHE_TTL_SECS: u64 = 30;
+const VIDEO_CACHE_TTL_SECS: u64 = 300;
 
 impl AppState {
     pub fn new(root: Arc<RwLock<PathBuf>>, tiles_bin: PathBuf) -> Self {

@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod feedback;
 pub mod folders;
 pub mod health;
 pub mod image_actions;

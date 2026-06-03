@@ -1,3 +1,4 @@
+import { FullscreenVideoProvider } from "@/components/fullscreen-video-player";
 import { AppShell } from "@/components/layout/app-shell";
 import { Toaster } from "@/components/ui/sonner";
 import { WorkspaceSetup } from "@/components/workspace-setup";
@@ -41,8 +42,15 @@ function App() {
           <span>Update check failed: {updateState.message}</span>
         </div>
       )}
-      <AppShell key={workspaceState.path} onChangeWorkspace={pickWorkspace} />
-      <Toaster />
+      <FullscreenVideoProvider>
+        <AppShell
+          key={workspaceState.path}
+          onChangeWorkspace={pickWorkspace}
+          onSetWorkspace={confirmWorkspace}
+          workspacePath={workspaceState.path}
+        />
+        <Toaster />
+      </FullscreenVideoProvider>
     </div>
   );
 }

@@ -56,6 +56,8 @@ import { CreateProjectDialog } from "@/components/create-project-dialog";
 interface DashboardPageProps {
   onNavigate: (tab: string) => void;
   onProjectChange: (project?: string) => void;
+  settingsProject?: string;
+  onSettingsProjectChange?: (project?: string) => void;
 }
 
 type MetaDraft = {
@@ -78,7 +80,12 @@ const EMPTY_META: ProjectMeta = {
   tags: [],
 };
 
-export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProps) {
+export function DashboardPage({
+  onNavigate,
+  onProjectChange,
+  settingsProject: externalSettingsProject,
+  onSettingsProjectChange,
+}: DashboardPageProps) {
   const queryClient = useQueryClient();
   const { projects, loading: projectsLoading } = useProjects();
   const { outputs } = useOutputs();
@@ -89,12 +96,13 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
   const { map: metas } = useProjectMetasMap(projectNames);
 
   const [search, setSearch] = useState("");
-  const [modelslabKey, setModelslabKey] = useState("");
-  const [savingModelslabKey, setSavingModelslabKey] = useState(false);
 
-  const [settingsProject, setSettingsProject] = useState<string | null>(null);
+  const [internalSettingsProject, setInternalSettingsProject] = useState<string | null>(null);
+  const settingsProject = externalSettingsProject ?? internalSettingsProject;
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsDeleting, setSettingsDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
   const [coverCandidates, setCoverCandidates] = useState<CoverCandidate[]>([]);
   const [pickerScope, setPickerScope] = useState<"all" | "library" | "outputs">("all");
   const [pickerSearch, setPickerSearch] = useState("");
@@ -114,24 +122,6 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
     if (r.project) (acc[r.project] ||= []).push(r);
     return acc;
   }, {});
-
-  useEffect(() => {
-    invoke<string | null>("get_modelslab_key")
-      .then((key) => setModelslabKey(key ?? ""))
-      .catch(() => setModelslabKey(""));
-  }, []);
-
-  const saveModelslabKey = async () => {
-    setSavingModelslabKey(true);
-    try {
-      await invoke("set_modelslab_key", { key: modelslabKey });
-      toast.success("ModelsLab API key saved");
-    } catch (err) {
-      toast.error(errorMessage(err, "Failed to save ModelsLab API key"));
-    } finally {
-      setSavingModelslabKey(false);
-    }
-  };
 
   const normalizedSearch = search.trim().toLowerCase();
   const filteredProjects = normalizedSearch
@@ -173,10 +163,10 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
     onNavigate(tab);
   }
 
-  async function handleOpenSettings(event: MouseEvent, name: string) {
-    event.stopPropagation();
+  async function loadProjectSettings(name: string) {
     const meta = normalizeMeta(metas[name] ?? EMPTY_META);
-    setSettingsProject(name);
+    onSettingsProjectChange?.(name);
+    setInternalSettingsProject(name);
     setDraft({
       display_name: meta.display_name || "",
       cover_image_rel: meta.cover_image_rel || "",
@@ -210,20 +200,33 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
     }
   }
 
+  useEffect(() => {
+    if (!externalSettingsProject) return;
+    void loadProjectSettings(externalSettingsProject);
+  }, [externalSettingsProject]);
+
+  function handleOpenSettings(event: MouseEvent, name: string) {
+    event.stopPropagation();
+    void loadProjectSettings(name);
+  }
+
   function handleCloseSettings() {
     if (settingsSaving || settingsDeleting) return;
-    setSettingsProject(null);
+    onSettingsProjectChange?.(undefined);
+    setInternalSettingsProject(null);
     setCoverCandidates([]);
     setPickerSearch("");
   }
 
+  function openDeleteConfirm() {
+    if (!settingsProject || settingsDeleting) return;
+    setDeleteConfirmName("");
+    setDeleteConfirmOpen(true);
+  }
+
   async function handleDeleteProject() {
     if (!settingsProject || settingsDeleting) return;
-    const confirmation = window.prompt(
-      `Delete project "${settingsProject}" and all source files inside it? Type the project name to confirm.`
-    );
-    if (confirmation !== settingsProject) return;
-
+    if (deleteConfirmName !== settingsProject) return;
     setSettingsDeleting(true);
     try {
       await invoke("delete_project", { name: settingsProject });
@@ -231,8 +234,10 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
       queryClient.removeQueries({ queryKey: queryKeys.projects.detail(settingsProject) });
       queryClient.removeQueries({ queryKey: queryKeys.projects.meta(settingsProject) });
+      setDeleteConfirmOpen(false);
       onProjectChange(undefined);
-      setSettingsProject(null);
+      onSettingsProjectChange?.(undefined);
+      setInternalSettingsProject(null);
       setCoverCandidates([]);
     } catch (err) {
       toast.error(errorMessage(err, "Failed to delete project"));
@@ -270,7 +275,8 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
       toast.success("Project settings saved", {
         description: normalized.display_name || settingsProject,
       });
-      setSettingsProject(null);
+      onSettingsProjectChange?.(undefined);
+      setInternalSettingsProject(null);
       setCoverCandidates([]);
     } catch (err) {
       toast.error(errorMessage(err, "Failed to save settings"));
@@ -326,30 +332,14 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
           />
         </div>
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="relative max-w-sm flex-1">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search projects..."
-              className="pl-9"
-            />
-          </div>
-          <div className="rounded-lg border bg-muted/20 p-3 lg:w-[420px]">
-            <div className="text-xs font-medium mb-1">ModelsLab API Key</div>
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                value={modelslabKey}
-                onChange={(e) => setModelslabKey(e.target.value)}
-                placeholder="ModelsLab key"
-              />
-              <Button size="sm" onClick={saveModelslabKey} disabled={savingModelslabKey}>
-                {savingModelslabKey ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
+        <div className="relative max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search projects..."
+            className="pl-9"
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -371,7 +361,7 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
                 className="cursor-pointer overflow-hidden transition-colors hover:border-primary/50"
                 onClick={() => handleCardClick(p.name)}
               >
-                <div className="relative h-32 w-full bg-muted/40">
+                <div className="relative aspect-square w-full bg-muted/40">
                   {thumb ? (
                     <img
                       src={thumb}
@@ -638,10 +628,10 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
               variant="destructive"
               size="sm"
               className="mt-3"
-              onClick={handleDeleteProject}
+              onClick={openDeleteConfirm}
               disabled={settingsSaving || settingsDeleting}
             >
-              {settingsDeleting ? "Deleting..." : "Delete Project"}
+              Delete Project
             </Button>
           </div>
 
@@ -651,6 +641,40 @@ export function DashboardPage({ onNavigate, onProjectChange }: DashboardPageProp
             </Button>
             <Button onClick={handleSaveSettings} disabled={settingsSaving || settingsDeleting}>
               {settingsSaving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteConfirmOpen} onOpenChange={(open) => { if (!settingsDeleting) setDeleteConfirmOpen(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Project</DialogTitle>
+            <DialogDescription>
+              This will permanently delete <strong>{settingsProject}</strong> and all source files inside it. Type the project name to confirm.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={deleteConfirmName}
+            onChange={(e) => setDeleteConfirmName(e.target.value)}
+            placeholder={settingsProject ?? ""}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && deleteConfirmName === settingsProject) {
+                e.preventDefault();
+                void handleDeleteProject();
+              }
+            }}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmOpen(false)} disabled={settingsDeleting}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={settingsDeleting || deleteConfirmName !== settingsProject}
+              onClick={() => void handleDeleteProject()}
+            >
+              {settingsDeleting ? "Deleting..." : "Delete Project"}
             </Button>
           </DialogFooter>
         </DialogContent>

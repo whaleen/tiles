@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { bumpMediaCache } from "@/api/client";
+import { useDownloads } from "@/contexts/download-context";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import { useProjectDetail } from "@/hooks/use-project-detail";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,6 @@ import { toast } from "sonner";
 import type {
   UrlImportAnalysis,
   UrlImportCandidate,
-  UrlImportDownloadResult,
   YtDlpStatus,
 } from "@/types";
 
@@ -126,7 +126,7 @@ function UrlImport({ project }: { project?: string }) {
   const [analysis, setAnalysis] = useState<UrlImportAnalysis | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [analyzingMode, setAnalyzingMode] = useState<"fast" | "deep" | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [tool, setTool] = useState<"ytdlp" | "gallery-dl">("ytdlp");
   const [quality, setQuality] = useState("best-compatible");
   const [writeSubs, setWriteSubs] = useState(true);
   const [writeAutoSubs, setWriteAutoSubs] = useState(true);
@@ -135,6 +135,7 @@ function UrlImport({ project }: { project?: string }) {
   const [writeThumbnail, setWriteThumbnail] = useState(false);
   const [useCookies, setUseCookies] = useState(false);
   const [browserChoice, setBrowserChoice] = useState("chrome");
+  const [includeImages, setIncludeImages] = useState(false);
 
   useEffect(() => {
     invoke<YtDlpStatus>("check_ytdlp").then(setStatus).catch(() => setStatus(null));
@@ -172,6 +173,7 @@ function UrlImport({ project }: { project?: string }) {
       const result = await invoke<UrlImportAnalysis>("analyze_url_import", {
         urls: inputUrls,
         mode,
+        tool: tool === "gallery-dl" ? "gallery-dl" : null,
         cookiesFromBrowser: useCookies ? browserChoice : null,
       });
       setAnalysis(result);
@@ -190,41 +192,33 @@ function UrlImport({ project }: { project?: string }) {
     }
   };
 
-  const downloadSelected = async () => {
+  const downloadSelected = () => {
     if (!project) return toast.error("Select a project");
-    if (!selectedUrls.length) return toast.error("Select at least one candidate");
-    setDownloading(true);
-    try {
-      const result = await invoke<UrlImportDownloadResult>("download_url_import", {
-        req: {
-          project,
-          folder,
-          urls: selectedUrls,
-          options: {
-            quality,
-            write_subtitles: writeSubs,
-            write_auto_captions: writeAutoSubs,
-            subtitle_languages: subtitleLanguages,
-            write_info_json: writeInfoJson,
-            write_thumbnail: writeThumbnail,
-            cookies_from_browser: useCookies ? browserChoice : null,
-          },
-        },
-      });
-      bumpMediaCache();
-      if (result.failures.length) {
-        toast.error("Download finished with failures", {
-          description: `${result.downloaded.length} downloaded · ${result.failures.length} failed`,
-        });
-      } else {
-        toast.success("Download complete", { description: `${result.downloaded.length} file${result.downloaded.length === 1 ? "" : "s"} imported` });
-      }
-    } catch (err) {
-      toast.error("Download failed", { description: String(err) });
-    } finally {
-      setDownloading(false);
-    }
+    const isGalleryDl = tool === "gallery-dl";
+    const urlsToDownload = isGalleryDl
+      ? (analysis?.sources.map((s) => s.url) ?? [])
+      : selectedUrls;
+    if (!urlsToDownload.length)
+      return toast.error(isGalleryDl ? "Analyze a URL first" : "Select at least one candidate");
+    enqueue(project, folder, urlsToDownload, {
+      quality,
+      write_subtitles: writeSubs,
+      write_auto_captions: writeAutoSubs,
+      subtitle_languages: subtitleLanguages,
+      write_info_json: writeInfoJson,
+      write_thumbnail: writeThumbnail,
+      cookies_from_browser: useCookies ? browserChoice : null,
+      include_images: isGalleryDl ? true : includeImages,
+      tool: isGalleryDl ? "gallery-dl" : undefined,
+    });
+    const count = urlsToDownload.length;
+    toast.success(`Queued ${isGalleryDl ? `${count} gallery${count !== 1 ? " URLs" : ""}` : `${count} video${count !== 1 ? "s" : ""}`}`, {
+      description: `${project} / ${folder}`,
+    });
+    setSelected(new Set());
   };
+
+  const { enqueue } = useDownloads();
 
   const toggle = (key: string) => {
     setSelected((prev) => {
@@ -239,12 +233,25 @@ function UrlImport({ project }: { project?: string }) {
     <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_1fr]">
       <Panel title="Analyze URLs" description="Paste arbitrary yt-dlp-supported URLs. Fast mode expands broad pages quickly; deep mode resolves exact duration, formats, and subtitles when the site exposes them.">
         <div className="space-y-4">
-          {status && (!status.yt_dlp || !status.ffmpeg) && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs">
+          {status && (!status.yt_dlp || !status.ffmpeg || (tool === "gallery-dl" && !status.gallery_dl)) && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs space-y-0.5">
               {!status.yt_dlp && <div>yt-dlp is required: <code>brew install yt-dlp</code></div>}
               {!status.ffmpeg && <div>ffmpeg is required: <code>brew install ffmpeg</code></div>}
+              {tool === "gallery-dl" && !status.gallery_dl && <div>gallery-dl is required: <code>brew install gallery-dl</code></div>}
             </div>
           )}
+          <div className="space-y-1.5">
+            <LabelWithInfo label="Download tool" info="yt-dlp handles video platforms (YouTube, Vimeo, X, etc.). gallery-dl specialises in image galleries (Pixiv, Instagram, Tumblr, Booru sites, etc.)." />
+            <div className="flex gap-2">
+              <Button size="sm" variant={tool === "ytdlp" ? "default" : "outline"} onClick={() => setTool("ytdlp")} className="gap-1.5">
+                yt-dlp {status?.yt_dlp_version && <span className="text-[10px] opacity-60">v{status.yt_dlp_version}</span>}
+              </Button>
+              <Button size="sm" variant={tool === "gallery-dl" ? "default" : "outline"} onClick={() => setTool("gallery-dl")} className="gap-1.5">
+                gallery-dl {status?.gallery_dl_version && <span className="text-[10px] opacity-60">v{status.gallery_dl_version}</span>}
+                {status && !status.gallery_dl && <span className="text-[10px] opacity-60">(not found)</span>}
+              </Button>
+            </div>
+          </div>
           <div className="space-y-1.5">
             <LabelWithInfo
               label="URLs"
@@ -292,13 +299,20 @@ function UrlImport({ project }: { project?: string }) {
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => analyze("fast")} disabled={!!analyzingMode || !inputUrls.length} className="gap-2">
               {analyzingMode === "fast" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-              Fast analyze
+              {tool === "gallery-dl" ? "Analyze" : "Fast analyze"}
             </Button>
-            <Button size="sm" variant="outline" onClick={() => analyze("deep")} disabled={!!analyzingMode || !inputUrls.length} className="gap-2">
-              {analyzingMode === "deep" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-              Deep analyze all pasted URLs
-            </Button>
+            {tool === "ytdlp" && (
+              <Button size="sm" variant="outline" onClick={() => analyze("deep")} disabled={!!analyzingMode || !inputUrls.length} className="gap-2">
+                {analyzingMode === "deep" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                Deep analyze
+              </Button>
+            )}
           </div>
+          {tool === "gallery-dl" && analysis && (
+            <p className="text-[11px] text-muted-foreground">
+              gallery-dl downloads the full gallery URL — item checkboxes are for preview only.
+            </p>
+          )}
         </div>
       </Panel>
 
@@ -317,6 +331,8 @@ function UrlImport({ project }: { project?: string }) {
             setWriteInfoJson={setWriteInfoJson}
             writeThumbnail={writeThumbnail}
             setWriteThumbnail={setWriteThumbnail}
+            includeImages={includeImages}
+            setIncludeImages={setIncludeImages}
           />
 
           <div className="flex items-center justify-between gap-3">
@@ -326,9 +342,14 @@ function UrlImport({ project }: { project?: string }) {
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} disabled={!candidates.length}>Clear</Button>
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(selectableCandidates.map((item) => item.key)))} disabled={!candidates.length}>Select all</Button>
-              <Button size="sm" onClick={downloadSelected} disabled={!project || downloading || !selectedUrls.length} className="gap-2">
-                {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                Download selected
+              <Button
+                size="sm"
+                onClick={downloadSelected}
+                disabled={!project || (tool === "gallery-dl" ? !analysis : !selectedUrls.length)}
+                className="gap-2"
+              >
+                <Download className="h-3.5 w-3.5" />
+                {tool === "gallery-dl" ? "Download gallery" : "Download selected"}
               </Button>
             </div>
           </div>
@@ -369,6 +390,7 @@ function DownloadOptions(props: {
   subtitleLanguages: string; setSubtitleLanguages: (v: string) => void;
   writeInfoJson: boolean; setWriteInfoJson: (v: boolean) => void;
   writeThumbnail: boolean; setWriteThumbnail: (v: boolean) => void;
+  includeImages: boolean; setIncludeImages: (v: boolean) => void;
 }) {
   return (
     <div className="grid gap-3 rounded-md border bg-muted/20 p-3 md:grid-cols-2">
@@ -420,6 +442,12 @@ function DownloadOptions(props: {
         info="Saves source thumbnails next to imported media. Off by default because the app can generate its own video thumbnails."
         checked={props.writeThumbnail}
         onCheckedChange={props.setWriteThumbnail}
+      />
+      <Toggle
+        label="Include images"
+        info="Count and report image files (jpg, png, gif, webp) found after download. Useful for platforms like Twitter/X or Instagram where the content is images."
+        checked={props.includeImages}
+        onCheckedChange={props.setIncludeImages}
       />
       <div className="md:col-span-2 text-[11px] text-muted-foreground">
         Subtitles are saved next to imported videos as .vtt/.srt, so the existing transcript viewer can pick them up like local transcriptions.

@@ -1,3 +1,7 @@
 [workspace]
 members = ["src-tauri", "cli"]
 resolver = "2"
+
+[profile.dev]
+debug = 1              # line tables only; skips full DWARF — faster linking
+split-debuginfo = "unpacked"  # macOS: avoids running dsymutil on every rebuild

@@ -71,7 +71,11 @@ pub async fn get_modelslab_key(app: tauri::AppHandle) -> Option<String> {
 pub async fn set_modelslab_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
     let mut prefs = crate::prefs::read_prefs(&app);
     let trimmed = key.trim().to_string();
-    prefs.modelslab_api_key = if trimmed.is_empty() { None } else { Some(trimmed) };
+    prefs.modelslab_api_key = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    };
     crate::prefs::write_prefs(&app, &prefs)
 }
 

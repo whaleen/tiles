@@ -1,20 +1,22 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useOutputTree } from "@/hooks/use-output-tree";
-import { outThumbUrl, outVideoUrl, videoUrl } from "@/api/client";
+import { bumpMediaCache, outThumbUrl, outVideoUrl, videoUrl } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
+import { readFullscreenState, useFullscreenVideo } from "@/components/fullscreen-video-player";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useRunningActions } from "@/hooks/use-running-actions";
 import {
   Film,
+  Images,
   Maximize,
+  Play,
   RefreshCw,
   Trash2,
+  X,
   Search,
   Loader2,
-  Play,
   Calendar,
   Tag,
   Clock,
@@ -24,33 +26,25 @@ import { getActionIcon, formatActionName } from "@/lib/action-icons";
 import { toast } from "sonner";
 import type { OutputEntry } from "@/types";
 
+interface BackfillOutputThumbnailsResult {
+  scanned: number;
+  existing: number;
+  generated: number;
+  failed: number;
+  failures: string[];
+}
+
 export function OutputsPage({ project }: { project?: string }) {
   const [search, setSearch] = useState("");
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<OutputEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [backfillingThumbs, setBackfillingThumbs] = useState(false);
+  const [thumbnailRetryKey, setThumbnailRetryKey] = useState(0);
   const [textPreview, setTextPreview] = useState<string | null>(null);
   const [transcriptSource, setTranscriptSource] = useState<string | null>(null);
-
-  const enterFullscreen = useCallback(async () => {
-    await getCurrentWindow().setFullscreen(true);
-    setFullscreen(true);
-  }, []);
-
-  const exitFullscreen = useCallback(async () => {
-    await getCurrentWindow().setFullscreen(false);
-    setFullscreen(false);
-  }, []);
-
-  useEffect(() => {
-    if (!fullscreen) return;
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") exitFullscreen();
-    }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [fullscreen, exitFullscreen]);
+  const selectedVideoRef = useRef<HTMLVideoElement>(null);
+  const { openVideoFullscreen } = useFullscreenVideo();
 
   useEffect(() => {
     setTextPreview(null);
@@ -136,6 +130,56 @@ export function OutputsPage({ project }: { project?: string }) {
     });
     return Array.from(set).sort();
   }, [allFiles]);
+
+  const openSelectedVideoFullscreen = useCallback(() => {
+    if (selectedFile?.kind !== "video") return;
+    openVideoFullscreen({
+      src: outVideoUrl(selectedFile.rel_path),
+      title: selectedFile.name,
+      ...readFullscreenState(selectedVideoRef.current),
+      onClose: (state) => {
+        const el = selectedVideoRef.current;
+        if (!el) return;
+        el.currentTime = state.currentTime;
+        el.volume = state.volume;
+        el.muted = state.muted;
+        el.playbackRate = state.playbackRate;
+        if (state.paused) el.pause();
+        else void el.play().catch(() => {});
+      },
+    });
+  }, [openVideoFullscreen, selectedFile]);
+
+  const handleBackfillThumbnails = async () => {
+    setBackfillingThumbs(true);
+    try {
+      const result = await invoke<BackfillOutputThumbnailsResult>("backfill_output_thumbnails", {
+        project: project ?? null,
+      });
+      bumpMediaCache();
+      setThumbnailRetryKey((key) => key + 1);
+      refresh();
+
+      const description = `${result.scanned} scanned · ${result.generated} generated · ${result.existing} existing · ${result.failed} failed`;
+      if (result.failed > 0) {
+        toast.warning("Thumbnail backfill completed with failures", {
+          description: result.failures[0] ? `${description}. First failure: ${result.failures[0]}` : description,
+        });
+      } else {
+        toast.success("Thumbnail backfill complete", { description });
+      }
+    } catch (err) {
+      toast.error(typeof err === "string" ? err : err instanceof Error ? err.message : "Thumbnail backfill failed");
+    } finally {
+      setBackfillingThumbs(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    bumpMediaCache();
+    setThumbnailRetryKey((key) => key + 1);
+    refresh();
+  };
 
   const handleDelete = async (file: OutputEntry) => {
     if (!window.confirm(`Delete ${file.name}? This cannot be undone.`)) return;
@@ -236,7 +280,21 @@ export function OutputsPage({ project }: { project?: string }) {
               className="pl-9 h-9"
             />
           </div>
-          <Button size="sm" variant="outline" onClick={() => refresh()} disabled={loading}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={handleBackfillThumbnails}
+            disabled={backfillingThumbs}
+          >
+            {backfillingThumbs ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Images className="h-4 w-4" />
+            )}
+            <span className="hidden lg:inline">Backfill thumbnails</span>
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleRefresh} disabled={loading || backfillingThumbs}>
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
@@ -298,13 +356,14 @@ export function OutputsPage({ project }: { project?: string }) {
                 isSelected={selectedFile?.rel_path === file.rel_path}
                 onSelect={() => setSelectedFile(file)}
                 onDelete={() => handleDelete(file)}
+                thumbnailRetryKey={thumbnailRetryKey}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Detail Overlay / Dialog can be added here for full-screen preview */}
+      {/* Detail modal */}
       {selectedFile && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-in fade-in"
@@ -329,40 +388,25 @@ export function OutputsPage({ project }: { project?: string }) {
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                {selectedFile.kind === 'video' && (
-                  <Button size="icon" variant="ghost" className="rounded-full" onClick={enterFullscreen}>
+                {selectedFile.kind === "video" && (
+                  <Button size="icon" variant="ghost" className="rounded-full" onClick={openSelectedVideoFullscreen} title="Fullscreen (F)">
                     <Maximize className="h-4 w-4" />
                   </Button>
                 )}
                 <Button size="icon" variant="ghost" className="rounded-full" onClick={() => setSelectedFile(null)}>
-                  <Trash2 className="h-5 w-5 rotate-45" />
+                  <X className="h-5 w-5" />
                 </Button>
               </div>
             </div>
             
-            {fullscreen && (
-              <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
-                <video
-                  src={outVideoUrl(selectedFile.rel_path)}
-                  controls
-                  autoPlay
-                  className="w-full h-full object-contain"
-                />
-                <button
-                  className="absolute top-4 right-4 rounded-full bg-black/70 p-2 text-white hover:bg-black/90 transition-colors"
-                  onClick={exitFullscreen}
-                >
-                  <Trash2 className="h-5 w-5 rotate-45" />
-                </button>
-              </div>
-            )}
             <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
               {selectedFile.kind === 'video' ? (
                 <video
+                  ref={selectedVideoRef}
                   src={outVideoUrl(selectedFile.rel_path)}
                   controls
                   autoPlay
-                  className="max-w-full max-h-full"
+                  className="max-w-full max-h-full block"
                 />
               ) : selectedFile.kind === 'image' ? (
                 <img 
@@ -382,24 +426,15 @@ export function OutputsPage({ project }: { project?: string }) {
                 {selectedFile.rel_path}
               </div>
               <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  variant="destructive" 
+                <Button
+                  size="sm"
+                  variant="destructive"
                   disabled={deleting}
                   className="gap-1.5"
                   onClick={() => handleDelete(selectedFile)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="default"
-                  className="gap-1.5"
-                  onClick={() => window.open(outVideoUrl(selectedFile.rel_path), '_blank')}
-                >
-                  <Play className="h-3.5 w-3.5" />
-                  Open Raw
                 </Button>
               </div>
             </div>
@@ -414,12 +449,14 @@ function OutputCard({
   file, 
   isSelected, 
   onSelect, 
-  onDelete 
+  onDelete,
+  thumbnailRetryKey,
 }: { 
   file: OutputEntry; 
   isSelected: boolean; 
   onSelect: () => void;
   onDelete: () => void;
+  thumbnailRetryKey: number;
 }) {
   const tool = getToolFromPath(file.rel_path);
   const Icon = getActionIcon(tool || "outputs");
@@ -438,12 +475,7 @@ function OutputCard({
         {file.kind === "text" ? (
           <TranscriptThumbnail file={file} />
         ) : (
-          <img
-            src={file.kind === "image" ? outVideoUrl(file.rel_path) : outThumbUrl(file.rel_path)}
-            alt={file.name}
-            className="w-full h-full object-cover transition-transform group-hover:scale-105"
-            loading="lazy"
-          />
+          <OutputThumbnail file={file} retryKey={thumbnailRetryKey} />
         )}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <div className="bg-primary text-primary-foreground rounded-full p-2 shadow-lg scale-90 group-hover:scale-100 transition-transform">
@@ -493,6 +525,20 @@ function OutputCard({
   );
 }
 
+function OutputThumbnail({ file, retryKey }: { file: OutputEntry; retryKey: number }) {
+  const src = file.thumbnail ?? (file.kind === "image" ? outVideoUrl(file.rel_path) : outThumbUrl(file.rel_path));
+
+  return (
+    <img
+      key={`${file.rel_path}-${retryKey}`}
+      src={src}
+      alt={file.name}
+      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+      loading="eager"
+    />
+  );
+}
+
 function TranscriptThumbnail({ file }: { file: OutputEntry }) {
   const [source, setSource] = useState<string | null>(null);
 
@@ -536,16 +582,46 @@ function TranscriptThumbnail({ file }: { file: OutputEntry }) {
 }
 
 function TranscriptDetail({ source, text }: { source: string | null; text: string | null }) {
+  const sourceVideoRef = useRef<HTMLVideoElement>(null);
+  const { openVideoFullscreen } = useFullscreenVideo();
+
   return (
     <div className="grid h-full w-full grid-cols-1 md:grid-cols-2 bg-background text-foreground">
-      <div className="min-h-0 bg-black flex items-center justify-center border-b md:border-b-0 md:border-r">
+      <div className="min-h-0 bg-black flex items-center justify-center border-b md:border-b-0 md:border-r relative">
         {source ? (
-          <video
-            key={source}
-            src={videoUrl(source)}
-            controls
-            className="max-w-full max-h-full"
-          />
+          <>
+            <video
+              ref={sourceVideoRef}
+              key={source}
+              src={videoUrl(source)}
+              controls
+              className="max-w-full max-h-full"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                openVideoFullscreen({
+                  src: videoUrl(source),
+                  title: source,
+                  ...readFullscreenState(sourceVideoRef.current),
+                  onClose: (state) => {
+                    const el = sourceVideoRef.current;
+                    if (!el) return;
+                    el.currentTime = state.currentTime;
+                    el.volume = state.volume;
+                    el.muted = state.muted;
+                    el.playbackRate = state.playbackRate;
+                    if (state.paused) el.pause();
+                    else void el.play().catch(() => {});
+                  },
+                });
+              }}
+              className="absolute bottom-2 right-2 rounded bg-black/60 p-1.5 text-white transition-colors hover:bg-black/90"
+              aria-label="Fullscreen source video"
+            >
+              <Maximize className="h-4 w-4" />
+            </button>
+          </>
         ) : (
           <div className="text-xs text-muted-foreground p-4 text-center">
             Source video preview not found for this transcript.

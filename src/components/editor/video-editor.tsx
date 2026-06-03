@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { readFullscreenState, useFullscreenVideo } from "@/components/fullscreen-video-player";
 import { videoUrl, bumpMediaCache } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 import { ActionCompleteContext } from "@/contexts/action-complete-context";
@@ -11,6 +12,14 @@ import { toast } from "sonner";
 import { EditorActionPanel } from "./editor-action-panel";
 import { ImageActionPanel } from "./image-action-panel";
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize, Trash2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { VideoEntry } from "@/types";
 
 interface VideoEditorProps {
@@ -31,28 +40,33 @@ export function VideoEditor({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoVersion, setVideoVersion] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
   const [timelineContent, setTimelineContent] = useState<React.ReactNode>(null);
   const [overlayContent, setOverlayContent] = useState<React.ReactNode>(null);
-  const [fullscreen, setFullscreen] = useState(false);
-
-  useEffect(() => {
-    const handler = () => setFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
-  }, []);
-
-  const enterFullscreen = useCallback(() => {
-    videoRef.current?.requestFullscreen();
-  }, []);
-
-  const exitFullscreen = useCallback(() => {
-    if (document.fullscreenElement) document.exitFullscreen();
-  }, []);
-
+  const { openVideoFullscreen, isVideoFullscreenOpen } = useFullscreenVideo();
   const isImage = (path: string) =>
     /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(path);
   const activeIsImage = isImage(video.rel_path);
+
+  const enterFullscreen = useCallback(() => {
+    if (activeIsImage) return;
+    openVideoFullscreen({
+      src: videoUrl(video.rel_path),
+      title: video.name,
+      ...readFullscreenState(videoRef.current),
+      onClose: (state) => {
+        const el = videoRef.current;
+        if (!el) return;
+        el.currentTime = state.currentTime;
+        el.volume = state.volume;
+        el.muted = state.muted;
+        el.playbackRate = state.playbackRate;
+        if (state.paused) el.pause();
+        else void el.play().catch(() => {});
+      },
+    });
+  }, [activeIsImage, openVideoFullscreen, video.name, video.rel_path]);
 
   const currentIndex = videos.findIndex(
     (v) => v.rel_path === video.rel_path
@@ -80,14 +94,15 @@ export function VideoEditor({
     function handleKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "ArrowRight" && !fullscreen) goNext();
-      if (e.key === "ArrowLeft" && !fullscreen) goPrev();
-      if (e.key === "Escape") { if (fullscreen) exitFullscreen(); else onBack(); }
-      if (e.key === "f" || e.key === "F") { if (fullscreen) exitFullscreen(); else enterFullscreen(); }
+      if (isVideoFullscreenOpen) return;
+      if (e.key === "ArrowRight") goNext();
+      if (e.key === "ArrowLeft") goPrev();
+      if (e.key === "Escape") onBack();
+      if (e.key === "f" || e.key === "F") enterFullscreen();
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [goNext, goPrev, onBack, fullscreen, enterFullscreen, exitFullscreen]);
+  }, [goNext, goPrev, onBack, enterFullscreen, isVideoFullscreenOpen]);
 
   // Reset state when video changes
   useEffect(() => {
@@ -121,9 +136,6 @@ export function VideoEditor({
   }, [video.rel_path]);
 
   const handleDelete = async () => {
-    const ok = window.confirm(`Delete ${video.name}? This cannot be undone.`);
-    if (!ok) return;
-
     setDeleting(true);
     try {
       await invoke("delete_video", { path: video.rel_path });
@@ -194,7 +206,7 @@ export function VideoEditor({
             <Button
               size="sm"
               variant="destructive"
-              onClick={handleDelete}
+              onClick={() => setConfirmDelete(true)}
               disabled={deleting}
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -263,6 +275,26 @@ export function VideoEditor({
           </div>
         </div>
       </div>
+      <Dialog open={confirmDelete} onOpenChange={(open) => { if (!deleting) setConfirmDelete(open); }}>
+        <DialogContent>
+          <form onSubmit={(e) => { e.preventDefault(); void handleDelete(); }}>
+            <DialogHeader>
+              <DialogTitle>Delete file?</DialogTitle>
+              <DialogDescription>
+                "{video.name}" will be permanently deleted. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={deleting}>
+                {deleting ? "Deleting..." : "Delete"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </ActionCompleteContext.Provider>
   );
 }

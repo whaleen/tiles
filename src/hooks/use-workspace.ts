@@ -28,8 +28,9 @@ export function useWorkspace() {
   }, [queryClient]);
 
   const confirmWorkspace = useCallback((path: string) => {
+    queryClient.invalidateQueries();
     setState({ status: "ready", path });
-  }, []);
+  }, [queryClient]);
 
   return { state, pickWorkspace, confirmWorkspace };
 }

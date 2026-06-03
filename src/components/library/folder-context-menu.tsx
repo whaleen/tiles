@@ -6,7 +6,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { FolderOpen, Pencil, FolderOutput, Trash2, Download, ExternalLink } from "lucide-react";
+import { FolderOpen, FolderUp, Pencil, FolderOutput, Trash2, Download, ExternalLink } from "lucide-react";
 
 interface FolderContextMenuProps {
   children: ReactNode;
@@ -18,6 +18,7 @@ interface FolderContextMenuProps {
   onDelete: (path: string) => void;
   onImport?: (path: string) => void;
   onReveal?: (path: string) => void;
+  onPromoteToProject?: (path: string) => void;
   disabled?: boolean;
 }
 
@@ -31,6 +32,7 @@ export function FolderContextMenu({
   onDelete,
   onImport,
   onReveal,
+  onPromoteToProject,
   disabled,
 }: FolderContextMenuProps) {
   return (
@@ -82,6 +84,19 @@ export function FolderContextMenu({
           <FolderOutput className="h-3.5 w-3.5" />
           Move
         </ContextMenuItem>
+        {onPromoteToProject && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onClick={() => onPromoteToProject(folderPath)}
+              disabled={disabled}
+              className="gap-2"
+            >
+              <FolderUp className="h-3.5 w-3.5" />
+              Create Project
+            </ContextMenuItem>
+          </>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem
           onClick={() => onDelete(folderPath)}

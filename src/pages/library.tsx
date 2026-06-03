@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
 import type { DragEvent } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { thumbUrl, bumpMediaCache } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { FolderPathResponse, MoveVideosResponse, VideoEntry } from "@/types";
+import type { FolderPathResponse, MoveVideosResponse, ProjectDetail, ProjectSummary, VideoEntry } from "@/types";
 import {
   Search,
   ChevronUp,
@@ -45,6 +45,8 @@ import {
   ChevronRight,
   FolderPlus,
   FolderMinus,
+  FolderOutput,
+  Trash2,
   Film as FilmStrip,
   CheckSquare,
   XSquare,
@@ -84,12 +86,23 @@ export function LibraryPage({
   const [folderBusy, setFolderBusy] = useState(false);
   const [movingVideos, setMovingVideos] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
+  const [deleteMediaTarget, setDeleteMediaTarget] = useState<VideoEntry | null>(null);
+  const [deleteFolderTarget, setDeleteFolderTarget] = useState<string | null>(null);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMoveFolder, setBulkMoveFolder] = useState("__root__");
+  const [bulkMoveDestProject, setBulkMoveDestProject] = useState<string>("");
+  const [bulkMoveNewProjectName, setBulkMoveNewProjectName] = useState("");
+  const [bulkMoveNewFolder, setBulkMoveNewFolder] = useState("");
   const [dragRelPath, setDragRelPath] = useState<string | null>(null);
   const dragRelPathRef = useRef<string | null>(null);
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderParent, setNewFolderParent] = useState("__root__");
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [createProjectName, setCreateProjectName] = useState("");
+  const [createProjectFromFolder, setCreateProjectFromFolder] = useState<string | undefined>();
   const [showTimeline, setShowTimeline] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [rootOnly, setRootOnly] = useState(true);
@@ -113,6 +126,23 @@ export function LibraryPage({
 
   const { order, saveOrder } = useFolderOrder(project, selectedFolder);
   const lastSelectedRef = useRef<string | null>(null);
+
+  // Project list for the bulk-move destination picker (fetched once the dialog opens)
+  const { data: allProjects } = useQuery<ProjectSummary[]>({
+    queryKey: queryKeys.projects.all,
+    queryFn: () => invoke<ProjectSummary[]>("list_projects"),
+    enabled: bulkMoveOpen,
+    staleTime: 30_000,
+  });
+
+  // Folder list for the selected destination project when it differs from the current project
+  const isCrossProject = bulkMoveOpen && bulkMoveDestProject !== "__new__" && bulkMoveDestProject !== "" && bulkMoveDestProject !== project;
+  const { data: destProjectDetail } = useQuery<ProjectDetail>({
+    queryKey: queryKeys.projects.detail(bulkMoveDestProject),
+    queryFn: () => invoke<ProjectDetail>("get_project", { name: bulkMoveDestProject }),
+    enabled: isCrossProject,
+    staleTime: 30_000,
+  });
 
   const toggleSelect = (relPath: string, shiftKey?: boolean) => {
     if (shiftKey && lastSelectedRef.current && lastSelectedRef.current !== relPath) {
@@ -381,19 +411,19 @@ export function LibraryPage({
 
   async function deleteFolder(folderPath: string) {
     if (!project || folderBusy) return;
-    if (
-      !window.confirm(
-        `Delete folder "${folderPath}" and everything inside it?`
-      )
-    ) {
-      return;
-    }
+    setDeleteFolderTarget(folderPath);
+  }
+
+  async function confirmDeleteFolder() {
+    if (!project || !deleteFolderTarget || folderBusy) return;
+    const folderPath = deleteFolderTarget;
     setFolderBusy(true);
     try {
       await invoke("delete_folder", {
         project,
         path: folderPath,
       });
+      setDeleteFolderTarget(null);
       if (selectedFolder === folderPath) {
         const parent = folderPath.split("/").slice(0, -1).join("/");
         setSelectedFolder(parent || undefined);
@@ -451,12 +481,18 @@ export function LibraryPage({
     await moveVideosToFolder(targetParentInput.trim(), [media.rel_path]);
   }
 
-  async function deleteMedia(media: VideoEntry) {
+  function deleteMedia(media: VideoEntry) {
     if (mediaBusy) return;
-    if (!window.confirm(`Delete "${media.name}"? This cannot be undone.`)) return;
+    setDeleteMediaTarget(media);
+  }
+
+  async function confirmDeleteMedia() {
+    const media = deleteMediaTarget;
+    if (!media || mediaBusy) return;
     setMediaBusy(true);
     try {
       await invoke("delete_video", { path: media.rel_path });
+      setDeleteMediaTarget(null);
       removeVideo(media.rel_path);
       setSelectedPaths((prev) => {
         const next = new Set(prev);
@@ -494,6 +530,96 @@ export function LibraryPage({
     }
   }
 
+  function openCreateProjectDialog(folderPath: string) {
+    if (!project || folderBusy) return;
+    const leafName = folderPath.split("/").pop() || folderPath;
+    setCreateProjectFromFolder(folderPath);
+    setCreateProjectName(leafName);
+    setCreateProjectOpen(true);
+  }
+
+  async function confirmCreateProject() {
+    if (!project || !createProjectFromFolder || folderBusy) return;
+    const trimmed = createProjectName.trim();
+    if (!trimmed) return;
+    setFolderBusy(true);
+    try {
+      const newName = await invoke<string>("promote_folder_to_project", {
+        project,
+        folderPath: createProjectFromFolder,
+        projectName: trimmed,
+      });
+      setCreateProjectOpen(false);
+      toast.success(`"${newName}" is now a project`, {
+        action: {
+          label: "Open",
+          onClick: () => {
+            window.dispatchEvent(
+              new CustomEvent("tiles:navigate", {
+                detail: { tab: "library", project: newName },
+              })
+            );
+          },
+        },
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      if (selectedFolder === createProjectFromFolder || selectedFolder?.startsWith(`${createProjectFromFolder}/`)) {
+        setSelectedFolder(undefined);
+      }
+      await refreshLibraryData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create project");
+    } finally {
+      setFolderBusy(false);
+    }
+  }
+
+  async function confirmBulkDelete() {
+    if (mediaBusy) return;
+    const paths = Array.from(selectedPaths);
+    setMediaBusy(true);
+    let deleted = 0;
+    try {
+      for (const path of paths) {
+        try {
+          await invoke("delete_video", { path });
+          removeVideo(path);
+          deleted++;
+        } catch {
+          // continue with remaining
+        }
+      }
+      setSelectedPaths(new Set());
+      setBulkDeleteOpen(false);
+      queryClient.invalidateQueries({ queryKey: queryKeys.videos.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      toast.success(`Deleted ${deleted} file${deleted !== 1 ? "s" : ""}`);
+      bumpMediaCache();
+      void refreshLibraryData();
+    } finally {
+      setMediaBusy(false);
+    }
+  }
+
+  async function confirmBulkMove() {
+    const baseFolder = bulkMoveFolder === "__root__" ? "" : bulkMoveFolder;
+    const newSuffix = bulkMoveNewFolder.trim();
+    const targetFolder = [baseFolder, newSuffix].filter(Boolean).join("/");
+
+    const effectiveDest =
+      bulkMoveDestProject === "__new__"
+        ? bulkMoveNewProjectName.trim()
+        : bulkMoveDestProject || project!;
+
+    if (bulkMoveDestProject === "__new__" && !effectiveDest) {
+      toast.error("Enter a name for the new project");
+      return;
+    }
+
+    setBulkMoveOpen(false);
+    await moveVideosToFolder(targetFolder, undefined, effectiveDest !== project ? effectiveDest : undefined);
+  }
+
   async function importFilesToFolder(folderPath: string) {
     if (!project) return;
     const picked = await open({
@@ -527,7 +653,7 @@ export function LibraryPage({
     return [] as string[];
   }
 
-  async function moveVideosToFolder(targetFolder: string, paths?: string[]) {
+  async function moveVideosToFolder(targetFolder: string, paths?: string[], destProject?: string) {
     if (!project || movingVideos) return;
     const targets =
       paths && paths.length > 0
@@ -547,15 +673,22 @@ export function LibraryPage({
         project,
         videoPaths: targets,
         targetFolder,
+        destProject: destProject ?? null,
       });
       if (res.moved > 0) {
-        toast.success(`Moved ${res.moved} video${res.moved !== 1 ? "s" : ""}`);
+        const destLabel = destProject ? ` to ${destProject}` : "";
+        toast.success(`Moved ${res.moved} video${res.moved !== 1 ? "s" : ""}${destLabel}`);
         // Optimistic cache update: remove moved videos from the current list immediately
         const movedFromSet = new Set(res.moved_paths.map((p) => p.from));
         queryClient.setQueriesData<VideoEntry[]>(
           { queryKey: queryKeys.videos.all },
           (prev) => (prev ? prev.filter((v) => !movedFromSet.has(v.rel_path)) : [])
         );
+        if (destProject) {
+          // Invalidate destination project so its library reflects the new files
+          queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(destProject) });
+          queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(destProject) });
+        }
       } else {
         toast("Nothing moved");
       }
@@ -720,6 +853,26 @@ export function LibraryPage({
                       <XSquare className="h-3 w-3 mr-1" />
                       None
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => { setBulkMoveFolder("__root__"); setBulkMoveOpen(true); }}
+                      disabled={movingVideos}
+                    >
+                      <FolderOutput className="h-3 w-3 mr-1" />
+                      Move
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                      onClick={() => setBulkDeleteOpen(true)}
+                      disabled={mediaBusy}
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Delete
+                    </Button>
                   </div>
                 ) : (
                   <Button
@@ -801,6 +954,7 @@ export function LibraryPage({
                           onDelete={(path) => void deleteFolder(path)}
                           onImport={(path) => void importFilesToFolder(path)}
                           onReveal={(path) => void revealFolder(path)}
+                          onPromoteToProject={openCreateProjectDialog}
                           disabled={folderBusy}
                         >
                           <button
@@ -892,6 +1046,7 @@ export function LibraryPage({
                         onDelete={(path) => void deleteFolder(path)}
                         onImport={(path) => void importFilesToFolder(path)}
                         onReveal={(path) => void revealFolder(path)}
+                        onPromoteToProject={openCreateProjectDialog}
                         disabled={folderBusy}
                       >
                         <button
@@ -1148,6 +1303,215 @@ export function LibraryPage({
               }}
             >
               Create Folder
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={(open) => { if (!mediaBusy) setBulkDeleteOpen(open); }}>
+        <DialogContent>
+          <form onSubmit={(e) => { e.preventDefault(); void confirmBulkDelete(); }}>
+            <DialogHeader>
+              <DialogTitle>Delete {selectedPaths.size} file{selectedPaths.size !== 1 ? "s" : ""}?</DialogTitle>
+              <DialogDescription>
+                This will permanently delete {selectedPaths.size} selected file{selectedPaths.size !== 1 ? "s" : ""}. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setBulkDeleteOpen(false)} disabled={mediaBusy}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={mediaBusy}>
+                {mediaBusy ? "Deleting..." : `Delete ${selectedPaths.size} file${selectedPaths.size !== 1 ? "s" : ""}`}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkMoveOpen} onOpenChange={(open) => {
+        if (movingVideos) return;
+        if (open) {
+          setBulkMoveDestProject(project ?? "");
+          setBulkMoveNewProjectName("");
+          setBulkMoveFolder("__root__");
+          setBulkMoveNewFolder("");
+        }
+        setBulkMoveOpen(open);
+      }}>
+        <DialogContent>
+          <form onSubmit={(e) => { e.preventDefault(); void confirmBulkMove(); }}>
+            <DialogHeader>
+              <DialogTitle>Move {selectedPaths.size} file{selectedPaths.size !== 1 ? "s" : ""}</DialogTitle>
+              <DialogDescription>
+                {bulkMoveDestProject === "__new__"
+                  ? "Moving to a new project."
+                  : bulkMoveDestProject && bulkMoveDestProject !== project
+                  ? `Moving to project "${bulkMoveDestProject}".`
+                  : `Choose a destination within ${project}.`}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="mt-4 space-y-1">
+              <p className="text-sm font-medium">Destination project</p>
+              <Select
+                value={bulkMoveDestProject}
+                onValueChange={(val) => {
+                  setBulkMoveDestProject(val);
+                  setBulkMoveFolder("__root__");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {allProjects?.map((p) => (
+                    <SelectItem key={p.name} value={p.name}>
+                      {p.name === project ? `${p.name} (current)` : p.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__new__">New project...</SelectItem>
+                </SelectContent>
+              </Select>
+              {bulkMoveDestProject === "__new__" && (
+                <Input
+                  className="mt-1"
+                  placeholder="New project name"
+                  value={bulkMoveNewProjectName}
+                  onChange={(e) => setBulkMoveNewProjectName(e.target.value)}
+                  autoFocus
+                />
+              )}
+            </div>
+
+            {bulkMoveDestProject !== "__new__" && (
+              <div className="mt-3 space-y-1">
+                <p className="text-sm font-medium">Destination folder</p>
+                <Select value={bulkMoveFolder} onValueChange={setBulkMoveFolder}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__root__">Project root</SelectItem>
+                    {(bulkMoveDestProject === project || !bulkMoveDestProject
+                      ? allFolderPaths
+                      : (destProjectDetail?.subfolders ?? [])
+                    ).map((fp) => (
+                      <SelectItem key={fp} value={fp}>{fp}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="mt-3 space-y-1">
+              <p className="text-sm font-medium">
+                New folder name <span className="text-muted-foreground font-normal">(optional)</span>
+              </p>
+              <Input
+                placeholder="e.g. selects"
+                value={bulkMoveNewFolder}
+                onChange={(e) => setBulkMoveNewFolder(e.target.value)}
+              />
+            </div>
+
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setBulkMoveOpen(false)} disabled={movingVideos}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={movingVideos}>
+                {movingVideos ? "Moving..." : "Move"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteMediaTarget}
+        onOpenChange={(open) => { if (!open && !mediaBusy) setDeleteMediaTarget(null); }}
+      >
+        <DialogContent>
+          <form onSubmit={(e) => { e.preventDefault(); void confirmDeleteMedia(); }}>
+            <DialogHeader>
+              <DialogTitle>Delete file?</DialogTitle>
+              <DialogDescription>
+                "{deleteMediaTarget?.name}" will be permanently deleted. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setDeleteMediaTarget(null)} disabled={mediaBusy}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={mediaBusy}>
+                {mediaBusy ? "Deleting..." : "Delete"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteFolderTarget}
+        onOpenChange={(open) => { if (!open && !folderBusy) setDeleteFolderTarget(null); }}
+      >
+        <DialogContent>
+          <form onSubmit={(e) => { e.preventDefault(); void confirmDeleteFolder(); }}>
+            <DialogHeader>
+              <DialogTitle>Delete folder?</DialogTitle>
+              <DialogDescription>
+                "{deleteFolderTarget}" and everything inside it will be permanently deleted. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setDeleteFolderTarget(null)} disabled={folderBusy}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={folderBusy}>
+                {folderBusy ? "Deleting..." : "Delete"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={createProjectOpen}
+        onOpenChange={(open) => {
+          setCreateProjectOpen(open);
+          if (!open) setCreateProjectName("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Project</DialogTitle>
+            <DialogDescription>
+              Move "{createProjectFromFolder?.split("/").pop()}" out of {project} and register it as its own project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Project name</div>
+            <Input
+              value={createProjectName}
+              onChange={(e) => setCreateProjectName(e.target.value)}
+              placeholder="project name"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void confirmCreateProject();
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateProjectOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={folderBusy || createProjectName.trim().length === 0}
+              onClick={() => void confirmCreateProject()}
+            >
+              Create Project
             </Button>
           </DialogFooter>
         </DialogContent>

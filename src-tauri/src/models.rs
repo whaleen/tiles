@@ -175,6 +175,7 @@ pub struct OutputEntry {
     pub size_bytes: u64,
     pub modified_epoch: u64,
     pub kind: String,
+    pub thumbnail: Option<String>,
 }
 
 // --- URL Import ---
@@ -185,6 +186,8 @@ pub struct YtDlpStatus {
     pub yt_dlp_version: Option<String>,
     pub ffmpeg: bool,
     pub ffmpeg_version: Option<String>,
+    pub gallery_dl: bool,
+    pub gallery_dl_version: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -249,6 +252,10 @@ pub struct UrlImportOptions {
     pub write_info_json: Option<bool>,
     #[serde(default)]
     pub cookies_from_browser: Option<String>,
+    #[serde(default)]
+    pub include_images: Option<bool>,
+    #[serde(default)]
+    pub tool: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

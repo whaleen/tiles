@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
 import { videoUrl, thumbUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { readFullscreenState, useFullscreenVideo } from "@/components/fullscreen-video-player";
 import {
   ArrowLeft,
   ChevronLeft,
@@ -26,6 +27,7 @@ export function TimelinePreview({
   const [currentIndex, setCurrentIndex] = useState(startIndex);
   const [isPlaying, setIsPlaying] = useState(true);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { openVideoFullscreen, isVideoFullscreenOpen } = useFullscreenVideo();
   const activeThumbRef = useRef<HTMLButtonElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
 
@@ -62,14 +64,24 @@ export function TimelinePreview({
   }, []);
 
   const enterFullscreen = useCallback(() => {
-    const el = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
-    if (!el) return;
-    if (el.webkitEnterFullscreen) {
-      el.webkitEnterFullscreen();
-    } else {
-      el.requestFullscreen?.();
-    }
-  }, []);
+    if (!current) return;
+    openVideoFullscreen({
+      src: videoUrl(current.rel_path),
+      title: current.name,
+      ...readFullscreenState(videoRef.current),
+      onClose: (state) => {
+        const el = videoRef.current;
+        if (!el) return;
+        el.currentTime = state.currentTime;
+        el.volume = state.volume;
+        el.muted = state.muted;
+        el.playbackRate = state.playbackRate;
+        if (state.paused) el.pause();
+        else void el.play().catch(() => {});
+        setIsPlaying(!state.paused);
+      },
+    });
+  }, [current, openVideoFullscreen]);
 
   // Auto-advance on video end
   const handleEnded = useCallback(() => {
@@ -105,6 +117,7 @@ export function TimelinePreview({
   // Keyboard navigation
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
+      if (isVideoFullscreenOpen) return;
       if (e.key === "Escape") {
         onBack();
       } else if (e.key === "ArrowLeft") {
@@ -123,7 +136,7 @@ export function TimelinePreview({
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [onBack, goPrev, goNext, togglePlay, enterFullscreen]);
+  }, [onBack, goPrev, goNext, togglePlay, enterFullscreen, isVideoFullscreenOpen]);
 
   if (!current) return null;
 

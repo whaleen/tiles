@@ -698,7 +698,15 @@ impl FFmpegPipeline {
         duration: f64,
         message: impl Into<String>,
     ) -> &mut Self {
-        self.with_weighted_progress(phase, current, total, current as f64, 1.0, duration, message)
+        self.with_weighted_progress(
+            phase,
+            current,
+            total,
+            current as f64,
+            1.0,
+            duration,
+            message,
+        )
     }
 
     fn with_weighted_progress(
@@ -12927,7 +12935,8 @@ fn create_tile_video_simple(
                 ),
             );
         }
-        return pipeline.run(output);    }
+        return pipeline.run(output);
+    }
 
     let mut pipeline = FFmpegPipeline::new(root);
     for f in files {
@@ -12978,7 +12987,10 @@ fn create_tile_video_simple(
             progress.base_current,
             progress.span,
             duration,
-            format!("Rendering tile {}/{}", progress.tile_index, progress.tile_count),
+            format!(
+                "Rendering tile {}/{}",
+                progress.tile_index, progress.tile_count
+            ),
         );
     }
     pipeline.run(output)
@@ -13041,7 +13053,8 @@ fn create_tile_video_with_options(
 
         if let Some(progress) = progress {
             let file_count = files.len().max(1) as f64;
-            let duration = trim_duration.unwrap_or_else(|| get_video_duration(file, root).unwrap_or(0.0));
+            let duration =
+                trim_duration.unwrap_or_else(|| get_video_duration(file, root).unwrap_or(0.0));
             pipeline.with_weighted_progress(
                 "Rendering tiles",
                 progress.current,
@@ -15859,7 +15872,10 @@ fn concat_with_transitions(
             .unwrap_or(0)
     ));
     if let Err(err) = fs::create_dir_all(&temp_dir) {
-        eprintln!("error: failed to create temp dir {}: {err}", temp_dir.display());
+        eprintln!(
+            "error: failed to create temp dir {}: {err}",
+            temp_dir.display()
+        );
         return false;
     }
 
@@ -15881,13 +15897,7 @@ fn concat_with_transitions(
             let segment = temp_dir.join(format!("segment_{segment_index:04}_body.mp4"));
             segment_index += 1;
             if render_concat_body_segment(
-                &files[i],
-                &segment,
-                body_start,
-                body_end,
-                width,
-                height,
-                root,
+                &files[i], &segment, body_start, body_end, width, height, root,
             ) {
                 segments.push(segment);
             } else {
@@ -16074,8 +16084,14 @@ fn validate_video_output(output: &Path, root: &Path) -> bool {
     if !output.exists() || fs::metadata(output).map(|m| m.len() == 0).unwrap_or(true) {
         return false;
     }
-    if get_video_duration(output, root).filter(|d| *d > 0.0).is_none() {
-        eprintln!("error: output has no readable duration: {}", output.display());
+    if get_video_duration(output, root)
+        .filter(|d| *d > 0.0)
+        .is_none()
+    {
+        eprintln!(
+            "error: output has no readable duration: {}",
+            output.display()
+        );
         return false;
     }
     match Command::new("ffmpeg")
@@ -16095,7 +16111,10 @@ fn validate_video_output(output: &Path, root: &Path) -> bool {
             false
         }
         Err(err) => {
-            eprintln!("error: failed to validate output {}: {err}", output.display());
+            eprintln!(
+                "error: failed to validate output {}: {err}",
+                output.display()
+            );
             false
         }
     }

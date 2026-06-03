@@ -96,6 +96,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             media_port,
+            // feedback
+            commands::feedback::submit_feedback,
+            commands::feedback::list_feedback,
+            commands::feedback::update_feedback_status,
+            commands::feedback::update_feedback,
+            commands::feedback::add_feedback_comment,
+            commands::feedback::clear_feedback_comments,
+            commands::feedback::delete_feedback,
             // health
             commands::health::get_health,
             // projects
@@ -122,6 +130,7 @@ pub fn run() {
             commands::folders::import_files_to_folder,
             commands::folders::get_folder_order,
             commands::folders::put_folder_order,
+            commands::folders::promote_folder_to_project,
             // settings
             commands::settings::get_settings,
             commands::settings::put_settings,
@@ -131,6 +140,8 @@ pub fn run() {
             // outputs
             commands::outputs::list_outputs,
             commands::outputs::list_output_tree,
+            commands::outputs::get_output_thumbnail_data_url,
+            commands::outputs::backfill_output_thumbnails,
             commands::outputs::resolve_transcript_source,
             commands::outputs::get_output_text,
             commands::outputs::delete_output,
@@ -148,7 +159,12 @@ pub fn run() {
             commands::logs::get_log,
             // workspace
             commands::workspace::get_workspace,
+            commands::workspace::get_workspace_meta,
+            commands::workspace::put_workspace_meta,
+            commands::workspace::list_workspace_cover_candidates,
             commands::workspace::default_workspace_path,
+            commands::workspace::list_workspace_candidates,
+            commands::workspace::create_workspace,
             commands::workspace::pick_workspace,
             commands::workspace::set_workspace,
         ])

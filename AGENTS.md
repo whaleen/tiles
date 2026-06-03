@@ -45,7 +45,7 @@ src-tauri/
     default.json            # Tauri capability permissions
 docs/                       # Project documentation
 SPEC.md                     # Feature spec
-AGENT.md                    # This file
+AGENTS.md                   # This file
 ```
 
 ## Running Locally
@@ -75,13 +75,11 @@ pnpm build
 
 ## Agent / Human-in-the-loop Iteration
 
-For UI and workflow changes, agents should usually iterate in this order:
+For UI and workflow changes, prefer small reviewable chunks. Ask the human to validate visual behavior in the dev app when it matters; do not start or restart `pnpm dev` unless asked.
 
-1. Make a focused change.
-2. Ask the human to validate it in the dev app (`pnpm dev`) if it is not already running.
-3. Repeat until the chunk is approved.
-4. Then run `pnpm build` and have the human test `target/release/bundle/macos/tiles.app` directly.
-5. Only replace `/Applications/tiles.app` after the built bundle is approved:
+After an approved chunk, use the lightest validation that fits the change. For release candidates or broad integration changes, run `pnpm build` and have the human test `target/release/bundle/macos/tiles.app` directly.
+
+Only replace `/Applications/tiles.app` after the built bundle has been approved:
 
 ```bash
 rm -rf /Applications/tiles.app

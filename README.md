@@ -73,17 +73,9 @@ pnpm build      # production Tauri app bundle
 
 ### Agent / human-in-the-loop iteration workflow
 
-When an agent is changing UI or behavior, iterate with a human against the lightest useful target first:
+For UI and workflow changes, prefer small reviewable chunks. Ask the human to validate visual behavior in the dev app when it matters; agents should not start or restart `pnpm dev` unless asked.
 
-1. Prefer dev mode while designing and reviewing small changes:
-
-```bash
-pnpm dev
-```
-
-2. The human should keep the app open, try the change, and give feedback. Repeat until the chunk is approved.
-3. Only after a meaningful chunk is approved, build the production bundle and test that directly.
-4. Replace `/Applications/tiles.app` only after the built bundle has been approved.
+After an approved chunk, use the lightest validation that fits the change. For release candidates or broad integration changes, build the production bundle and test that directly. Replace `/Applications/tiles.app` only after the built bundle has been approved.
 
 ### Build and test a production bundle
 

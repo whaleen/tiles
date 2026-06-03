@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSettings } from "@/hooks/use-settings";
 import { useVideos } from "@/hooks/use-videos";
 import { useFolderOrders } from "@/hooks/use-folder-orders";
@@ -13,7 +13,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Loader2 } from "lucide-react";
+import { readFullscreenState, useFullscreenVideo } from "@/components/fullscreen-video-player";
+import { Loader2, Maximize } from "lucide-react";
 import { toast } from "sonner";
 import type {
   TileSettings,
@@ -56,6 +57,8 @@ export function TileBuilderPage({ project }: { project?: string }) {
   const [pickerTileIndex, setPickerTileIndex] = useState<number | null>(null);
   const [layoutTree, setLayoutTree] = useState<LayoutNode | null>(null);
   const [presetOpen, setPresetOpen] = useState(false);
+  const outputPreviewRef = useRef<HTMLVideoElement>(null);
+  const { openVideoFullscreen } = useFullscreenVideo();
 
   const safeSettings: TileSettings = settings ?? {
     layout_code: null,
@@ -557,14 +560,43 @@ export function TileBuilderPage({ project }: { project?: string }) {
                   {outputProject ? `Project: ${outputProject}` : "Global outputs"}
                 </div>
               </div>
-              <div className="text-xs text-muted-foreground">
-                {running
-                  ? "Rendering..."
-                  : lastRenderLabel
-                    ? `Last render: ${lastRenderLabel}`
-                    : outputsLoading
-                      ? "Checking outputs..."
-                      : "No renders yet"}
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-muted-foreground">
+                  {running
+                    ? "Rendering..."
+                    : lastRenderLabel
+                      ? `Last render: ${lastRenderLabel}`
+                      : outputsLoading
+                        ? "Checking outputs..."
+                        : "No renders yet"}
+                </div>
+                {!running && resolvedOutputUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openVideoFullscreen({
+                        src: resolvedOutputUrl,
+                        title: resolvedOutputRel ?? "Render output",
+                        ...readFullscreenState(outputPreviewRef.current),
+                        onClose: (state) => {
+                          const el = outputPreviewRef.current;
+                          if (!el) return;
+                          el.currentTime = state.currentTime;
+                          el.volume = state.volume;
+                          el.muted = state.muted;
+                          el.playbackRate = state.playbackRate;
+                          if (state.paused) el.pause();
+                          else void el.play().catch(() => {});
+                        },
+                      });
+                    }}
+                    className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    aria-label="Fullscreen output preview"
+                    title="Fullscreen (F)"
+                  >
+                    <Maximize className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
             {running && pendingOutputRel && (
@@ -574,6 +606,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
             )}
             {!running && resolvedOutputUrl && (
               <video
+                ref={outputPreviewRef}
                 src={resolvedOutputUrl}
                 className="w-full rounded aspect-video bg-muted"
                 controls

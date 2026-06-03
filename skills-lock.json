@@ -1,0 +1,10 @@
+{
+  "skills": {
+    "tiles-release": {
+      "computedHash": "84336f331e32e5d3a8a42080ba35d00c45e3be24e28b302f7038aa36a32ac137",
+      "source": "local/tiles",
+      "sourceType": "local"
+    }
+  },
+  "version": 1
+}
