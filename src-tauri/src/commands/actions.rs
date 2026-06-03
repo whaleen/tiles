@@ -121,6 +121,27 @@ pub fn list_actions() -> Vec<ActionInfo> {
             media_types: vec!["image".to_string()],
         },
         ActionInfo {
+            name: "image-upscale".to_string(),
+            label: "Upscale Image".to_string(),
+            description: "Increase image resolution using the active AI provider.".to_string(),
+            target_type: "folders_or_videos".to_string(),
+            media_types: vec!["image".to_string()],
+        },
+        ActionInfo {
+            name: "image-remove-bg".to_string(),
+            label: "Remove Background".to_string(),
+            description: "Remove an image background using the active AI provider.".to_string(),
+            target_type: "folders_or_videos".to_string(),
+            media_types: vec!["image".to_string()],
+        },
+        ActionInfo {
+            name: "image-animate".to_string(),
+            label: "Animate Image".to_string(),
+            description: "Generate a short video from a still image using the active AI provider.".to_string(),
+            target_type: "folders_or_videos".to_string(),
+            media_types: vec!["image".to_string()],
+        },
+        ActionInfo {
             name: "run".to_string(),
             label: "Run Saved Settings".to_string(),
             description: "Render a tiled composition from your saved Tile Builder settings without opening the builder.".to_string(),

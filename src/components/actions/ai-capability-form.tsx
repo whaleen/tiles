@@ -107,8 +107,13 @@ export function AICapabilityForm({ images, capability, currentProject }: Props) 
   const previewText = JSON.stringify(previewPayload, null, 2);
 
   const run = async () => {
-    if (!String(values.prompt ?? "").trim()) {
-      toast.error("Enter a prompt");
+    const missing = fields.find(
+      (f) =>
+        f.required &&
+        String(values[f.name] ?? "").trim() === ""
+    );
+    if (missing) {
+      toast.error(`Enter ${missing.label.toLowerCase()}`);
       return;
     }
     if (images.length === 0) {

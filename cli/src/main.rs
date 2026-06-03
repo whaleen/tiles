@@ -971,7 +971,9 @@ fn run() -> i32 {
         "ai" => run_ai(rest),
         // Generic AI capabilities dispatch through the same runner; the action
         // name is the capability verb (matches the action registry).
-        "image-edit" => run_ai_capability("image-edit", rest),
+        "image-edit" | "image-upscale" | "image-remove-bg" | "image-animate" => {
+            run_ai_capability(&cmd, rest)
+        }
         "web" => run_web_ui(),
         "yolo" => match run_yolo_tile(find_repo_root().as_deref()) {
             Ok(code) => code,
@@ -1007,6 +1009,7 @@ OPTIONS:
   --model <id>             Model id (provider default if omitted)
   -o, --output <dir>       Output directory (default: outputs/<capability>)
   --params <json>          JSON object of capability params (prompt, strength, ...)
+  --output-media <kind>    Output media: image (default) or video
   --live                   Attempt a real provider call (NOT yet implemented)
   -h, --help               Show this help
 
@@ -1044,6 +1047,7 @@ fn run_ai(args: &[OsString]) -> i32 {
     let mut provider = String::from("modelslab");
     let mut model: Option<String> = None;
     let mut params_json = String::from("{}");
+    let mut output_media = String::from("image");
     let mut live = false;
 
     let mut i = 0usize;
@@ -1081,6 +1085,14 @@ fn run_ai(args: &[OsString]) -> i32 {
                     return 2;
                 }
                 params_json = args[i].to_string_lossy().to_string();
+            }
+            "--output-media" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --output-media");
+                    return 2;
+                }
+                output_media = args[i].to_string_lossy().to_string();
             }
             "-o" | "--output" => {
                 i += 1;
@@ -1191,7 +1203,10 @@ fn run_ai(args: &[OsString]) -> i32 {
             "request": request,
         });
 
-        let out_path = out_dir.join(format!("{stem}-{capability}.{ext}"));
+        // Output extension follows the capability's output media so image->video
+        // placeholders land as .mp4 and show up as videos.
+        let out_ext = if output_media == "video" { "mp4" } else { ext };
+        let out_path = out_dir.join(format!("{stem}-{capability}.{out_ext}"));
         // Placeholder result: copy the input so the Outputs page shows something real.
         if let Err(e) = fs::copy(src, &out_path) {
             eprintln!("error: cannot write {}: {e}", out_path.display());

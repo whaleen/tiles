@@ -168,13 +168,6 @@ export function LibraryActionPanel({
           currentProject={currentProject}
         />
       ),
-    "image-edit": imageVideos.length > 0 ? (
-      <AICapabilityForm
-        images={imageVideos}
-        capability="image-edit"
-        currentProject={currentProject}
-      />
-    ) : null,
   };
 
   return (
@@ -252,10 +245,22 @@ export function LibraryActionPanel({
 
       {selectedAction && (
         <div className="mt-4">
-          {formMap[selectedAction] || (
-            <div className="text-xs text-muted-foreground">
-              No form available for action: {selectedAction}
-            </div>
+          {isCapabilityAction(selectedAction) ? (
+            imageVideos.length > 0 ? (
+              <AICapabilityForm
+                images={imageVideos}
+                capability={selectedAction}
+                currentProject={currentProject}
+              />
+            ) : (
+              <div className="text-xs text-muted-foreground">No image selected.</div>
+            )
+          ) : (
+            formMap[selectedAction] || (
+              <div className="text-xs text-muted-foreground">
+                No form available for action: {selectedAction}
+              </div>
+            )
           )}
         </div>
       )}

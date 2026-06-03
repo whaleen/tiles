@@ -113,12 +113,28 @@ pub fn list_providers() -> Vec<ProviderInfo> {
     vec![modelslab()]
 }
 
+/// Output media for a capability ("image" | "video"), looked up across declared
+/// providers. The runner passes this to the CLI so dry-run placeholders land
+/// with the right extension. Single source of truth: the descriptor.
+pub fn capability_output_media(capability: &str) -> Option<String> {
+    list_providers()
+        .iter()
+        .flat_map(|p| p.capabilities.iter())
+        .find(|c| c.capability == capability)
+        .map(|c| c.output_media.clone())
+}
+
 fn modelslab() -> ProviderInfo {
     ProviderInfo {
         id: "modelslab".to_string(),
         label: "ModelsLab".to_string(),
         docs_url: Some("https://docs.modelslab.com".to_string()),
-        capabilities: vec![image_edit()],
+        capabilities: vec![
+            image_edit(),
+            image_upscale(),
+            image_remove_bg(),
+            image_animate(),
+        ],
     }
 }
 
@@ -168,6 +184,83 @@ fn image_edit() -> CapabilityInfo {
                 .default(json!(true)),
             FieldInfo::base("enhance_prompt", "Enhance prompt", "bool", "advanced")
                 .default(json!(false)),
+        ],
+    }
+}
+
+/// image -> image upscale (super-resolution).
+fn image_upscale() -> CapabilityInfo {
+    CapabilityInfo {
+        capability: "image-upscale".to_string(),
+        label: "Upscale Image".to_string(),
+        description: "Increase image resolution.".to_string(),
+        input_media: "image".to_string(),
+        output_media: "image".to_string(),
+        models: vec![ModelInfo {
+            id: "realesrgan".to_string(),
+            label: "Real-ESRGAN".to_string(),
+            default: true,
+        }],
+        fields: vec![
+            FieldInfo::base("scale", "Scale", "select", "core")
+                .default(json!("2"))
+                .options(&["2", "3", "4"])
+                .help("Output resolution multiplier."),
+            FieldInfo::base("face_enhance", "Face enhance", "bool", "advanced")
+                .default(json!(false)),
+        ],
+    }
+}
+
+/// image -> image background removal.
+fn image_remove_bg() -> CapabilityInfo {
+    CapabilityInfo {
+        capability: "image-remove-bg".to_string(),
+        label: "Remove Background".to_string(),
+        description: "Remove the background, producing a cutout.".to_string(),
+        input_media: "image".to_string(),
+        output_media: "image".to_string(),
+        models: vec![ModelInfo {
+            id: "removebg".to_string(),
+            label: "Remove BG".to_string(),
+            default: true,
+        }],
+        fields: vec![
+            FieldInfo::base("only_mask", "Return mask only", "bool", "advanced")
+                .default(json!(false)),
+            FieldInfo::base("post_process", "Post-process edges", "bool", "advanced")
+                .default(json!(true)),
+        ],
+    }
+}
+
+/// image -> video animation (img2vid). The first cross-media capability; feeds
+/// the tile pipeline.
+fn image_animate() -> CapabilityInfo {
+    CapabilityInfo {
+        capability: "image-animate".to_string(),
+        label: "Animate Image".to_string(),
+        description: "Generate a short video from a still image (image-to-video).".to_string(),
+        input_media: "image".to_string(),
+        output_media: "video".to_string(),
+        models: vec![ModelInfo {
+            id: "svd".to_string(),
+            label: "Stable Video Diffusion".to_string(),
+            default: true,
+        }],
+        fields: vec![
+            FieldInfo::base("prompt", "Motion prompt", "textarea", "core")
+                .help("Optional: describe the motion."),
+            FieldInfo::base("num_frames", "Frames", "slider", "advanced")
+                .default(json!(25))
+                .range(8.0, 64.0, 1.0),
+            FieldInfo::base("fps", "FPS", "number", "advanced")
+                .default(json!(7))
+                .range(1.0, 30.0, 1.0),
+            FieldInfo::base("motion_bucket_id", "Motion amount", "slider", "advanced")
+                .default(json!(127))
+                .range(1.0, 255.0, 1.0),
+            FieldInfo::base("seed", "Seed", "text", "advanced").help("Leave blank for random."),
         ],
     }
 }

@@ -315,6 +315,10 @@ pub(crate) fn build_args(req: &ActionRunRequest) -> Vec<OsString> {
             }
         }
         action if is_ai_action(action) => {
+            if let Some(media) = crate::commands::providers::capability_output_media(action) {
+                args.push("--output-media".into());
+                args.push(media.into());
+            }
             if let Some(v) = params.get("provider").and_then(|v| v.as_str()) {
                 if !v.is_empty() {
                     args.push("--provider".into());
@@ -389,7 +393,10 @@ fn action_supports_output(action: &str) -> bool {
 /// AI capability actions dispatched through the `tiles ai` CLI subcommand.
 /// Their generic verb is the action name; provider/model are params.
 fn is_ai_action(action: &str) -> bool {
-    matches!(action, "image-edit")
+    matches!(
+        action,
+        "image-edit" | "image-upscale" | "image-remove-bg" | "image-animate"
+    )
 }
 
 fn action_supports_overwrite(action: &str) -> bool {
@@ -1150,6 +1157,27 @@ mod tests {
         let payload = &args[params_idx + 1];
         assert!(payload.contains("\"prompt\":\"neon\""));
         assert!(payload.contains("\"strength\":0.6"));
+    }
+
+    #[test]
+    fn image_animate_passes_video_output_media() {
+        let request = ActionRunRequest {
+            action: "image-animate".to_string(),
+            targets: vec!["demo/cat.jpg".to_string()],
+            target_type: "folders_or_videos".to_string(),
+            output_mode: "custom".to_string(),
+            params: json!({
+                "output": "src/demo/outputs/image-animate",
+                "provider": "modelslab",
+                "ai_params": { "num_frames": 25 }
+            }),
+        };
+
+        let args = args_as_strings(&request);
+
+        assert!(args
+            .windows(2)
+            .any(|p| p[0] == "--output-media" && p[1] == "video"));
     }
 
     #[test]

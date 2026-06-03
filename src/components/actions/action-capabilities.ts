@@ -38,6 +38,9 @@ const ACTION_CAPS: Record<string, ActionCapability> = {
   run: { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["any"] },
   yolo: { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["any"] },
   "image-edit": { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["image"] },
+  "image-upscale": { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["image"] },
+  "image-remove-bg": { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["image"] },
+  "image-animate": { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["image"] },
 };
 
 export function actionCapabilities(actionName: string | undefined) {
