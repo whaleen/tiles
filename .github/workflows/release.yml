@@ -52,7 +52,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm tauri -- build --target universal-apple-darwin --bundles app
+        run: pnpm tauri build --target universal-apple-darwin --bundles app
 
       - name: Create DMG manually
         env:
@@ -83,7 +83,7 @@ jobs:
           MACOS="$GITHUB_WORKSPACE/target/universal-apple-darwin/release/bundle/macos"
           tar czf /tmp/tiles.app.tar.gz -C "$MACOS" tiles.app
           cp /tmp/tiles.app.tar.gz "$MACOS/tiles.app.tar.gz"
-          pnpm tauri -- signer sign \
+          pnpm tauri signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
             "$MACOS/tiles.app.tar.gz"
