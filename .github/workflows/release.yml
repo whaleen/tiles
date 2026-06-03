@@ -15,11 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: ./package-lock.json
+          cache: pnpm
+          cache-dependency-path: ./pnpm-lock.yaml
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -30,7 +32,7 @@ jobs:
           workspaces: .
 
       - name: Install frontend dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build tiles-cli sidecar (universal)
         run: |
@@ -50,7 +52,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri -- build --target universal-apple-darwin --bundles app
+        run: pnpm tauri -- build --target universal-apple-darwin --bundles app
 
       - name: Create DMG manually
         env:
@@ -81,7 +83,7 @@ jobs:
           MACOS="$GITHUB_WORKSPACE/target/universal-apple-darwin/release/bundle/macos"
           tar czf /tmp/tiles.app.tar.gz -C "$MACOS" tiles.app
           cp /tmp/tiles.app.tar.gz "$MACOS/tiles.app.tar.gz"
-          npm run tauri -- signer sign \
+          pnpm tauri -- signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
             "$MACOS/tiles.app.tar.gz"
