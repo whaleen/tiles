@@ -114,9 +114,9 @@ pub fn list_actions() -> Vec<ActionInfo> {
             media_types: vec!["video".to_string()],
         },
         ActionInfo {
-            name: "flux-img2img".to_string(),
-            label: "Flux Edit (img2img)".to_string(),
-            description: "Edit an image using a text prompt via ModelsLab Flux. Requires a ModelsLab API key in Settings.".to_string(),
+            name: "image-edit".to_string(),
+            label: "Edit Image".to_string(),
+            description: "Edit an image from a text prompt (img2img) using the active AI provider.".to_string(),
             target_type: "folders_or_videos".to_string(),
             media_types: vec!["image".to_string()],
         },

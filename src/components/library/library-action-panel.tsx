@@ -24,8 +24,9 @@ import { ChopForm } from "@/components/actions/chop-form";
 import { LoopForm } from "@/components/actions/loop-form";
 import { CropForm } from "@/components/actions/crop-form";
 import { DoctorReencodeForm } from "@/components/actions/doctor-reencode-form";
-import { FluxImg2ImgForm } from "@/components/actions/flux-img2img-form";
+import { AICapabilityForm } from "@/components/actions/ai-capability-form";
 import { actionCapabilities, actionSupportsMedia } from "@/components/actions/action-capabilities";
+import { useCapabilityGating } from "@/hooks/use-providers";
 
 interface LibraryActionPanelProps {
   selectedVideos: VideoEntry[];
@@ -40,6 +41,7 @@ export function LibraryActionPanel({
 }: LibraryActionPanelProps) {
   const baseVideos = selectedVideos.length > 0 ? selectedVideos : displayedVideos;
   const { actions: allActions, loading, error } = useActions();
+  const { isCapabilityAction, activeSupports, activeProviderLabel } = useCapabilityGating();
   const actions = useMemo(
     () => allActions.filter((a) => a.target_type !== "settings"),
     [allActions]
@@ -70,13 +72,22 @@ export function LibraryActionPanel({
   );
 
   useEffect(() => {
-    if (selectedAction && !actionSupportsMedia(selectedAction, presentTypes)) {
+    if (!selectedAction) return;
+    const mediaOk = actionSupportsMedia(selectedAction, presentTypes);
+    const providerOk =
+      !isCapabilityAction(selectedAction) || activeSupports(selectedAction);
+    if (!mediaOk || !providerOk) {
       setSelectedAction(null);
     }
-  }, [presentTypes, selectedAction]);
+  }, [presentTypes, selectedAction, isCapabilityAction, activeSupports]);
 
   const firstImage = useMemo(
     () => baseVideos.find((v) => isImage(v.rel_path)) || null,
+    [baseVideos]
+  );
+
+  const imageVideos = useMemo(
+    () => baseVideos.filter((v) => isImage(v.rel_path)),
     [baseVideos]
   );
 
@@ -109,7 +120,7 @@ export function LibraryActionPanel({
         ? `Project: ${currentProject}`
         : "Select a project in the sidebar";
     }
-    if (selectedActionInfo.name === "flux-img2img") {
+    if (isCapabilityAction(selectedActionInfo.name)) {
       return firstImage ? `Image: ${firstImage.name}` : "No image selected";
     }
     const scopeLabel =
@@ -125,6 +136,7 @@ export function LibraryActionPanel({
     selectedVideos.length,
     currentProject,
     firstImage,
+    isCapabilityAction,
   ]);
 
   const formProps = {
@@ -156,8 +168,12 @@ export function LibraryActionPanel({
           currentProject={currentProject}
         />
       ),
-    "flux-img2img": firstImage ? (
-      <FluxImg2ImgForm image={firstImage} currentProject={currentProject} />
+    "image-edit": imageVideos.length > 0 ? (
+      <AICapabilityForm
+        images={imageVideos}
+        capability="image-edit"
+        currentProject={currentProject}
+      />
     ) : null,
   };
 
@@ -188,13 +204,20 @@ export function LibraryActionPanel({
                 </SelectTrigger>
                 <SelectContent>
                   {actions.map((action) => {
-                    const supported = actionSupportsMedia(action.name, presentTypes);
+                    const mediaOk = actionSupportsMedia(action.name, presentTypes);
+                    const providerOk =
+                      !isCapabilityAction(action.name) || activeSupports(action.name);
+                    const supported = mediaOk && providerOk;
                     const caps = actionCapabilities(action.name);
-                    const reason = caps.mediaTypes.includes("video") && !caps.mediaTypes.includes("image")
-                      ? "Requires video"
-                      : caps.mediaTypes.includes("image") && !caps.mediaTypes.includes("video")
-                        ? "Requires image"
-                        : "Not compatible";
+                    const reason = !mediaOk
+                      ? caps.mediaTypes.includes("video") && !caps.mediaTypes.includes("image")
+                        ? "Requires video"
+                        : caps.mediaTypes.includes("image") && !caps.mediaTypes.includes("video")
+                          ? "Requires image"
+                          : "Not compatible"
+                      : activeProviderLabel
+                        ? `Not in ${activeProviderLabel}`
+                        : "No provider";
                     return (
                       <SelectItem key={action.name} value={action.name} disabled={!supported}>
                         <span className="flex items-center justify-between gap-2">

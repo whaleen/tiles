@@ -37,7 +37,7 @@ const ACTION_CAPS: Record<string, ActionCapability> = {
   tile: { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["any"] },
   run: { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["any"] },
   yolo: { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["any"] },
-  "flux-img2img": { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["image"] },
+  "image-edit": { allowOutput: true, allowOverwrite: false, allowAlongside: true, mediaTypes: ["image"] },
 };
 
 export function actionCapabilities(actionName: string | undefined) {

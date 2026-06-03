@@ -8,8 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { FluxImg2ImgForm } from "@/components/actions/flux-img2img-form";
+import { AICapabilityForm } from "@/components/actions/ai-capability-form";
 import { actionCapabilities } from "@/components/actions/action-capabilities";
+import { useCapabilityGating } from "@/hooks/use-providers";
 import type { VideoEntry } from "@/types";
 
 interface ImageActionPanelProps {
@@ -19,6 +20,7 @@ interface ImageActionPanelProps {
 
 export function ImageActionPanel({ image, currentProject }: ImageActionPanelProps) {
   const { actions: allActions, loading, error } = useActions();
+  const { isCapabilityAction, activeSupports, activeProviderLabel } = useCapabilityGating();
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
 
   const actions = useMemo(
@@ -43,11 +45,23 @@ export function ImageActionPanel({ image, currentProject }: ImageActionPanelProp
                 <SelectValue placeholder="Select an image action" />
               </SelectTrigger>
               <SelectContent>
-                {actions.map((action) => (
-                  <SelectItem key={action.name} value={action.name}>
-                    {action.label}
-                  </SelectItem>
-                ))}
+                {actions.map((action) => {
+                  const gated = isCapabilityAction(action.name) && !activeSupports(action.name);
+                  return (
+                    <SelectItem key={action.name} value={action.name} disabled={gated}>
+                      <span className="flex items-center justify-between gap-2">
+                        <span>{action.label}</span>
+                        {gated && (
+                          <span className="text-[10px] text-muted-foreground">
+                            {activeProviderLabel
+                              ? `Not in ${activeProviderLabel}`
+                              : "No provider"}
+                          </span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           )}
@@ -57,9 +71,13 @@ export function ImageActionPanel({ image, currentProject }: ImageActionPanelProp
         </div>
       </div>
 
-      {selectedAction === "flux-img2img" ? (
+      {selectedAction && isCapabilityAction(selectedAction) ? (
         <div className="mt-4">
-          <FluxImg2ImgForm image={image} currentProject={currentProject} />
+          <AICapabilityForm
+            images={[image]}
+            capability={selectedAction}
+            currentProject={currentProject}
+          />
         </div>
       ) : selectedAction ? (
         <div className="mt-3 text-xs text-muted-foreground">

@@ -1,14 +1,25 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { KeyRound, Settings } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { KeyRound, Settings, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useActiveProvider } from "@/hooks/use-providers";
 import { errorMessage } from "@/lib/errors";
 
 export function SettingsPage() {
+  const queryClient = useQueryClient();
+  const { providers, activeId } = useActiveProvider();
   const [modelslabKey, setModelslabKey] = useState("");
   const [savingModelslabKey, setSavingModelslabKey] = useState(false);
 
@@ -17,6 +28,16 @@ export function SettingsPage() {
       .then((key) => setModelslabKey(key ?? ""))
       .catch(() => setModelslabKey(""));
   }, []);
+
+  const selectActiveProvider = async (provider: string) => {
+    try {
+      await invoke("set_active_provider", { provider });
+      queryClient.invalidateQueries({ queryKey: ["active-provider"] });
+      toast.success("Active provider updated");
+    } catch (err) {
+      toast.error(errorMessage(err, "Failed to set active provider"));
+    }
+  };
 
   const saveModelslabKey = async () => {
     setSavingModelslabKey(true);
@@ -42,6 +63,36 @@ export function SettingsPage() {
           App-wide defaults used across workspaces and projects. Project/workspace overrides can be added later if needed.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Sparkles className="h-4 w-4" />
+            AI provider
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <Label>Active provider</Label>
+            <Select value={activeId ?? ""} onValueChange={selectActiveProvider}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a provider" />
+              </SelectTrigger>
+              <SelectContent>
+                {providers.map((provider) => (
+                  <SelectItem key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            One provider is active at a time. AI actions are enabled only for
+            capabilities the active provider supports.
+          </p>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

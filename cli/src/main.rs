@@ -969,6 +969,9 @@ fn run() -> i32 {
         "chop" => run_chop(rest),
         "crop" => run_crop(rest),
         "ai" => run_ai(rest),
+        // Generic AI capabilities dispatch through the same runner; the action
+        // name is the capability verb (matches the action registry).
+        "image-edit" => run_ai_capability("image-edit", rest),
         "web" => run_web_ui(),
         "yolo" => match run_yolo_tile(find_repo_root().as_deref()) {
             Ok(code) => code,
@@ -1011,6 +1014,14 @@ Dry-run only: validates inputs, builds the key-free payload it WOULD send,
 emits TILES_PROGRESS, and writes a placeholder output plus a .request.json
 sidecar for each input. No network calls, no API key required.
 "#;
+
+/// Dispatch a capability verb (e.g. `image-edit`) into the AI runner by
+/// injecting `--capability <verb>`. This is what the Tauri runner invokes.
+fn run_ai_capability(capability: &str, rest: &[OsString]) -> i32 {
+    let mut args: Vec<OsString> = vec!["--capability".into(), capability.into()];
+    args.extend_from_slice(rest);
+    run_ai(&args)
+}
 
 /// Dry-run AI capability runner. Builds and reports the provider payload it
 /// would send, emits progress, and writes placeholder outputs — no network,

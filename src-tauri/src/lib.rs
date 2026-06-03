@@ -158,7 +158,6 @@ pub fn run() {
             commands::actions::list_actions,
             commands::actions::run_action,
             commands::actions::list_running_actions,
-            commands::image_actions::flux_img2img,
             // logs
             commands::logs::list_logs,
             commands::logs::get_log,
