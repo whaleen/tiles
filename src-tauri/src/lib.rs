@@ -136,6 +136,11 @@ pub fn run() {
             commands::settings::put_settings,
             commands::settings::get_modelslab_key,
             commands::settings::set_modelslab_key,
+            commands::settings::get_active_provider,
+            commands::settings::set_active_provider,
+            commands::settings::get_provider_key,
+            commands::settings::set_provider_key,
+            commands::providers::list_providers,
             commands::settings::list_layouts,
             // outputs
             commands::outputs::list_outputs,

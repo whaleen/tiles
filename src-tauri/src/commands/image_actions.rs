@@ -48,7 +48,7 @@ pub async fn flux_img2img(
     }
 
     let key = read_prefs(&app)
-        .modelslab_api_key
+        .provider_key("modelslab")
         .ok_or_else(|| "ModelsLab API key not set. Go to Settings to add it.".to_string())?;
 
     let root = state.root.read().unwrap().clone();

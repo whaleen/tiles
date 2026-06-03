@@ -63,20 +63,57 @@ pub fn put_settings(
 }
 
 #[tauri::command]
-pub async fn get_modelslab_key(app: tauri::AppHandle) -> Option<String> {
-    crate::prefs::read_prefs(&app).modelslab_api_key
+pub async fn get_active_provider(app: tauri::AppHandle) -> Option<String> {
+    crate::prefs::read_prefs(&app).active_provider
 }
 
 #[tauri::command]
-pub async fn set_modelslab_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
+pub async fn set_active_provider(app: tauri::AppHandle, provider: String) -> Result<(), String> {
     let mut prefs = crate::prefs::read_prefs(&app);
-    let trimmed = key.trim().to_string();
-    prefs.modelslab_api_key = if trimmed.is_empty() {
+    let trimmed = provider.trim().to_string();
+    prefs.active_provider = if trimmed.is_empty() {
         None
     } else {
         Some(trimmed)
     };
     crate::prefs::write_prefs(&app, &prefs)
+}
+
+#[tauri::command]
+pub async fn get_provider_key(app: tauri::AppHandle, provider: String) -> Option<String> {
+    crate::prefs::read_prefs(&app).provider_key(&provider)
+}
+
+#[tauri::command]
+pub async fn set_provider_key(
+    app: tauri::AppHandle,
+    provider: String,
+    key: String,
+) -> Result<(), String> {
+    let provider = provider.trim().to_string();
+    if provider.is_empty() {
+        return Err("provider id required".to_string());
+    }
+    let mut prefs = crate::prefs::read_prefs(&app);
+    let trimmed = key.trim().to_string();
+    if trimmed.is_empty() {
+        prefs.credentials.remove(&provider);
+    } else {
+        prefs.credentials.insert(provider, trimmed);
+    }
+    crate::prefs::write_prefs(&app, &prefs)
+}
+
+// Legacy single-key commands, kept for the existing dashboard UI. Routed
+// through the credential map (provider "modelslab") so nothing diverges.
+#[tauri::command]
+pub async fn get_modelslab_key(app: tauri::AppHandle) -> Option<String> {
+    crate::prefs::read_prefs(&app).provider_key("modelslab")
+}
+
+#[tauri::command]
+pub async fn set_modelslab_key(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    set_provider_key(app, "modelslab".to_string(), key).await
 }
 
 #[tauri::command]

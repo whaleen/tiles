@@ -968,6 +968,7 @@ fn run() -> i32 {
         "strip-audio" => run_strip_audio(rest),
         "chop" => run_chop(rest),
         "crop" => run_crop(rest),
+        "ai" => run_ai(rest),
         "web" => run_web_ui(),
         "yolo" => match run_yolo_tile(find_repo_root().as_deref()) {
             Ok(code) => code,
@@ -990,6 +991,223 @@ fn run() -> i32 {
             2
         }
     }
+}
+
+const AI_HELP: &str = r#"tiles ai - AI capability runner (dry-run scaffold)
+
+USAGE:
+  tiles ai --capability <verb> [options] <input> [<input> ...]
+
+OPTIONS:
+  --capability <verb>      Generic capability, e.g. image-edit (required)
+  --provider <id>          Provider id (default: modelslab)
+  --model <id>             Model id (provider default if omitted)
+  -o, --output <dir>       Output directory (default: outputs/<capability>)
+  --params <json>          JSON object of capability params (prompt, strength, ...)
+  --live                   Attempt a real provider call (NOT yet implemented)
+  -h, --help               Show this help
+
+Dry-run only: validates inputs, builds the key-free payload it WOULD send,
+emits TILES_PROGRESS, and writes a placeholder output plus a .request.json
+sidecar for each input. No network calls, no API key required.
+"#;
+
+/// Dry-run AI capability runner. Builds and reports the provider payload it
+/// would send, emits progress, and writes placeholder outputs — no network,
+/// no key. The real provider call is wired in later behind `--live`.
+fn run_ai(args: &[OsString]) -> i32 {
+    if args
+        .iter()
+        .any(|a| matches!(a.to_string_lossy().as_ref(), "-h" | "--help" | "help"))
+    {
+        println!("{AI_HELP}");
+        return 0;
+    }
+
+    let root = find_repo_root();
+    let base = root.as_deref().unwrap_or_else(|| Path::new("."));
+
+    let mut inputs: Vec<String> = Vec::new();
+    let mut output_override: Option<PathBuf> = None;
+    let mut capability = String::new();
+    let mut provider = String::from("modelslab");
+    let mut model: Option<String> = None;
+    let mut params_json = String::from("{}");
+    let mut live = false;
+
+    let mut i = 0usize;
+    while i < args.len() {
+        let t = args[i].to_string_lossy().to_string();
+        match t.as_str() {
+            "--capability" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --capability");
+                    return 2;
+                }
+                capability = args[i].to_string_lossy().to_string();
+            }
+            "--provider" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --provider");
+                    return 2;
+                }
+                provider = args[i].to_string_lossy().to_string();
+            }
+            "--model" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --model");
+                    return 2;
+                }
+                model = Some(args[i].to_string_lossy().to_string());
+            }
+            "--params" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --params");
+                    return 2;
+                }
+                params_json = args[i].to_string_lossy().to_string();
+            }
+            "-o" | "--output" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --output");
+                    return 2;
+                }
+                output_override = Some(resolve_output_dir(base, &args[i].to_string_lossy()));
+            }
+            "--live" => live = true,
+            _ if t.starts_with('-') => {
+                eprintln!("error: unknown option '{t}'");
+                return 2;
+            }
+            _ => inputs.push(t),
+        }
+        i += 1;
+    }
+
+    if capability.is_empty() {
+        eprintln!("error: --capability is required");
+        return 2;
+    }
+    if live {
+        eprintln!("error: live provider calls are not implemented yet; omit --live for dry-run");
+        return 2;
+    }
+    if inputs.is_empty() {
+        eprintln!("error: at least one input is required");
+        return 2;
+    }
+
+    let params: serde_json::Value = match serde_json::from_str(&params_json) {
+        Ok(v @ serde_json::Value::Object(_)) => v,
+        Ok(_) => {
+            eprintln!("error: --params must be a JSON object");
+            return 2;
+        }
+        Err(e) => {
+            eprintln!("error: invalid --params JSON: {e}");
+            return 2;
+        }
+    };
+
+    let out_dir = output_override
+        .unwrap_or_else(|| resolve_output_dir(base, &format!("outputs/{capability}")));
+
+    let total = inputs.len() as u64;
+    emit_progress_value(
+        "validate",
+        0,
+        total,
+        Some(0.0),
+        format!("dry-run {capability} via {provider}"),
+    );
+
+    let mut resolved: Vec<PathBuf> = Vec::new();
+    for input in &inputs {
+        if input.contains("..") {
+            eprintln!("error: invalid input path '{input}'");
+            return 2;
+        }
+        let p = if Path::new(input).is_absolute() {
+            PathBuf::from(input)
+        } else {
+            base.join(input)
+        };
+        if !p.is_file() {
+            eprintln!("error: input not found: {}", p.display());
+            return 2;
+        }
+        resolved.push(p);
+    }
+
+    if let Err(e) = fs::create_dir_all(&out_dir) {
+        eprintln!("error: cannot create output dir {}: {e}", out_dir.display());
+        return 1;
+    }
+
+    let model_id = model.unwrap_or_else(|| "flux".to_string());
+
+    for (idx, src) in resolved.iter().enumerate() {
+        let stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("input");
+        let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("bin");
+        let pct = (idx as f64) / (total as f64) * 100.0;
+        emit_progress_value(
+            "payload",
+            idx as u64,
+            total,
+            Some(pct),
+            format!("building payload for {stem}"),
+        );
+
+        // Key-free payload the real call WOULD send (image bytes elided).
+        let mut request = params.clone();
+        if let serde_json::Value::Object(map) = &mut request {
+            map.insert("model_id".to_string(), serde_json::json!(model_id));
+            map.insert(
+                "init_image".to_string(),
+                serde_json::json!(format!("data:image/{ext};base64,<{stem}.{ext}>")),
+            );
+        }
+        let payload = serde_json::json!({
+            "provider": provider,
+            "capability": capability,
+            "model": model_id,
+            "dry_run": true,
+            "request": request,
+        });
+
+        let out_path = out_dir.join(format!("{stem}-{capability}.{ext}"));
+        // Placeholder result: copy the input so the Outputs page shows something real.
+        if let Err(e) = fs::copy(src, &out_path) {
+            eprintln!("error: cannot write {}: {e}", out_path.display());
+            return 1;
+        }
+        let req_path = out_dir.join(format!("{stem}-{capability}.request.json"));
+        if let Err(e) = fs::write(
+            &req_path,
+            serde_json::to_string_pretty(&payload).unwrap_or_default(),
+        ) {
+            eprintln!("error: cannot write {}: {e}", req_path.display());
+            return 1;
+        }
+    }
+
+    emit_progress_value(
+        "done",
+        total,
+        total,
+        Some(100.0),
+        format!("dry-run complete: {total} file(s) -> {}", out_dir.display()),
+    );
+    println!(
+        "AI dry-run complete ({capability}, provider={provider}). Wrote {total} placeholder output(s) to {}",
+        out_dir.display()
+    );
+    0
 }
 
 fn run_native_menu() -> i32 {

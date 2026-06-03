@@ -6,6 +6,7 @@ pub mod image_actions;
 pub mod logs;
 pub mod outputs;
 pub mod projects;
+pub mod providers;
 pub mod settings;
 pub mod url_import;
 pub mod videos;
