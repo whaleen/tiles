@@ -19,6 +19,9 @@ interface VideoCardProps {
   dragHandleProps?: Record<string, unknown>;
   sortableStyle?: React.CSSProperties;
   sortableRef?: (node: HTMLElement | null) => void;
+  /** Render the thumbnail at its true aspect ratio (for masonry browse grids)
+   *  instead of a fixed 16:9 box. */
+  naturalAspect?: boolean;
 }
 
 export const VideoCard = memo(function VideoCard({
@@ -31,6 +34,7 @@ export const VideoCard = memo(function VideoCard({
   dragHandleProps,
   sortableStyle,
   sortableRef,
+  naturalAspect = false,
 }: VideoCardProps) {
   const durationLabel = formatDuration(video.duration);
   const isImage = IMAGE_RE.test(video.rel_path);
@@ -81,7 +85,7 @@ export const VideoCard = memo(function VideoCard({
       onDragEnd={onDragEnd}
     >
       <div
-        className="relative aspect-video bg-muted"
+        className={`relative bg-muted ${naturalAspect ? "min-h-[3rem]" : "aspect-video"}`}
         draggable
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
@@ -92,7 +96,7 @@ export const VideoCard = memo(function VideoCard({
         onMouseLeave={handlePreviewLeave}
       >
         {thumbBroken ? (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className={`${naturalAspect ? "aspect-video" : "h-full"} w-full flex items-center justify-center`}>
             <Film className="h-8 w-8 text-muted-foreground/50" />
           </div>
         ) : (
@@ -100,7 +104,7 @@ export const VideoCard = memo(function VideoCard({
             <img
               src={thumbUrl(video.rel_path)}
               alt={video.name}
-              className={`w-full h-full object-cover ${hoveringPreview && previewReady ? "opacity-0" : "opacity-100"}`}
+              className={`${naturalAspect ? "block w-full h-auto" : "w-full h-full object-cover"} ${hoveringPreview && previewReady ? "opacity-0" : "opacity-100"}`}
               loading="lazy"
               draggable={false}
               onError={() => setThumbBroken(true)}

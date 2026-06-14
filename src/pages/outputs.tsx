@@ -348,7 +348,7 @@ export function OutputsPage({ project }: { project?: string }) {
             <p className="text-xs opacity-60">Try changing your filters or running a new action.</p>
           </div>
         ) : (
-          <div className="h-full overflow-y-auto pr-2 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 pb-10">
+          <div className="h-full overflow-y-auto pr-2 columns-2 md:columns-3 lg:columns-4 xl:columns-5 2xl:columns-6 gap-4 pb-10">
             {filteredFiles.map((file) => (
               <OutputCard 
                 key={file.rel_path} 
@@ -463,13 +463,13 @@ function OutputCard({
 
   return (
     <div 
-      className={`group relative flex flex-col bg-card border rounded-xl overflow-hidden transition-all hover:ring-2 hover:ring-primary/20 ${
+      className={`group relative mb-4 break-inside-avoid bg-card border rounded-xl overflow-hidden transition-all hover:ring-2 hover:ring-primary/20 ${
         isSelected ? "ring-2 ring-primary" : ""
       }`}
     >
       {/* Thumbnail */}
-      <div 
-        className="relative aspect-video bg-muted cursor-pointer overflow-hidden"
+      <div
+        className="relative bg-muted cursor-pointer overflow-hidden min-h-[3rem]"
         onClick={onSelect}
       >
         {file.kind === "text" ? (
@@ -533,7 +533,7 @@ function OutputThumbnail({ file, retryKey }: { file: OutputEntry; retryKey: numb
       key={`${file.rel_path}-${retryKey}`}
       src={src}
       alt={file.name}
-      className="w-full h-full object-cover transition-transform group-hover:scale-105"
+      className="block w-full h-auto transition-transform group-hover:scale-105"
       loading="eager"
     />
   );
@@ -563,12 +563,12 @@ function TranscriptThumbnail({ file }: { file: OutputEntry }) {
         <img
           src={outThumbUrl(`src/${source}`)}
           alt={file.name}
-          className="w-full h-full object-cover transition-transform group-hover:scale-105"
+          className="block w-full h-auto transition-transform group-hover:scale-105"
           loading="lazy"
           onError={() => setSource(null)}
         />
       ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-muted/50 text-muted-foreground">
+        <div className="aspect-video w-full flex flex-col items-center justify-center gap-2 bg-muted/50 text-muted-foreground">
           <FileText className="h-8 w-8" />
           <span className="text-[10px] font-semibold uppercase">Transcript</span>
         </div>

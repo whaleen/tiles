@@ -222,27 +222,57 @@ export function LibraryPage({
     return videos;
   }, [videos, mediaFilter]);
 
-  const orderedVideos = useMemo(() => {
-    let base: VideoEntry[];
-    if (order.length === 0) {
-      base = filteredVideos;
-    } else {
-      const orderIndex = new Map(order.map((relPath, i) => [relPath, i]));
-      base = [...filteredVideos].sort((a, b) => {
-        const ai = orderIndex.get(a.rel_path);
-        const bi = orderIndex.get(b.rel_path);
+  // The scene's canonical clip order: keyed by file name (basename) to match the
+  // timeline strip, tile builder, and renderer. Tolerant of legacy entries that
+  // stored full rel_paths (normalized to their basename). Independent of the
+  // grid's view sort, so the strip always edits the true scene order.
+  const sceneOrderIndex = useMemo(
+    () => new Map(order.map((entry, i) => [entry.split("/").pop() ?? entry, i])),
+    [order]
+  );
+
+  const sortBySceneOrder = useCallback(
+    (items: VideoEntry[]) => {
+      if (sceneOrderIndex.size === 0) return items;
+      return [...items].sort((a, b) => {
+        const ai = sceneOrderIndex.get(a.name);
+        const bi = sceneOrderIndex.get(b.name);
         if (ai !== undefined && bi !== undefined) return ai - bi;
         if (ai !== undefined) return -1;
         if (bi !== undefined) return 1;
         return a.name.localeCompare(b.name);
       });
-    }
-    if (sortBy === "name") return [...base].sort((a, b) => a.name.localeCompare(b.name));
-    if (sortBy === "name-desc") return [...base].sort((a, b) => b.name.localeCompare(a.name));
-    if (sortBy === "size") return [...base].sort((a, b) => (a.size_bytes ?? 0) - (b.size_bytes ?? 0));
-    if (sortBy === "size-desc") return [...base].sort((a, b) => (b.size_bytes ?? 0) - (a.size_bytes ?? 0));
-    return base;
-  }, [filteredVideos, order, sortBy]);
+    },
+    [sceneOrderIndex]
+  );
+
+  const sceneOrderedVideos = useMemo(
+    () => sortBySceneOrder(filteredVideos),
+    [filteredVideos, sortBySceneOrder]
+  );
+
+  const sceneOrderedClipVideos = useMemo(
+    () => sortBySceneOrder(filteredVideos.filter((v) => !isImage(v.rel_path))),
+    [filteredVideos, sortBySceneOrder]
+  );
+
+  const orderedVideos = useMemo(() => {
+    if (sortBy === "name") return [...filteredVideos].sort((a, b) => a.name.localeCompare(b.name));
+    if (sortBy === "name-desc") return [...filteredVideos].sort((a, b) => b.name.localeCompare(a.name));
+    if (sortBy === "size") return [...filteredVideos].sort((a, b) => (a.size_bytes ?? 0) - (b.size_bytes ?? 0));
+    if (sortBy === "size-desc") return [...filteredVideos].sort((a, b) => (b.size_bytes ?? 0) - (a.size_bytes ?? 0));
+    return sceneOrderedVideos;
+  }, [filteredVideos, sceneOrderedVideos, sortBy]);
+
+  // Reordering from the timeline strip writes the scene order and snaps the grid
+  // back to "Default order" so the result is visible.
+  const handleSceneReorder = useCallback(
+    (newOrder: string[]) => {
+      void saveOrder(newOrder);
+      setSortBy("default");
+    },
+    [saveOrder]
+  );
 
   const folderCards = useMemo(
     () => buildFolderCards(selectedFolder || "", detail?.subfolders, thumbVideos, project),
@@ -1102,7 +1132,7 @@ export function LibraryPage({
                 </div>
               ) : previewMode ? (
                 <TimelinePreview
-                  videos={orderedVideos}
+                  videos={sceneOrderedClipVideos}
                   onBack={() => setPreviewMode(false)}
                 />
               ) : (
@@ -1114,8 +1144,8 @@ export function LibraryPage({
                   />
                   {selectedFolder && showTimeline && (
                     <FolderTimeline
-                      videos={orderedVideos}
-                      onReorder={(newOrder) => void saveOrder(newOrder)}
+                      videos={sceneOrderedClipVideos}
+                      onReorder={handleSceneReorder}
                       onPreview={() => setPreviewMode(true)}
                     />
                   )}
@@ -1227,8 +1257,6 @@ export function LibraryPage({
                           setDragRelPath(null);
                           setDragOverFolderPath(null);
                         }}
-                        reorderEnabled={!!selectedFolder}
-                        onReorder={(newOrder) => void saveOrder(newOrder)}
                       />
                     </div>
                   </div>

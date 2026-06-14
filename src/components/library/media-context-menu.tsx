@@ -17,6 +17,7 @@ interface MediaContextMenuProps {
   onDelete: (media: VideoEntry) => void;
   onReveal: (media: VideoEntry) => void;
   disabled?: boolean;
+  wrapperClassName?: string;
 }
 
 export function MediaContextMenu({
@@ -27,11 +28,12 @@ export function MediaContextMenu({
   onDelete,
   onReveal,
   disabled,
+  wrapperClassName,
 }: MediaContextMenuProps) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div>{children}</div>
+        <div className={wrapperClassName}>{children}</div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={() => onReveal(media)} disabled={disabled} className="gap-2">
