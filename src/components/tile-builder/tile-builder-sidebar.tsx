@@ -1,11 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { InfoHover } from "@/components/ui/info-hover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Play, Layout, PlayCircle, Settings2, Monitor, Music, Loader2 } from "lucide-react";
+import { Layout, PlayCircle, Settings2 } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -26,47 +25,29 @@ import { canvasPresetKey } from "@/pages/tile-builder-utils";
 import type { TileSettings, LayoutInfo } from "@/types";
 
 interface TileBuilderSidebarProps {
-  settings: TileSettings;
   safeSettings: TileSettings;
   layouts: LayoutInfo[];
-  renderMode: string;
-  outputMode: string;
-  noOverwrite: boolean;
+  mode: "edit" | "randomized";
   outputLengthPolicy: "shortest" | "longest" | "fixed";
   sourceRepeatPolicy: "allow" | "no_reuse_per_tile" | "no_reuse_global";
-  running: boolean;
   folderThumbsSingle: Record<string, string>;
   presetOpen: boolean;
   onPresetOpenChange: (open: boolean) => void;
-  onRenderModeChange: (mode: string) => void;
-  onOutputModeChange: (mode: string) => void;
-  onNoOverwriteChange: (value: boolean) => void;
   onUpdateSettings: (partial: Partial<TileSettings>) => void;
   onPresetSelect: (code: string) => void;
-  onRun: () => void;
-  saveSettings: (settings: TileSettings, project?: string) => void;
 }
 
 export function TileBuilderSidebar({
-  settings,
   safeSettings,
   layouts,
-  renderMode,
-  outputMode,
-  noOverwrite,
+  mode,
   outputLengthPolicy,
   sourceRepeatPolicy,
-  running,
   folderThumbsSingle,
   presetOpen,
   onPresetOpenChange,
-  onRenderModeChange,
-  onOutputModeChange,
-  onNoOverwriteChange,
   onUpdateSettings,
   onPresetSelect,
-  onRun,
-  saveSettings,
 }: TileBuilderSidebarProps) {
   const isCustomCanvas = canvasPresetKey(safeSettings.canvas_width, safeSettings.canvas_height) === "custom";
 
@@ -235,6 +216,8 @@ export function TileBuilderSidebar({
             </div>
 
             <div className="space-y-3">
+              {mode === "randomized" && (
+              <>
               <div>
                 <div className="flex items-center gap-1.5">
                   <Label className="text-[10px] text-muted-foreground uppercase font-bold">Duration Mode</Label>
@@ -334,144 +317,13 @@ export function TileBuilderSidebar({
                   </Select>
                 </div>
               </div>
-
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label className="text-[10px] text-muted-foreground uppercase font-bold">Max Clip Length (s)</Label>
-                  <InfoHover text="Caps how much of any single source clip is used. Leave blank for no per-clip limit." />
-                </div>
-                <Input
-                  type="number"
-                  step="0.1"
-                  className="h-8 text-xs mt-1"
-                  value={safeSettings.max_duration ?? ""}
-                  onChange={(e) =>
-                    onUpdateSettings({
-                      max_duration: e.target.value
-                        ? parseFloat(e.target.value)
-                        : null,
-                    })
-                  }
-                  placeholder="No limit"
-                />
-              </div>
-            </div>
-          </section>
-
-          <Separator className="opacity-50" />
-
-          {/* SECTION: Audio & Config */}
-          <section className="space-y-3">
-            <div className="flex items-center gap-2 text-primary">
-              <Music className="h-4 w-4" />
-              <h3 className="text-xs font-bold uppercase tracking-wider">Audio & Config</h3>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2.5">
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/20 border">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-xs">Audio Mix</Label>
-                    <InfoHover text="Include audio in the rendered composition. Individual tile audio choices are controlled from tile menus in the preview." />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground italic">Enable sound in output</p>
-                </div>
-                <Switch
-                  checked={safeSettings.audio_enabled ?? false}
-                  onCheckedChange={(v) => onUpdateSettings({ audio_enabled: v })}
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/20 border">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-xs">Safety Mode</Label>
-                    <InfoHover text="Skip renders when the intended output already exists, protecting previous exports from accidental replacement." />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground italic">Skip existing renders</p>
-                </div>
-                <Switch
-                  checked={noOverwrite}
-                  onCheckedChange={(value) => {
-                    onNoOverwriteChange(value);
-                    saveSettings({ ...settings, no_overwrite: value });
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center justify-between p-2 rounded-lg bg-muted/20 border">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-xs">Global Export</Label>
-                    <InfoHover text="Save renders to the workspace-level outputs folder instead of this project's outputs folder." />
-                  </div>
-                  <p className="text-[10px] text-muted-foreground italic">Save to root outputs</p>
-                </div>
-                <Switch
-                  checked={outputMode === "global"}
-                  onCheckedChange={(value) => {
-                    const nextMode = value ? "global" : "project";
-                    onOutputModeChange(nextMode);
-                    saveSettings({ ...settings, output_mode: nextMode });
-                  }}
-                />
-              </div>
+              </>
+              )}
             </div>
           </section>
 
         </div>
       </ScrollArea>
-
-      <div className="sticky bottom-0 pt-3 mt-auto border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 space-y-3">
-        <section className="space-y-2">
-          <div className="flex items-center gap-2 text-primary">
-            <Monitor className="h-4 w-4" />
-            <h3 className="text-xs font-bold uppercase tracking-wider">Final Output</h3>
-          </div>
-
-          <div>
-            <div className="flex items-center gap-1.5">
-            <Label className="text-[10px] text-muted-foreground uppercase font-bold">Render Quality</Label>
-            <InfoHover text="Render preset for final generation. Fast Preview is lowest quality and quickest; Standard Preview is balanced; High Quality Production is for final exports." />
-          </div>
-            <Select
-              value={renderMode}
-              onValueChange={(value) => {
-                onRenderModeChange(value);
-                saveSettings({ ...settings, render_mode: value });
-              }}
-            >
-              <SelectTrigger className="h-9 mt-1">
-                <SelectValue placeholder="Render mode" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="preview">Standard Preview</SelectItem>
-                <SelectItem value="fast-preview">Fast Preview (Low Res)</SelectItem>
-                <SelectItem value="full">High Quality Production</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </section>
-
-        <Button 
-          onClick={onRun} 
-          disabled={running} 
-          size="lg"
-          className="w-full h-12 text-base font-bold shadow-lg gap-2"
-        >
-          {running ? (
-            <>
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Rendering...
-            </>
-          ) : (
-            <>
-              <Play className="h-5 w-5 fill-current" />
-              Generate Tiles
-            </>
-          )}
-        </Button>
-      </div>
     </div>
   );
 }

@@ -81,6 +81,39 @@ pub fn reveal_media(state: State<AppState>, project: String, path: String) -> Re
     Ok(())
 }
 
+/// Real durations (seconds) for a batch of src-relative video paths, aligned to
+/// the input order (None where unknown/missing). Cached per file in AppState.
+#[tauri::command]
+pub fn get_video_durations(state: State<AppState>, paths: Vec<String>) -> Vec<Option<f64>> {
+    state.get_durations(&paths)
+}
+
+/// Ensure (and return metadata for) a clip's scrub filmstrip sprite. The image
+/// itself is served at `<media>/filmstrips/<path>`.
+#[tauri::command]
+pub fn get_filmstrip(
+    state: State<AppState>,
+    path: String,
+) -> Result<crate::models::Filmstrip, String> {
+    let root = state.root.read().unwrap().clone();
+    if path.contains("..") || Path::new(&path).is_absolute() {
+        return Err("invalid path".to_string());
+    }
+    let full = root.join("src").join(&path);
+    if !full.exists() || !full.is_file() {
+        return Err("not found".to_string());
+    }
+    let r = crate::services::filmstrip::ensure_filmstrip(&root, &full, &path)
+        .ok_or_else(|| "filmstrip generation failed".to_string())?;
+    Ok(crate::models::Filmstrip {
+        frame_count: r.frame_count,
+        columns: r.columns,
+        frame_width: r.frame_width,
+        frame_height: r.frame_height,
+        duration: r.duration,
+    })
+}
+
 #[tauri::command]
 pub fn get_video_info(state: State<AppState>, path: String) -> Result<VideoInfo, String> {
     let root = state.root.read().unwrap().clone();

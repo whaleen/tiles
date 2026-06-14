@@ -34,6 +34,20 @@ pub async fn start(port: u16, root: Arc<RwLock<PathBuf>>) {
                     async move { serve_src_thumb(root, req).await }
                 })
             })
+            .route("/frames/{*path}", {
+                let root = r.clone();
+                get(move |req: Request| {
+                    let root = root.clone();
+                    async move { serve_src_frame(root, req).await }
+                })
+            })
+            .route("/filmstrips/{*path}", {
+                let root = r.clone();
+                get(move |req: Request| {
+                    let root = root.clone();
+                    async move { serve_src_filmstrip(root, req).await }
+                })
+            })
             .route("/outfiles/{*path}", {
                 let root = r.clone();
                 get(move |req: Request| {
@@ -86,6 +100,61 @@ async fn serve_src_thumb(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Res
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
     serve_static(&thumb).await
+}
+
+async fn serve_src_frame(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {
+    let root_path = root.read().unwrap().clone();
+    let rel = strip_prefix(req.uri().path(), "/frames");
+    let decoded = url_decode(rel.trim_start_matches('/'));
+    let seconds = req
+        .uri()
+        .query()
+        .and_then(|q| {
+            q.split('&').find_map(|part| {
+                let (k, v) = part.split_once('=')?;
+                if k == "t" {
+                    v.parse::<f64>().ok()
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or(0.0);
+    let Some(src) = safe_join(&root_path.join("src"), &decoded) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if !src.exists() || !src.is_file() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let frame = tokio::task::spawn_blocking(move || {
+        crate::services::thumbnail::ensure_frame_thumbnail(&root_path, &src, &decoded, seconds)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+    serve_static(&frame).await
+}
+
+async fn serve_src_filmstrip(
+    root: Arc<RwLock<PathBuf>>,
+    req: Request,
+) -> Result<Response, StatusCode> {
+    let root_path = root.read().unwrap().clone();
+    let rel = strip_prefix(req.uri().path(), "/filmstrips");
+    let decoded = url_decode(rel.trim_start_matches('/'));
+    let Some(src) = safe_join(&root_path.join("src"), &decoded) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if !src.exists() || !src.is_file() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let strip = tokio::task::spawn_blocking(move || {
+        crate::services::filmstrip::ensure_filmstrip(&root_path, &src, &decoded)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+    serve_static(&strip.path).await
 }
 
 async fn serve_out(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {

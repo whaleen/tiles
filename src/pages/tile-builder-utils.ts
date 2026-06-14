@@ -105,6 +105,7 @@ export type TileTimelineEntry = {
 export type TileTimeline = {
   summary: string;
   entries: TileTimelineEntry[];
+  totalSeconds: number;
 };
 
 export type TimelineFile = {
@@ -126,6 +127,7 @@ export function buildTileTimeline({
   globalMaxDuration,
   maxTotalDuration,
   folderOrders,
+  blankAfterEnd = false,
 }: {
   tileCount: number;
   folders: string[];
@@ -138,6 +140,7 @@ export function buildTileTimeline({
   globalMaxDuration?: number | null;
   maxTotalDuration?: number | null;
   folderOrders?: Record<string, string[]>;
+  blankAfterEnd?: boolean;
 }): TileTimeline {
   const cappedTotal = asPositiveNumber(maxTotalDuration);
   const previewLimit =
@@ -250,8 +253,10 @@ export function buildTileTimeline({
         hasRenderableInput = pickedLimited.length > 0;
         unknownDurationCount = pickedLimited.filter((file) => file.duration === null).length;
         totalUnknownDurations += unknownDurationCount;
-        const unknownDurationHint =
-          clipLimit ?? cappedTotal ?? asPositiveNumber(setting.image_duration) ?? 5;
+        // Missing frontend metadata should not turn a clip-duration cap into an
+        // estimated clip length. Use a small fallback; the renderer probes exact
+        // durations at render time.
+        const unknownDurationHint = asPositiveNumber(setting.image_duration) ?? 5;
         seconds = calculateVideoTimelineDuration(
           pickedLimited,
           speed,
@@ -280,6 +285,7 @@ export function buildTileTimeline({
     return {
       summary: "Assign folders to see timeline estimates.",
       entries,
+      totalSeconds: 0,
     };
   }
 
@@ -287,53 +293,98 @@ export function buildTileTimeline({
   const shortest = Math.min(...entries.map((entry) => entry.seconds), longest);
   const fixed = asPositiveNumber(maxTotalDuration);
   const loopsEnabled =
-    outputLengthPolicy !== "shortest" && sourceRepeatPolicy === "allow";
-  const rendererDuration =
-    loopsEnabled
-      ? outputLengthPolicy === "fixed" && fixed
-        ? fixed
-        : longest
-      : outputLengthPolicy === "shortest"
+    !blankAfterEnd && outputLengthPolicy !== "shortest" && sourceRepeatPolicy === "allow";
+
+  // Mirror the renderer's target-duration math (run_tile in cli/src/main.rs):
+  // policy target, capped by max-total, then — when clips can't be looped to
+  // fill — clamped to the shortest tile. That clamp is the frozen-tile fix:
+  // longer tiles are trimmed to the output length rather than holding their
+  // last frame.
+  let rendererDuration =
+    outputLengthPolicy === "shortest"
       ? shortest
       : outputLengthPolicy === "fixed" && fixed
         ? fixed
         : longest;
+  if (outputLengthPolicy !== "fixed" && fixed) {
+    rendererDuration = Math.min(rendererDuration, fixed);
+  }
+  if (!loopsEnabled && !blankAfterEnd) {
+    rendererDuration = Math.min(rendererDuration, shortest);
+  }
+
   const likelyFailCount = entries.filter(
     (entry) => entry.folderLabel !== "(unassigned)" && !entry.hasRenderableInput
   ).length;
+
+  const middle = blankAfterEnd
+    ? " Shorter tiles go blank after their clips end."
+    : loopsEnabled
+      ? " Compositor looping is enabled (allow reuse), so all tiles fill the full output."
+      : sourceRepeatPolicy !== "allow"
+        ? ` No clip reuse, so the output runs to the shortest tile (${formatDurationSeconds(rendererDuration)}); longer tiles are trimmed.`
+        : ` Output is trimmed to the shortest tile (${formatDurationSeconds(rendererDuration)}).`;
+  const tail = `${likelyFailCount > 0 ? ` Render likely fails: ${likelyFailCount} tile(s) have no source clips after filters/policies.` : ""}${totalUnknownDurations > 0 ? ` Estimate uses fallback duration for ${totalUnknownDurations} clip(s) missing metadata.` : ""}`;
   const summary =
     longest > 0
-      ? `Output policy: ${outputLengthPolicy}. Renderer target is ${formatDurationSeconds(rendererDuration)}.${loopsEnabled ? " Compositor looping is enabled (allow reuse), so all tiles can fill the full output." : ` Full-coverage target is ${formatDurationSeconds(longest)} (longest tile). Tiles below 100% may drop early.`}${likelyFailCount > 0 ? ` Render likely fails: ${likelyFailCount} tile(s) have no source clips after filters/policies.` : ""}${totalUnknownDurations > 0 ? ` Estimate uses fallback duration for ${totalUnknownDurations} clip(s) missing metadata.` : ""}`
+      ? `Output policy: ${outputLengthPolicy}. Renderer target is ${formatDurationSeconds(rendererDuration)}.${middle}${tail}`
       : "Projected output length is 0:00. Check folder assignment, tile mode, and duration limits.";
+
+  if (blankAfterEnd) {
+    return {
+      summary,
+      totalSeconds: rendererDuration,
+      entries: entries.map((entry) => ({
+        ...entry,
+        percent: rendererDuration > 0 ? Math.min(100, (entry.seconds / rendererDuration) * 100) : 0,
+        valueLabel: formatDurationSeconds(entry.seconds),
+        dropsEarly: entry.hasRenderableInput && entry.seconds < rendererDuration - 0.05,
+        shortByLabel:
+          entry.hasRenderableInput && entry.seconds < rendererDuration - 0.05
+            ? `blank after ${formatDurationSeconds(entry.seconds)}`
+            : undefined,
+      })),
+    };
+  }
 
   if (loopsEnabled) {
     return {
       summary,
+      totalSeconds: rendererDuration,
       entries: entries.map((entry) => ({
         ...entry,
         percent: 100,
-        valueLabel: `${formatDurationSeconds(entry.seconds)} unique`,
+        valueLabel: formatDurationSeconds(rendererDuration),
         dropsEarly: false,
         shortByLabel: undefined,
       })),
     };
   }
 
+  // No looping: output ends at `rendererDuration` and every tile is at least
+  // that long, so nothing freezes — longer tiles are trimmed. Empty tiles
+  // (no clips) still fail the render, so flag those.
   return {
     summary,
-    entries: entries.map((entry) => ({
-      ...entry,
-      percent: longest > 0 ? (entry.seconds / longest) * 100 : 0,
-      valueLabel:
-        longest > 0
-          ? `${formatDurationSeconds(entry.seconds)} (${Math.round((entry.seconds / longest) * 100)}%)`
-          : formatDurationSeconds(entry.seconds),
-      dropsEarly: longest > 0 && entry.seconds < longest,
-      shortByLabel:
-        longest > 0 && entry.seconds < longest
-          ? `-${formatDurationSeconds(longest - entry.seconds)}`
-          : undefined,
-    })),
+    totalSeconds: rendererDuration,
+    entries: entries.map((entry) => {
+      if (!entry.hasRenderableInput) {
+        return {
+          ...entry,
+          percent: 0,
+          valueLabel: "no clips",
+          dropsEarly: true,
+          shortByLabel: undefined,
+        };
+      }
+      return {
+        ...entry,
+        percent: 100,
+        valueLabel: formatDurationSeconds(rendererDuration),
+        dropsEarly: false,
+        shortByLabel: undefined,
+      };
+    }),
   };
 }
 
@@ -363,7 +414,9 @@ function listFolderFiles(
     }));
 
   if (orderArray && orderArray.length > 0) {
-    const orderIndex = new Map(orderArray.map((name, i) => [name, i]));
+    const orderIndex = new Map(
+      orderArray.map((entry, i) => [entry.split("/").pop() ?? entry, i])
+    );
     items.sort((a, b) => {
       const aName = a.relPath.split("/").pop() ?? a.relPath;
       const bName = b.relPath.split("/").pop() ?? b.relPath;
@@ -596,6 +649,38 @@ function isImagePath(path: string) {
   );
 }
 
+/**
+ * The ordered video clips for a tile's folder, matching how the renderer
+ * sequences them: saved order first (by file name), then any unlisted clips
+ * alphabetically. Used by the tile-builder timeline strip so what you drag
+ * matches what renders.
+ */
+export function orderedFolderVideos(
+  videos: VideoEntry[],
+  folder: string,
+  orderArray?: string[]
+): VideoEntry[] {
+  const items = videos.filter(
+    (v) =>
+      (v.folder === folder || v.folder.startsWith(`${folder}/`)) &&
+      isVideoPath(v.rel_path)
+  );
+  if (orderArray && orderArray.length > 0) {
+    const orderIndex = new Map(
+      orderArray.map((entry, i) => [entry.split("/").pop() ?? entry, i])
+    );
+    return [...items].sort((a, b) => {
+      const ai = orderIndex.get(a.name);
+      const bi = orderIndex.get(b.name);
+      if (ai !== undefined && bi !== undefined) return ai - bi;
+      if (ai !== undefined) return -1;
+      if (bi !== undefined) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }
+  return [...items].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export function formatDurationSeconds(seconds: number) {
   if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
   const total = Math.round(seconds);
@@ -619,6 +704,54 @@ export function defaultTileSetting(): TileSettingEntry {
     use_landscape: false,
     max_duration: null,
   };
+}
+
+/** A fresh, empty composition — mirrors the backend `default_tile_settings()`. */
+export function defaultTileSettings(): TileSettings {
+  return {
+    layout_code: "2x1",
+    crop_mode: "crop",
+    layout_mode: null,
+    layout_rects: [],
+    layout_tree: null,
+    render_mode: null,
+    output_mode: null,
+    no_overwrite: true,
+    tile_folders: [],
+    audio_enabled: false,
+    audio_tiles: [],
+    audio_tile: null,
+    max_total_duration: null,
+    max_duration: null,
+    distribution_mode: null,
+    tile_settings: [],
+    timeline_clips: [],
+    sizing_mode: null,
+    canvas_width: 1920,
+    canvas_height: 1080,
+    padding: 0,
+    bg_color: "000000",
+    no_repeat: false,
+    output_length_policy: "longest",
+    source_repeat_policy: "allow",
+    mode: "edit",
+  };
+}
+
+/**
+ * A composition's mode: the explicit `mode` flag, or — for comps saved before
+ * the flag existed — inferred from whether any generative setting is active.
+ * Must mirror `resolve_composition_mode` in cli/src/main.rs.
+ */
+export function resolveCompositionMode(
+  s: TileSettings
+): "edit" | "randomized" {
+  if (s.mode === "edit" || s.mode === "randomized") return s.mode;
+  const generative =
+    (!!s.distribution_mode && s.distribution_mode !== "none") ||
+    (!!s.source_repeat_policy && s.source_repeat_policy !== "allow") ||
+    (!!s.output_length_policy && s.output_length_policy !== "longest");
+  return generative ? "randomized" : "edit";
 }
 
 // --- Layout tree ---

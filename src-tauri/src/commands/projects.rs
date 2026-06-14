@@ -97,6 +97,9 @@ pub fn put_project_meta(
         cover_image_rel,
         description,
         tags,
+        // Composition activeness is owned by the composition commands; never let
+        // the project-meta editor clobber it.
+        active_composition: read_project_meta(&root, &name).active_composition,
     };
     write_project_meta(&root, &name, &updated)
 }
@@ -122,11 +125,11 @@ fn is_valid_project_name(name: &str) -> bool {
     name.chars().all(|c| !c.is_control())
 }
 
-fn meta_path(root: &StdPath, name: &str) -> std::path::PathBuf {
+pub(crate) fn meta_path(root: &StdPath, name: &str) -> std::path::PathBuf {
     root.join("src").join(name).join(".tiles-project.json")
 }
 
-fn read_project_meta(root: &StdPath, name: &str) -> ProjectMeta {
+pub(crate) fn read_project_meta(root: &StdPath, name: &str) -> ProjectMeta {
     let path = meta_path(root, name);
     let content = match std::fs::read_to_string(&path) {
         Ok(v) => v,
@@ -135,7 +138,11 @@ fn read_project_meta(root: &StdPath, name: &str) -> ProjectMeta {
     serde_json::from_str::<ProjectMeta>(&content).unwrap_or_else(|_| default_meta())
 }
 
-fn write_project_meta(root: &StdPath, name: &str, meta: &ProjectMeta) -> Result<(), String> {
+pub(crate) fn write_project_meta(
+    root: &StdPath,
+    name: &str,
+    meta: &ProjectMeta,
+) -> Result<(), String> {
     let path = meta_path(root, name);
     let json = serde_json::to_string_pretty(meta).map_err(|e| e.to_string())?;
     std::fs::write(path, json).map_err(|e| e.to_string())
@@ -147,6 +154,7 @@ fn default_meta() -> ProjectMeta {
         cover_image_rel: None,
         description: None,
         tags: Vec::new(),
+        active_composition: None,
     }
 }
 

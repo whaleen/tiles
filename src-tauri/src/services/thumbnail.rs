@@ -24,6 +24,38 @@ pub fn ensure_thumbnail(root: &Path, input: &Path, rel: &str) -> Option<PathBuf>
     ensure_thumbnail_with_status(root, input, rel).map(|result| result.path().to_path_buf())
 }
 
+pub fn ensure_frame_thumbnail(root: &Path, input: &Path, rel: &str, seconds: f64) -> Option<PathBuf> {
+    if !input.exists() || !input.is_file() {
+        return None;
+    }
+    if is_image_file(input) {
+        return Some(input.to_path_buf());
+    }
+    if !is_video_file(input) {
+        return None;
+    }
+    let mtime = input
+        .metadata()
+        .and_then(|m| m.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let frame_tenths = (seconds.max(0.0) * 10.0).round() as u64;
+    let frame_path = frame_cache_path(root, rel, mtime, frame_tenths);
+    if frame_path.exists() {
+        return Some(frame_path);
+    }
+    if let Some(parent) = frame_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if generate_frame_thumbnail(input, &frame_path, root, frame_tenths as f64 / 10.0) {
+        Some(frame_path)
+    } else {
+        None
+    }
+}
+
 pub fn ensure_thumbnail_with_status(
     root: &Path,
     input: &Path,
@@ -69,14 +101,30 @@ fn thumb_cache_path(root: &Path, rel: &str, mtime: u64) -> PathBuf {
         .join(format!("{hash:x}.jpg"))
 }
 
+fn frame_cache_path(root: &Path, rel: &str, mtime: u64, frame_tenths: u64) -> PathBuf {
+    let mut hasher = DefaultHasher::new();
+    rel.hash(&mut hasher);
+    mtime.hash(&mut hasher);
+    frame_tenths.hash(&mut hasher);
+    let hash = hasher.finish();
+    root.join("outputs")
+        .join("tui-thumbs")
+        .join("frames")
+        .join(format!("{hash:x}.jpg"))
+}
+
 fn generate_thumbnail(input: &Path, output: &Path, root: &Path) -> bool {
     let duration = get_video_duration(input, root).unwrap_or(0.0);
     let mid = if duration > 0.0 { duration / 2.0 } else { 0.0 };
-    let mid_str = format!("{mid:.3}");
+    generate_frame_thumbnail(input, output, root, mid)
+}
+
+fn generate_frame_thumbnail(input: &Path, output: &Path, root: &Path, seconds: f64) -> bool {
+    let at = format!("{:.3}", seconds.max(0.0));
     let out = Command::new("ffmpeg")
-        .args(["-ss", &mid_str, "-i"])
+        .args(["-ss", &at, "-i"])
         .arg(input)
-        .args(["-frames:v", "1", "-q:v", "4", "-vf", "scale=320:-1", "-y"])
+        .args(["-frames:v", "1", "-q:v", "4", "-vf", "scale=960:-1", "-y"])
         .arg(output)
         .current_dir(root)
         .output();

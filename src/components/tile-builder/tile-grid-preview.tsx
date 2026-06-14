@@ -1,4 +1,4 @@
-import React, { useState, type ReactNode } from "react";
+import React, { useState, useRef, useEffect, type ReactNode } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Input } from "@/components/ui/input";
 import {
@@ -33,11 +33,40 @@ import { Switch } from "@/components/ui/switch";
 import { layoutGrids, buildGrid } from "./layout-grids";
 import type { TileSettingEntry } from "@/types";
 
+export type TilePlayback = {
+  src: string;
+  /** The clip's start in timeline seconds. */
+  clipStart: number;
+  /** The clip's trim-in/source start in media seconds. */
+  sourceStart: number;
+  /** Exact source time for the current playhead, used for manual scrubbing. */
+  sourceTime: number;
+  /** Server-rendered frame for reliable paused/scrub preview. */
+  frameSrc: string;
+  rate: number;
+  poster?: string;
+  /** Filmstrip sprite for instant scrub (cell blit instead of a video seek). */
+  filmstrip?: {
+    url: string;
+    frameCount: number;
+    columns: number;
+    frameWidth: number;
+    frameHeight: number;
+    duration: number;
+  };
+};
+
 interface TileGridPreviewProps {
   layoutCode: string;
   tileCount: number;
   folders: string[];
   folderThumbs?: Record<string, string>;
+  tileThumbs?: Record<number, string | null>;
+  /** Per-tile live video for playback/scrub. null = blank region; absent = fall back to thumb. */
+  tileVideos?: Record<number, TilePlayback | null>;
+  playing?: boolean;
+  /** Live playhead (seconds), read imperatively so playback doesn't re-render. */
+  playheadRef?: React.MutableRefObject<number>;
   cropMode?: string | null;
   tileSettings?: TileSettingEntry[];
   onPickTile?: (index: number) => void;
@@ -216,11 +245,181 @@ const CropTileWrapper = React.forwardRef<HTMLDivElement, CropTileWrapperProps>(
   }
 );
 
+/**
+ * A single tile's live video, slaved to the timeline playhead. The page passes
+ * the active clip's source + the source-time the playhead maps to; this seeks /
+ * plays / pauses to follow it. Muted (preview is visual; audio is an export
+ * concern). Drift is corrected only past a threshold so playback stays smooth.
+ */
+function TilePlaybackVideo({
+  src,
+  clipStart,
+  sourceStart,
+  rate,
+  filmstrip,
+  playing,
+  playheadRef,
+  objectFit,
+  objectPosition,
+}: TilePlayback & {
+  playing: boolean;
+  playheadRef?: React.MutableRefObject<number>;
+  objectFit: React.CSSProperties["objectFit"];
+  objectPosition: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stripImgRef = useRef<HTMLImageElement | null>(null);
+  const stripReadyRef = useRef(false);
+
+  // Load the clip's filmstrip sprite once; the rAF blits the cell under the
+  // playhead during scrub — instant, no video seek/decode (which WebKit can't
+  // repaint while paused anyway).
+  useEffect(() => {
+    stripReadyRef.current = false;
+    stripImgRef.current = null;
+    const url = filmstrip?.url;
+    if (!url) return;
+    // NB: `Image` is shadowed by the lucide-react icon import above, so build the
+    // element explicitly rather than `new Image()`.
+    const img = document.createElement("img");
+    img.onload = () => {
+      stripReadyRef.current = true;
+    };
+    img.onerror = () => {
+      stripReadyRef.current = false;
+    };
+    img.src = url;
+    stripImgRef.current = img;
+    return () => {
+      img.onload = null;
+      img.onerror = null;
+    };
+  }, [filmstrip?.url]);
+
+  // Blit the filmstrip cell for a source time. Returns false if unavailable so
+  // the caller can fall back to seeking the video.
+  const drawFilmstripCell = (sourceTime: number) => {
+    const c = canvasRef.current;
+    const img = stripImgRef.current;
+    if (!c || !img || !stripReadyRef.current || !filmstrip) return false;
+    const { frameCount, columns, frameWidth, frameHeight, duration } = filmstrip;
+    let idx = Math.floor((sourceTime / Math.max(0.001, duration)) * frameCount);
+    idx = Math.max(0, Math.min(frameCount - 1, idx));
+    const col = idx % columns;
+    const row = Math.floor(idx / columns);
+    if (c.width !== frameWidth || c.height !== frameHeight) {
+      c.width = frameWidth;
+      c.height = frameHeight;
+    }
+    const ctx = c.getContext("2d");
+    if (!ctx) return false;
+    try {
+      ctx.drawImage(
+        img,
+        col * frameWidth,
+        row * frameHeight,
+        frameWidth,
+        frameHeight,
+        0,
+        0,
+        frameWidth,
+        frameHeight
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Blit the video's *decoded* frame onto the canvas (used for playback, and as
+  // a scrub fallback when the filmstrip isn't ready).
+  const draw = () => {
+    const v = videoRef.current;
+    const c = canvasRef.current;
+    if (!v || !c || v.readyState < 2 || v.videoWidth === 0) return;
+    if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+    }
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    try {
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+    } catch {
+      // frame not ready — the next rAF tick will draw it
+    }
+  };
+
+  // Drive the (hidden) video off the playhead and continuously blit to the
+  // canvas: free-run while playing, seek-and-draw while paused (scrub). Only one
+  // seek in flight at a time so WebKit can finish (and decode) each one.
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      const v = videoRef.current;
+      if (v) {
+        const r = rate || 1;
+        if (v.playbackRate !== r) v.playbackRate = r;
+        const target = Math.max(
+          0,
+          sourceStart + ((playheadRef?.current ?? 0) - clipStart) * r
+        );
+        if (playing) {
+          if (v.paused) void v.play().catch(() => {});
+          if (!v.seeking && Number.isFinite(target) && Math.abs(v.currentTime - target) > 0.3) {
+            v.currentTime = target;
+          }
+          draw();
+        } else {
+          if (!v.paused) v.pause();
+          // Scrub: instant filmstrip cell; fall back to a video seek if the
+          // sprite isn't ready yet.
+          if (!drawFilmstripCell(target)) {
+            if (!v.seeking && Number.isFinite(target) && Math.abs(v.currentTime - target) > 0.02) {
+              v.currentTime = target;
+            }
+            draw();
+          }
+        }
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, rate, clipStart, sourceStart, src, playheadRef, filmstrip]);
+
+  return (
+    <div className="relative h-full w-full">
+      {/* opacity-0 (not display:none) so the video still decodes/seeks */}
+      <video
+        ref={videoRef}
+        src={src}
+        muted
+        playsInline
+        preload="auto"
+        onSeeked={draw}
+        onLoadedData={draw}
+        className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
+      />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 h-full w-full"
+        style={{ objectFit, objectPosition }}
+      />
+    </div>
+  );
+}
+
 export function TileGridPreview({
   layoutCode,
   tileCount,
   folders,
   folderThumbs,
+  tileThumbs,
+  tileVideos,
+  playing,
+  playheadRef,
   cropMode,
   tileSettings,
   onPickTile,
@@ -266,7 +465,11 @@ export function TileGridPreview({
 
   const renderTileContent = (tileIndex: number) => {
     const folder = folders[tileIndex];
-    const thumb = folder ? folderThumbs?.[folder] : null;
+    const hasPlayback =
+      tileVideos && Object.prototype.hasOwnProperty.call(tileVideos, tileIndex);
+    const playback = hasPlayback ? tileVideos?.[tileIndex] : null;
+    const hasPlayheadThumb = tileThumbs && Object.prototype.hasOwnProperty.call(tileThumbs, tileIndex);
+    const thumb = hasPlayheadThumb ? tileThumbs?.[tileIndex] : folder ? folderThumbs?.[folder] : null;
     const cropPosition = tileSettings?.[tileIndex]?.crop_position;
     const position =
       cropPosition === "top"
@@ -285,7 +488,24 @@ export function TileGridPreview({
       position,
       cropPosition: cropPosition || "center",
       setting: tileSettings?.[tileIndex] || defaultSetting,
-      node: thumb ? (
+      node: playback ? (
+        <TilePlaybackVideo
+          src={playback.src}
+          clipStart={playback.clipStart}
+          sourceStart={playback.sourceStart}
+          rate={playback.rate}
+          filmstrip={playback.filmstrip}
+          poster={playback.poster}
+          playing={!!playing}
+          playheadRef={playheadRef}
+          objectFit={fit}
+          objectPosition={position}
+        />
+      ) : hasPlayback ? (
+        <div className="flex h-full w-full items-center justify-center bg-background text-[10px] font-medium text-muted-foreground/70">
+          blank
+        </div>
+      ) : thumb ? (
         <img
           src={thumb}
           alt={folder}
@@ -293,6 +513,10 @@ export function TileGridPreview({
           style={{ objectFit: fit, objectPosition: position }}
           loading="lazy"
         />
+      ) : hasPlayheadThumb ? (
+        <div className="flex h-full w-full items-center justify-center bg-background text-[10px] font-medium text-muted-foreground/70">
+          blank
+        </div>
       ) : (
         <div className="bg-muted/60 text-muted-foreground flex items-center justify-center text-xs font-medium w-full h-full">
           <div className="text-center">
@@ -307,8 +531,7 @@ export function TileGridPreview({
   };
 
   return (
-    <div>
-      <h3 className="text-sm font-medium mb-2">Preview</h3>
+    <div className="h-full">
       {!layoutGrids[layoutCode] && (
         <div className="text-xs text-muted-foreground mb-2">
           Auto layout for {layoutCode}

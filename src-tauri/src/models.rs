@@ -26,6 +26,17 @@ pub struct ProjectMeta {
     pub description: Option<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Name of the composition the tile builder last had open for this project.
+    #[serde(default)]
+    pub active_composition: Option<String>,
+}
+
+/// One saved tile-builder composition (a named `TileSettings` document).
+#[derive(Debug, Serialize)]
+pub struct CompositionSummary {
+    pub name: String,
+    pub modified_epoch: u64,
+    pub active: bool,
 }
 
 // --- Videos ---
@@ -47,7 +58,29 @@ pub struct VideoInfo {
     pub height: u32,
 }
 
+/// Sprite-sheet metadata for a clip's scrub filmstrip. The image is served at
+/// `<media>/filmstrips/<rel_path>`; cell `i` covers source time
+/// `(i / frame_count) * duration`.
+#[derive(Debug, Serialize)]
+pub struct Filmstrip {
+    pub frame_count: u32,
+    pub columns: u32,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub duration: f64,
+}
+
 // --- Settings ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimelineClipEntry {
+    pub id: String,
+    pub rel_path: String,
+    #[serde(default)]
+    pub trim_in: Option<f64>,
+    #[serde(default)]
+    pub trim_out: Option<f64>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TileSettings {
@@ -86,6 +119,8 @@ pub struct TileSettings {
     #[serde(default)]
     pub tile_settings: Vec<TileSettingEntry>,
     #[serde(default)]
+    pub timeline_clips: Vec<Vec<TimelineClipEntry>>,
+    #[serde(default)]
     pub sizing_mode: Option<String>,
     #[serde(default)]
     pub canvas_width: Option<u32>,
@@ -101,6 +136,10 @@ pub struct TileSettings {
     pub output_length_policy: Option<String>,
     #[serde(default)]
     pub source_repeat_policy: Option<String>,
+    /// "edit" (deterministic, default) or "randomized" (generative knobs on).
+    /// Absent on comps saved before the flag — inferred from generative fields.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

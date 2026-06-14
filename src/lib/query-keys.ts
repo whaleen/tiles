@@ -33,4 +33,9 @@ export const queryKeys = {
     project: (project?: string) => ["settings", project] as const,
     layouts: ["settings", "layouts"] as const,
   },
+  compositions: {
+    list: (project: string) => ["compositions", project] as const,
+    get: (project: string, name: string) =>
+      ["compositions", project, name] as const,
+  },
 };

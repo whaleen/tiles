@@ -142,6 +142,22 @@ export function videoUrl(relPath: string): string {
   return withCache(`streamfile://localhost/${encodePath(relPath)}`);
 }
 
+export function previewVideoUrl(relPath: string): string {
+  // Timeline playback preview uses the embedded HTTP media server.
+  return withCache(`${_mediaBase}/files/${encodePath(relPath)}`);
+}
+
+export function frameUrl(relPath: string, seconds: number): string {
+  const tenth = Math.max(0, Math.round(seconds * 10) / 10);
+  return withCache(`${_mediaBase}/frames/${encodePath(relPath)}?t=${tenth.toFixed(1)}`);
+}
+
+export function filmstripUrl(relPath: string): string {
+  // Scrub filmstrip sprite served by the embedded HTTP media server (an image,
+  // so http is fine in WKWebView — unlike <video>).
+  return withCache(`${_mediaBase}/filmstrips/${encodePath(relPath)}`);
+}
+
 export function outThumbUrl(relPath: string): string {
   return withCache(`${_mediaBase}/outthumbs/${encodePath(relPath)}`);
 }

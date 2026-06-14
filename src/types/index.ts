@@ -15,6 +15,13 @@ export interface ProjectMeta {
   cover_image_rel?: string | null;
   description?: string | null;
   tags: string[];
+  active_composition?: string | null;
+}
+
+export interface CompositionSummary {
+  name: string;
+  modified_epoch: number;
+  active: boolean;
 }
 
 export interface VideoEntry {
@@ -41,6 +48,13 @@ export interface TileSettingEntry {
   image_duration: number;
   use_landscape: boolean;
   max_duration?: number | null;
+}
+
+export interface TimelineClipEntry {
+  id: string;
+  rel_path: string;
+  trim_in?: number | null;
+  trim_out?: number | null;
 }
 
 export interface LayoutRect {
@@ -81,6 +95,7 @@ export interface TileSettings {
   max_duration?: number | null;
   distribution_mode?: string | null;
   tile_settings: TileSettingEntry[];
+  timeline_clips?: TimelineClipEntry[][] | null;
   sizing_mode?: string | null;
   canvas_width?: number | null;
   canvas_height?: number | null;
@@ -89,6 +104,7 @@ export interface TileSettings {
   no_repeat?: boolean | null;
   output_length_policy?: "shortest" | "longest" | "fixed" | null;
   source_repeat_policy?: "allow" | "no_reuse_per_tile" | "no_reuse_global" | null;
+  mode?: "edit" | "randomized" | null;
 }
 
 export interface LayoutInfo {

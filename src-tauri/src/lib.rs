@@ -116,6 +116,8 @@ pub fn run() {
             // videos
             commands::videos::list_videos,
             commands::videos::get_video_info,
+            commands::videos::get_video_durations,
+            commands::videos::get_filmstrip,
             commands::videos::get_transcript,
             commands::videos::rename_media,
             commands::videos::reveal_media,
@@ -134,6 +136,13 @@ pub fn run() {
             // settings
             commands::settings::get_settings,
             commands::settings::put_settings,
+            commands::settings::list_compositions,
+            commands::settings::get_composition,
+            commands::settings::put_composition,
+            commands::settings::rename_composition,
+            commands::settings::delete_composition,
+            commands::settings::get_active_composition,
+            commands::settings::set_active_composition,
             commands::settings::get_modelslab_key,
             commands::settings::set_modelslab_key,
             commands::settings::get_active_provider,

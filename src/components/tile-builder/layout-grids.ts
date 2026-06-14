@@ -1,4 +1,9 @@
 export const layoutGrids: Record<string, { cols: string; rows: string; areas: string[] }> = {
+  "1x1": {
+    cols: "1fr",
+    rows: "1fr",
+    areas: ["1 / 1 / 2 / 2"],
+  },
   "2x1": {
     cols: "1fr 1fr",
     rows: "1fr",
