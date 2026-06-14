@@ -488,6 +488,20 @@ struct TileOptions {
 }
 
 #[derive(Debug, Clone, Default)]
+struct LoadedTimelineClip {
+    rel_path: String,
+    trim_in: Option<f64>,
+    trim_out: Option<f64>,
+}
+
+#[derive(Debug, Clone)]
+struct TileSourceClip {
+    path: PathBuf,
+    trim_in: Option<f64>,
+    trim_out: Option<f64>,
+}
+
+#[derive(Debug, Default, Clone)]
 struct LoadedSettings {
     layout_code: Option<String>,
     crop_mode: Option<String>,
@@ -517,6 +531,8 @@ struct LoadedSettings {
     no_repeat: Option<bool>,
     output_length_policy: Option<String>,
     source_repeat_policy: Option<String>,
+    mode: Option<String>,
+    timeline_clips: Vec<Vec<LoadedTimelineClip>>,
 }
 
 #[derive(Debug, Clone)]
@@ -11957,7 +11973,33 @@ fn run_tile(args: &[OsString]) -> i32 {
     } else {
         opts.output_length_policy.clone()
     };
-    opts.no_repeat = output_length_policy == "shortest" || source_repeat_policy != "allow";
+    // Edit mode is deterministic: play arranged strips in order. Shorter tiles
+    // are padded with blank frames in the final compositor instead of being
+    // looped; the timeline is the source of truth.
+    let composition_mode = resolve_composition_mode(&loaded_settings);
+    let (distribution_mode, source_repeat_policy, output_length_policy) =
+        if composition_mode == "edit" {
+            (
+                "none".to_string(),
+                "allow".to_string(),
+                "longest".to_string(),
+            )
+        } else {
+            (
+                distribution_mode,
+                source_repeat_policy,
+                output_length_policy,
+            )
+        };
+    opts.no_repeat = composition_mode == "edit"
+        || output_length_policy == "shortest"
+        || source_repeat_policy != "allow";
+    if composition_mode == "edit" {
+        // Edit mode length is the longest arranged tile strip. Preview render
+        // modes may limit clips earlier; randomized duration caps do not apply.
+        opts.max_total_duration = None;
+    }
+    println!("Composition mode: {}", composition_mode);
     println!("Output length policy: {}", output_length_policy);
     println!("Source repeat policy: {}", source_repeat_policy);
 
@@ -12084,43 +12126,92 @@ fn run_tile(args: &[OsString]) -> i32 {
                 return 1;
             }
         } else {
-            let (mut base_files, trim_duration) = if let Some(groups) = &distributed {
-                (
-                    groups.get(i).cloned().unwrap_or_default(),
-                    distributed_trim_duration,
-                )
+            let (mut base_files, trim_duration, saved_timeline) = if let Some(saved_clips) =
+                loaded_settings
+                    .timeline_clips
+                    .get(i)
+                    .filter(|clips| !clips.is_empty())
+            {
+                let clips: Vec<TileSourceClip> = saved_clips
+                    .iter()
+                    .filter_map(|clip| {
+                        let path = root.join("src").join(&clip.rel_path);
+                        if path.exists() && path.is_file() {
+                            Some(TileSourceClip {
+                                path,
+                                trim_in: clip.trim_in,
+                                trim_out: clip.trim_out,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                (clips, None, true)
             } else {
-                let source_folder = if use_landscape {
-                    let lf = folder.join("landscape");
-                    if lf.exists() && lf.is_dir() && !get_video_files(&lf).is_empty() {
-                        lf
+                let (mut paths, trim_duration) = if let Some(groups) = &distributed {
+                    (
+                        groups.get(i).cloned().unwrap_or_default(),
+                        distributed_trim_duration,
+                    )
+                } else {
+                    let source_folder = if use_landscape {
+                        let lf = folder.join("landscape");
+                        if lf.exists() && lf.is_dir() && !get_video_files(&lf).is_empty() {
+                            lf
+                        } else {
+                            folder.clone()
+                        }
                     } else {
                         folder.clone()
-                    }
-                } else {
-                    folder.clone()
+                    };
+                    get_video_files_with_trim(&source_folder, tile_max_duration, &root)
                 };
-                get_video_files_with_trim(&source_folder, tile_max_duration, &root)
+                if distributed.is_none() && distribution_mode != "none" {
+                    paths = order_files(paths, &distribution_mode);
+                }
+                paths = apply_source_repeat_policy(
+                    paths,
+                    &source_repeat_policy,
+                    &mut used_sources_global,
+                );
+                paths = limit_videos_by_duration(
+                    &paths,
+                    opts.max_total_duration,
+                    &tile_transition,
+                    tile_transition_duration,
+                    tile_speed,
+                    &root,
+                );
+                (
+                    paths
+                        .into_iter()
+                        .map(|path| TileSourceClip {
+                            path,
+                            trim_in: None,
+                            trim_out: None,
+                        })
+                        .collect(),
+                    trim_duration,
+                    false,
+                )
             };
-            if distributed.is_none() && distribution_mode != "none" {
-                base_files = order_files(base_files, &distribution_mode);
-            }
-            base_files = apply_source_repeat_policy(
-                base_files,
-                &source_repeat_policy,
-                &mut used_sources_global,
-            );
-            base_files = limit_videos_by_duration(
-                &base_files,
-                opts.max_total_duration,
-                &tile_transition,
-                tile_transition_duration,
-                tile_speed,
-                &root,
-            );
             if preview_limit != usize::MAX && base_files.len() > preview_limit {
-                if distribution_mode == "random" || distribution_mode == "shuffle-round-robin" {
-                    base_files = order_files(base_files, &distribution_mode);
+                if !saved_timeline
+                    && (distribution_mode == "random" || distribution_mode == "shuffle-round-robin")
+                {
+                    let ordered_paths = order_files(
+                        base_files.iter().map(|clip| clip.path.clone()).collect(),
+                        &distribution_mode,
+                    );
+                    base_files = ordered_paths
+                        .into_iter()
+                        .map(|path| TileSourceClip {
+                            path,
+                            trim_in: None,
+                            trim_out: None,
+                        })
+                        .collect();
                 }
                 base_files.truncate(preview_limit);
             }
@@ -12176,6 +12267,12 @@ fn run_tile(args: &[OsString]) -> i32 {
             target_duration = target_duration.min(max_total);
         }
     }
+    // Randomized/no-reuse modes can't fill past the shortest tile without
+    // repeating clips, so cap there. Edit mode intentionally keeps the longest
+    // composition duration and pads shorter tiles with blank frames below.
+    if composition_mode != "edit" && opts.no_repeat && shortest_duration.is_finite() {
+        target_duration = target_duration.min(shortest_duration);
+    }
     if target_duration <= 0.0 {
         target_duration = 1.0;
     }
@@ -12205,6 +12302,8 @@ fn run_tile(args: &[OsString]) -> i32 {
         &target_duration,
         &root,
         custom_dims.as_ref().or(adaptive_dims.as_ref()),
+        &tile_durations,
+        composition_mode == "edit",
     );
     println!("[Final] Compositing tiled output...");
     emit_progress(
@@ -13103,6 +13202,7 @@ fn parse_strip_audio_args(args: &[OsString]) -> Result<Option<StripAudioOptions>
 
 fn layout_tile_count(layout: &str) -> Option<usize> {
     match layout {
+        "1x1" => Some(1),
         "2x1" | "1x2" | "pip" => Some(2),
         "2x2" | "4x1" | "1x4" | "1+3" => Some(4),
         "1+2" | "2+1" | "2x2-focus" | "left-big-right-stack" | "top-big-bottom-stack" => Some(3),
@@ -13241,7 +13341,7 @@ fn create_tile_video_simple(
 }
 
 fn create_tile_video_with_options(
-    files: &[PathBuf],
+    files: &[TileSourceClip],
     output: &Path,
     root: &Path,
     transition: &str,
@@ -13259,7 +13359,7 @@ fn create_tile_video_with_options(
 
     // Always normalize to canonical contract (CFR, fixed audio, etc.)
     // This prevents timing drift across tiles and scenarios.
-    for (i, file) in files.iter().enumerate() {
+    for (i, clip) in files.iter().enumerate() {
         let tmp = env::temp_dir().join(format!(
             "tiles_norm_{}_{}_{}.mp4",
             std::process::id(),
@@ -13271,9 +13371,23 @@ fn create_tile_video_with_options(
         ));
 
         let mut pipeline = FFmpegPipeline::new(root);
-        pipeline.cmd.arg("-i").arg(file);
+        if let Some(trim_in) = clip.trim_in.filter(|v| *v > 0.0) {
+            pipeline.cmd.arg("-ss").arg(format!("{trim_in:.6}"));
+        }
+        pipeline.cmd.arg("-i").arg(&clip.path);
 
-        if let Some(trim_dur) = trim_duration {
+        let clip_trim_duration = match (clip.trim_in, clip.trim_out) {
+            (Some(start), Some(end)) if end > start => Some(end - start),
+            (None, Some(end)) if end > 0.0 => Some(end),
+            _ => None,
+        };
+        let effective_trim_duration = match (trim_duration, clip_trim_duration) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+        if let Some(trim_dur) = effective_trim_duration {
             pipeline.set_duration(trim_dur);
         }
 
@@ -13284,7 +13398,7 @@ fn create_tile_video_with_options(
         };
         pipeline.apply_video_params(v_filter);
 
-        if has_audio_stream(file, root) {
+        if has_audio_stream(&clip.path, root) {
             let a_filter = if (speed - 1.0).abs() > 1e-6 {
                 Some(build_atempo_filter(speed))
             } else {
@@ -13297,8 +13411,8 @@ fn create_tile_video_with_options(
 
         if let Some(progress) = progress {
             let file_count = files.len().max(1) as f64;
-            let duration =
-                trim_duration.unwrap_or_else(|| get_video_duration(file, root).unwrap_or(0.0));
+            let duration = effective_trim_duration
+                .unwrap_or_else(|| get_video_duration(&clip.path, root).unwrap_or(0.0));
             pipeline.with_weighted_progress(
                 "Rendering tiles",
                 progress.current,
@@ -13310,13 +13424,13 @@ fn create_tile_video_with_options(
                     "Preparing tile {}/{} from {}",
                     progress.tile_index,
                     progress.tile_count,
-                    file.display()
+                    clip.path.display()
                 ),
             );
         }
 
         if !pipeline.run(&tmp) {
-            eprintln!("error: normalization failed for {}", file.display());
+            eprintln!("error: normalization failed for {}", clip.path.display());
             for p in &intermediate_files {
                 let _ = fs::remove_file(p);
             }
@@ -14103,6 +14217,8 @@ fn build_tiled_command(
     target_duration: &f64,
     root: &Path,
     per_tile_dims: Option<&AdaptiveDimensions>,
+    tile_durations: &[f64],
+    blank_gaps: bool,
 ) -> FFmpegPipeline {
     let mut pipeline = FFmpegPipeline::new(root);
     for p in tile_paths {
@@ -14112,7 +14228,31 @@ fn build_tiled_command(
     let mut filter_parts: Vec<String> = Vec::new();
     let n = tile_paths.len();
 
-    if let Some(ad) = per_tile_dims {
+    if n == 1 {
+        // Single tile: no stacking — scale/crop the one source to fill the canvas.
+        let crop_pos = tile_crop_positions
+            .first()
+            .map(String::as_str)
+            .unwrap_or("center");
+        let cw = make_even(opts.width);
+        let ch = make_even(opts.height);
+        if opts.padding > 0 {
+            let inner = apply_padding_to_tile(0, 0, cw, ch, opts.padding);
+            filter_parts.push(format!(
+                "[0:v]{}[t0]",
+                scale_expr_for_crop_mode_position(inner.w, inner.h, &opts.crop_mode, crop_pos)
+            ));
+            filter_parts.push(format!(
+                "[t0]pad={cw}:{ch}:{}:{}:#{}[outv]",
+                inner.x, inner.y, opts.bg_color
+            ));
+        } else {
+            filter_parts.push(format!(
+                "[0:v]{}[outv]",
+                scale_expr_for_crop_mode_position(cw, ch, &opts.crop_mode, crop_pos)
+            ));
+        }
+    } else if let Some(ad) = per_tile_dims {
         // Adaptive mode: use pre-computed per-tile dimensions with xstack for all layouts
         match opts.layout.as_str() {
             "pip" => {
@@ -14790,6 +14930,29 @@ fn build_tiled_command(
         }
     } // end fixed mode
 
+    if blank_gaps {
+        let mut normalizers = Vec::<String>::new();
+        for i in 0..n {
+            let duration = tile_durations.get(i).copied().unwrap_or(0.0);
+            let gap = (target_duration - duration).max(0.0);
+            let bg = opts.bg_color.trim_start_matches('#');
+            if gap > 0.05 {
+                normalizers.push(format!(
+                    "[{i}:v]setpts=PTS-STARTPTS,tpad=stop_mode=add:stop_duration={gap:.6}:color=0x{bg}[vin{i}]"
+                ));
+            } else {
+                normalizers.push(format!("[{i}:v]setpts=PTS-STARTPTS[vin{i}]"));
+            }
+        }
+        for part in &mut filter_parts {
+            for i in 0..n {
+                *part = part.replace(&format!("[{i}:v]"), &format!("[vin{i}]"));
+            }
+        }
+        normalizers.extend(filter_parts);
+        filter_parts = normalizers;
+    }
+
     let filtered_audio_tiles: Vec<usize> = opts
         .audio_tiles
         .iter()
@@ -15447,7 +15610,69 @@ fn load_settings_json(path: &Path) -> Result<LoadedSettings, String> {
     out.no_repeat = parse_json_bool_value(&content, "no_repeat");
     out.output_length_policy = parse_json_string_value(&content, "output_length_policy");
     out.source_repeat_policy = parse_json_string_value(&content, "source_repeat_policy");
+    out.mode = parse_json_string_value(&content, "mode");
+    out.timeline_clips = parse_timeline_clips(&content);
     Ok(out)
+}
+
+fn parse_timeline_clips(content: &str) -> Vec<Vec<LoadedTimelineClip>> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
+        return Vec::new();
+    };
+    value
+        .get("timeline_clips")
+        .and_then(|v| v.as_array())
+        .map(|tracks| {
+            tracks
+                .iter()
+                .map(|track| {
+                    track
+                        .as_array()
+                        .map(|clips| {
+                            clips
+                                .iter()
+                                .filter_map(|clip| {
+                                    if let Some(rel_path) = clip.as_str() {
+                                        return Some(LoadedTimelineClip {
+                                            rel_path: rel_path.to_string(),
+                                            trim_in: None,
+                                            trim_out: None,
+                                        });
+                                    }
+                                    let rel_path = clip.get("rel_path")?.as_str()?.to_string();
+                                    let trim_in = clip.get("trim_in").and_then(|v| v.as_f64());
+                                    let trim_out = clip.get("trim_out").and_then(|v| v.as_f64());
+                                    Some(LoadedTimelineClip {
+                                        rel_path,
+                                        trim_in,
+                                        trim_out,
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The composition's mode: explicit `mode` field, or inferred for comps saved
+/// before the flag existed (any active generative setting => "randomized").
+fn resolve_composition_mode(s: &LoadedSettings) -> String {
+    if let Some(m) = s.mode.as_deref() {
+        if m == "edit" || m == "randomized" {
+            return m.to_string();
+        }
+    }
+    let generative = matches!(s.distribution_mode.as_deref(), Some(d) if !d.is_empty() && d != "none")
+        || matches!(s.source_repeat_policy.as_deref(), Some(p) if !p.is_empty() && p != "allow")
+        || matches!(s.output_length_policy.as_deref(), Some(p) if !p.is_empty() && p != "longest");
+    if generative {
+        "randomized".to_string()
+    } else {
+        "edit".to_string()
+    }
 }
 
 fn check_ffmpeg_tools(root: &Path) -> bool {
@@ -15573,6 +15798,54 @@ fn get_video_files(folder: &Path) -> Vec<PathBuf> {
         p.file_name()
             .map(|n| n.to_string_lossy().to_lowercase())
             .unwrap_or_default()
+    });
+    apply_folder_video_order(files, folder)
+}
+
+/// Reorder a folder's video files by the user-saved order in `.tiles-folder.json`,
+/// if present. Listed files come first in saved order; any files not in the list
+/// (e.g. newly added) keep their existing alphabetical order at the end.
+fn apply_folder_video_order(mut files: Vec<PathBuf>, folder: &Path) -> Vec<PathBuf> {
+    let path = folder.join(".tiles-folder.json");
+    let Ok(content) = fs::read_to_string(&path) else {
+        return files;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return files;
+    };
+    let order: Vec<String> = value
+        .get("video_order")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    if order.is_empty() {
+        return files;
+    }
+    // Normalize order entries to basenames so legacy files that stored full
+    // rel_paths still match (the canonical key is the file name).
+    let order_names: Vec<String> = order
+        .iter()
+        .map(|s| {
+            Path::new(s)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| s.clone())
+        })
+        .collect();
+    // Stable sort: ranked files by saved index, unlisted files (usize::MAX) keep order.
+    files.sort_by_key(|p| {
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        order_names
+            .iter()
+            .position(|n| n == &name)
+            .unwrap_or(usize::MAX)
     });
     files
 }
