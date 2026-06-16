@@ -2,6 +2,12 @@
 
 Feature source of truth for the tiles Tauri desktop app. Update as features ship, change, or get cut.
 
+## Product Direction
+
+- tiles is a visual macOS video workspace first: users should be able to browse, organize, edit, preview, and render without leaving the app.
+- The `tiles-cli` sidecar is also a long-term agent/API substrate. The goal is not to sell users on fully autonomous video creation; it is to support human-in-the-loop collaboration where agents can inspect project state, propose draft compositions, run previews, and leave reviewable artifacts for the user to accept, modify, or reject.
+- Agent-assisted workflows should be non-destructive by default, composition/draft-oriented, and visible in the app through named drafts, previews, logs, summaries, and approval checkpoints. See [docs/agent-workflows.md](docs/agent-workflows.md).
+
 ## Core Flows
 
 - [x] First launch: workspace picker — user chooses folder (default `~/Movies/tiles`), persisted to prefs
@@ -30,6 +36,7 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 - [x] Local file import — copy videos from the filesystem into any project folder via the Import page or the folder context menu ("Import files here")
 - [x] URL import — download videos via yt-dlp (YouTube, Vimeo, X, etc.) from the Import page
 - [ ] Workspace history — quick-switch between recent workspaces
+- [ ] Agent-assisted project workflows — safe project/CLI/API surface for agents to create draft compositions, run preview renders, summarize changes, and hand results back to the human for review
 
 ## Non-Functional Requirements
 
@@ -38,6 +45,11 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 - App distributed via Homebrew: `brew install whaleen/tap/tiles`
 - In-app updater via Tauri updater plugin + `tiles-latest.json` manifest in homebrew tap
 - App is not notarized — first-launch Gatekeeper bypass required
+
+## Planned Direction
+
+- Agent-assisted workflows: expose enough structured project state and safe mutation commands for agents to collaborate on user projects through drafts/previews rather than opaque GUI automation.
+- Review-first composition branching: agent output should usually land in a separate named composition or output preview before becoming the active edit.
 
 ## Nice To Have
 

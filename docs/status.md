@@ -2,6 +2,10 @@
 
 Current feature surface for the tiles desktop app.
 
+## Product Direction: Agent-Assisted Workflows
+
+A major planned direction is human-in-the-loop agent collaboration. The app should remain the primary visual editing surface, while the structured workspace and `tiles-cli`/API layer let agents inspect projects, create reviewable draft compositions, run preview renders, and summarize changes for user approval. This is not yet a shipped end-user feature. See [agent-workflows.md](agent-workflows.md).
+
 ## App Pages
 
 ### Library
@@ -66,6 +70,12 @@ See [actions.md](actions.md) for descriptions and parameters.
 ## Action Progress
 
 Actions emit structured progress as stdout lines prefixed with `TILES_PROGRESS `. Tauri streams action stdout/stderr, parses the JSON payload into `RunningAction.progress`, and the frontend polls `list_running_actions` to update the active job cards. Long `FFmpegPipeline` encodes now attach ffmpeg `-progress pipe:2` reporting where durations are known, roll the in-file percent into the overall action percent, and include a short per-file percent/ETA in the progress message. Non-ffmpeg work still reports per input file, URL, tile, or stage.
+
+## Planned / Not Yet Shipped
+
+- Agent-assisted project workflows: safe project inspection/mutation APIs, draft composition branching, preview rendering, change summaries, and explicit human approval checkpoints.
+- Workspace history: quick-switch between recent workspaces.
+- Tile builder transition preview.
 
 ## In-App Updates
 

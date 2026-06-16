@@ -26,6 +26,11 @@ Then launch tiles normally from your Applications folder.
 - Run tiled renders and other actions directly from the UI
 - Output explorer and log viewer
 - In-app updates — new versions prompt automatically on launch
+- Planned direction: agent-assisted, human-in-the-loop project workflows where agents can create reviewable drafts/previews through the structured workspace and CLI/API substrate
+
+## Product Direction
+
+tiles is intended to stay a normal visual video app first. A major planned direction is agent-assisted editing: agents should be able to inspect a workspace, propose draft compositions, run preview renders, and summarize changes while the human remains in control of accepting or modifying the result. See [docs/agent-workflows.md](docs/agent-workflows.md).
 
 ## Requirements
 
