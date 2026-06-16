@@ -34,7 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Pause, Play, Settings2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Pause, Play, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import type {
   TileSettings,
@@ -92,6 +92,17 @@ export function TileBuilderPage({ project }: { project?: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [addClipTileIndex, setAddClipTileIndex] = useState<number | null>(null);
+  // Preview-only: tiles temporarily hidden while editing. Not persisted, not
+  // part of settings/export — resets on reload/project switch.
+  const [hiddenTiles, setHiddenTiles] = useState<Set<number>>(new Set());
+  const toggleTileHidden = (tileIndex: number) => {
+    setHiddenTiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(tileIndex)) next.delete(tileIndex);
+      else next.add(tileIndex);
+      return next;
+    });
+  };
   const [selectedClip, setSelectedClip] = useState<{ tileIndex: number; clipId: string } | null>(null);
   const timelineScrubbing = useRef(false);
   const playheadRef = useRef(0);
@@ -856,6 +867,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
               onUpdateTileSetting={handleUpdateTileSetting}
               onToggleTileAudio={handleToggleTileAudio}
               audioTiles={safeSettings.audio_tiles}
+              hiddenTiles={hiddenTiles}
               selectedTileIndex={pickerTileIndex}
               canvasWidth={safeSettings.canvas_width ?? 1920}
               canvasHeight={safeSettings.canvas_height ?? 1080}
@@ -937,7 +949,9 @@ export function TileBuilderPage({ project }: { project?: string }) {
                         return (
                           <div
                             key={tile.tileIndex}
-                            className="flex h-20 flex-col justify-center gap-0.5 border-b px-2"
+                            className={`flex h-20 flex-col justify-center gap-0.5 border-b px-2 ${
+                              hiddenTiles.has(tile.tileIndex) ? "opacity-40" : ""
+                            }`}
                           >
                             <div className="text-xs font-medium text-foreground">
                               Tile {tile.tileIndex + 1}
@@ -953,16 +967,35 @@ export function TileBuilderPage({ project }: { project?: string }) {
                               <div className="font-mono text-[10px] text-muted-foreground">
                                 {formatDurationSeconds(tile.trackSeconds)}
                               </div>
-                              {tile.folder && (
+                              {/* Per-lane button footer — gains an audio sub-strip toggle later */}
+                              <div className="flex items-center gap-1">
                                 <button
                                   type="button"
-                                  className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                                  onClick={() => setAddClipTileIndex(tile.tileIndex)}
-                                  title="Add clip from this tile's source folder"
+                                  className="rounded border p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                                  onClick={() => toggleTileHidden(tile.tileIndex)}
+                                  title={
+                                    hiddenTiles.has(tile.tileIndex)
+                                      ? "Show tile in preview"
+                                      : "Hide tile in preview"
+                                  }
                                 >
-                                  + clip
+                                  {hiddenTiles.has(tile.tileIndex) ? (
+                                    <EyeOff className="h-3 w-3" />
+                                  ) : (
+                                    <Eye className="h-3 w-3" />
+                                  )}
                                 </button>
-                              )}
+                                {tile.folder && (
+                                  <button
+                                    type="button"
+                                    className="rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    onClick={() => setAddClipTileIndex(tile.tileIndex)}
+                                    title="Add clip from this tile's source folder"
+                                  >
+                                    + clip
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             {blanks && (
                               <div className="text-[10px] text-amber-500">

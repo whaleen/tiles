@@ -14,6 +14,7 @@ import {
   Volume2,
   VolumeOff,
   Image,
+  EyeOff,
 } from "lucide-react";
 import {
   ContextMenu,
@@ -79,6 +80,8 @@ interface TileGridPreviewProps {
   onUpdateTileSetting?: (tileIndex: number, partial: Partial<TileSettingEntry>) => void;
   onToggleTileAudio?: (tileIndex: number, enabled: boolean) => void;
   audioTiles?: number[];
+  /** Preview-only: tiles hidden while editing (not persisted, doesn't affect export). */
+  hiddenTiles?: Set<number>;
   canvasWidth?: number;
   canvasHeight?: number;
   padding?: number;
@@ -432,6 +435,7 @@ export function TileGridPreview({
   onUpdateTileSetting,
   onToggleTileAudio,
   audioTiles,
+  hiddenTiles,
   canvasWidth = 1920,
   canvasHeight = 1080,
   padding = 0,
@@ -465,6 +469,22 @@ export function TileGridPreview({
 
   const renderTileContent = (tileIndex: number) => {
     const folder = folders[tileIndex];
+    // Preview-only hide: skip mounting the playback canvas entirely (no rAF/decode
+    // loop for hidden tiles), both render paths funnel through here.
+    if (hiddenTiles?.has(tileIndex)) {
+      return {
+        folder,
+        thumb: null,
+        position: "center",
+        cropPosition: "center",
+        setting: tileSettings?.[tileIndex] || defaultSetting,
+        node: (
+          <div className="flex h-full w-full items-center justify-center bg-muted/20">
+            <EyeOff className="h-5 w-5 text-muted-foreground/40" />
+          </div>
+        ),
+      };
+    }
     const hasPlayback =
       tileVideos && Object.prototype.hasOwnProperty.call(tileVideos, tileIndex);
     const playback = hasPlayback ? tileVideos?.[tileIndex] : null;
