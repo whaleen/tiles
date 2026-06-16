@@ -70,6 +70,16 @@ pub struct Filmstrip {
     pub duration: f64,
 }
 
+/// Waveform image metadata for a clip's audio. The image is served at
+/// `<media>/waveforms/<rel_path>` and covers [0, duration] of the source; the
+/// frontend slices [trimIn, trimOut] per clip.
+#[derive(Debug, Serialize)]
+pub struct Waveform {
+    pub width: u32,
+    pub height: u32,
+    pub duration: f64,
+}
+
 // --- Settings ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

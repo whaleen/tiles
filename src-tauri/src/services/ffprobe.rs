@@ -74,6 +74,25 @@ pub fn get_video_duration(path: &Path, root: &Path) -> Option<f64> {
         .ok()
 }
 
+/// Whether the file has at least one audio stream.
+pub fn has_audio_stream(path: &Path, root: &Path) -> bool {
+    let out = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_type",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+        ])
+        .arg(path)
+        .current_dir(root)
+        .output();
+    matches!(out, Ok(o) if o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "audio")
+}
+
 pub fn check_ffmpeg() -> bool {
     Command::new("ffmpeg")
         .arg("-version")

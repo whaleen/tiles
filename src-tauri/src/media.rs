@@ -48,6 +48,13 @@ pub async fn start(port: u16, root: Arc<RwLock<PathBuf>>) {
                     async move { serve_src_filmstrip(root, req).await }
                 })
             })
+            .route("/waveforms/{*path}", {
+                let root = r.clone();
+                get(move |req: Request| {
+                    let root = root.clone();
+                    async move { serve_src_waveform(root, req).await }
+                })
+            })
             .route("/outfiles/{*path}", {
                 let root = r.clone();
                 get(move |req: Request| {
@@ -155,6 +162,28 @@ async fn serve_src_filmstrip(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     .ok_or(StatusCode::NOT_FOUND)?;
     serve_static(&strip.path).await
+}
+
+async fn serve_src_waveform(
+    root: Arc<RwLock<PathBuf>>,
+    req: Request,
+) -> Result<Response, StatusCode> {
+    let root_path = root.read().unwrap().clone();
+    let rel = strip_prefix(req.uri().path(), "/waveforms");
+    let decoded = url_decode(rel.trim_start_matches('/'));
+    let Some(src) = safe_join(&root_path.join("src"), &decoded) else {
+        return Err(StatusCode::NOT_FOUND);
+    };
+    if !src.exists() || !src.is_file() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let wave = tokio::task::spawn_blocking(move || {
+        crate::services::waveform::ensure_waveform(&root_path, &src, &decoded)
+    })
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::NOT_FOUND)?;
+    serve_static(&wave.path).await
 }
 
 async fn serve_out(root: Arc<RwLock<PathBuf>>, req: Request) -> Result<Response, StatusCode> {

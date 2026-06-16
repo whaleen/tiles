@@ -115,6 +115,28 @@ pub fn get_filmstrip(
 }
 
 #[tauri::command]
+pub fn get_waveform(
+    state: State<AppState>,
+    path: String,
+) -> Result<crate::models::Waveform, String> {
+    let root = state.root.read().unwrap().clone();
+    if path.contains("..") || Path::new(&path).is_absolute() {
+        return Err("invalid path".to_string());
+    }
+    let full = root.join("src").join(&path);
+    if !full.exists() || !full.is_file() {
+        return Err("not found".to_string());
+    }
+    let r = crate::services::waveform::ensure_waveform(&root, &full, &path)
+        .ok_or_else(|| "waveform generation failed".to_string())?;
+    Ok(crate::models::Waveform {
+        width: r.width,
+        height: r.height,
+        duration: r.duration,
+    })
+}
+
+#[tauri::command]
 pub fn get_video_info(state: State<AppState>, path: String) -> Result<VideoInfo, String> {
     let root = state.root.read().unwrap().clone();
     if path.contains("..") || Path::new(&path).is_absolute() {

@@ -118,6 +118,7 @@ pub fn run() {
             commands::videos::get_video_info,
             commands::videos::get_video_durations,
             commands::videos::get_filmstrip,
+            commands::videos::get_waveform,
             commands::videos::get_transcript,
             commands::videos::rename_media,
             commands::videos::reveal_media,
