@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Fragment, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { frameUrl, thumbUrl } from "@/api/client";
 import { useSettings } from "@/hooks/use-settings";
@@ -6,11 +6,13 @@ import { useCompositions } from "@/hooks/use-compositions";
 import { useVideos } from "@/hooks/use-videos";
 import { useVideoDurations } from "@/hooks/use-video-durations";
 import { useFilmstrips } from "@/hooks/use-filmstrips";
+import { useWaveforms } from "@/hooks/use-waveforms";
 import { useFolderOrders } from "@/hooks/use-folder-orders";
 import { useProjects } from "@/hooks/use-projects";
 import { useProjectDetailsMap } from "@/hooks/use-project-details-map";
 import { CompositionSwitcher } from "@/components/tile-builder/composition-switcher";
 import { TileTimelineTrack } from "@/components/tile-builder/tile-timeline-track";
+import { TileAudioTrack } from "@/components/tile-builder/tile-audio-track";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import {
   TileGridPreview,
@@ -34,7 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Eye, EyeOff, Loader2, Pause, Play, Settings2 } from "lucide-react";
+import { AudioLines, Eye, EyeOff, Loader2, Pause, Play, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import type {
   TileSettings,
@@ -97,6 +99,16 @@ export function TileBuilderPage({ project }: { project?: string }) {
   const [hiddenTiles, setHiddenTiles] = useState<Set<number>>(new Set());
   const toggleTileHidden = (tileIndex: number) => {
     setHiddenTiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(tileIndex)) next.delete(tileIndex);
+      else next.add(tileIndex);
+      return next;
+    });
+  };
+  // Per-tile audio sub-strip (waveform lane) expand state. Edit-only, ephemeral.
+  const [audioOpenTiles, setAudioOpenTiles] = useState<Set<number>>(new Set());
+  const toggleTileAudioStrip = (tileIndex: number) => {
+    setAudioOpenTiles((prev) => {
       const next = new Set(prev);
       if (next.has(tileIndex)) next.delete(tileIndex);
       else next.add(tileIndex);
@@ -554,6 +566,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
 
   const clipDurations = useVideoDurations(clipRelPaths);
   const filmstrips = useFilmstrips(clipRelPaths);
+  const waveforms = useWaveforms(clipRelPaths);
 
   const videosWithDurations = useMemo(
     () =>
@@ -947,8 +960,8 @@ export function TileBuilderPage({ project }: { project?: string }) {
                         const blanks =
                           isEditMode && tile.trackSeconds < timelineTotalSeconds - 0.05;
                         return (
+                          <Fragment key={tile.tileIndex}>
                           <div
-                            key={tile.tileIndex}
                             className={`flex h-20 flex-col justify-center gap-0.5 border-b px-2 ${
                               hiddenTiles.has(tile.tileIndex) ? "opacity-40" : ""
                             }`}
@@ -985,6 +998,22 @@ export function TileBuilderPage({ project }: { project?: string }) {
                                     <Eye className="h-3 w-3" />
                                   )}
                                 </button>
+                                <button
+                                  type="button"
+                                  className={`rounded border p-0.5 hover:bg-accent hover:text-foreground ${
+                                    audioOpenTiles.has(tile.tileIndex)
+                                      ? "bg-accent text-foreground"
+                                      : "text-muted-foreground"
+                                  }`}
+                                  onClick={() => toggleTileAudioStrip(tile.tileIndex)}
+                                  title={
+                                    audioOpenTiles.has(tile.tileIndex)
+                                      ? "Hide audio waveform"
+                                      : "Show audio waveform"
+                                  }
+                                >
+                                  <AudioLines className="h-3 w-3" />
+                                </button>
                                 {tile.folder && (
                                   <button
                                     type="button"
@@ -1003,6 +1032,13 @@ export function TileBuilderPage({ project }: { project?: string }) {
                               </div>
                             )}
                           </div>
+                          {audioOpenTiles.has(tile.tileIndex) && (
+                            <div className="flex h-12 items-center gap-1 border-b bg-muted/10 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                              <AudioLines className="h-3 w-3" />
+                              audio
+                            </div>
+                          )}
+                          </Fragment>
                         );
                       })}
                     </div>
@@ -1049,7 +1085,8 @@ export function TileBuilderPage({ project }: { project?: string }) {
 
                         {/* Tile lanes */}
                         {tileClips.map((tile) => (
-                          <div key={tile.tileIndex} className="relative h-20 border-b bg-muted/5">
+                          <Fragment key={tile.tileIndex}>
+                          <div className="relative h-20 border-b bg-muted/5">
                             {tile.folder && tile.clips.length > 0 ? (
                               <TileTimelineTrack
                                 clips={tile.clips}
@@ -1093,6 +1130,22 @@ export function TileBuilderPage({ project }: { project?: string }) {
                               </div>
                             )}
                           </div>
+                          {audioOpenTiles.has(tile.tileIndex) && (
+                            <div className="relative h-12 border-b bg-muted/[0.03]">
+                              {tile.folder && tile.clips.length > 0 ? (
+                                <TileAudioTrack
+                                  clips={tile.clips}
+                                  pxPerSecond={px}
+                                  waveforms={waveforms}
+                                />
+                              ) : (
+                                <div className="flex h-full items-center px-2 text-[10px] text-muted-foreground">
+                                  No audio
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          </Fragment>
                         ))}
 
                         {/* Single playhead spanning the ruler + every lane */}

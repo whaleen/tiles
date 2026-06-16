@@ -158,6 +158,12 @@ export function filmstripUrl(relPath: string): string {
   return withCache(`${_mediaBase}/filmstrips/${encodePath(relPath)}`);
 }
 
+export function waveformUrl(relPath: string): string {
+  // showwavespic PNG of the clip's full-source audio, served by the media
+  // server. Covers [0, duration]; the audio sub-strip slices it per clip.
+  return withCache(`${_mediaBase}/waveforms/${encodePath(relPath)}`);
+}
+
 export function outThumbUrl(relPath: string): string {
   return withCache(`${_mediaBase}/outthumbs/${encodePath(relPath)}`);
 }
