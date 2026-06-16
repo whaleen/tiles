@@ -957,20 +957,20 @@ export function TileBuilderPage({ project }: { project?: string }) {
                       <div className="h-7 border-b" />
                       {tileClips.map((tile) => {
                         const sharedCount = tile.folder ? folderUsage.get(tile.folder) ?? 0 : 0;
-                        const blanks =
-                          isEditMode && tile.trackSeconds < timelineTotalSeconds - 0.05;
                         return (
                           <Fragment key={tile.tileIndex}>
-                          <div
-                            className={`flex h-20 flex-col justify-center gap-0.5 border-b px-2 ${
-                              hiddenTiles.has(tile.tileIndex) ? "opacity-40" : ""
-                            }`}
-                          >
-                            <div className="text-xs font-medium text-foreground">
+                          <div className="flex h-20 flex-col justify-center gap-0.5 border-b px-2">
+                            <div
+                              className={`text-xs font-medium text-foreground ${
+                                hiddenTiles.has(tile.tileIndex) ? "opacity-40" : ""
+                              }`}
+                            >
                               Tile {tile.tileIndex + 1}
                             </div>
                             <div
-                              className="truncate text-[10px] text-muted-foreground"
+                              className={`truncate text-[10px] text-muted-foreground ${
+                                hiddenTiles.has(tile.tileIndex) ? "opacity-40" : ""
+                              }`}
                               title={tile.folderLabel}
                             >
                               {tile.folderLabel}
@@ -1026,11 +1026,6 @@ export function TileBuilderPage({ project }: { project?: string }) {
                                 )}
                               </div>
                             </div>
-                            {blanks && (
-                              <div className="text-[10px] text-amber-500">
-                                blank after {formatDurationSeconds(tile.trackSeconds)}
-                              </div>
-                            )}
                           </div>
                           {audioOpenTiles.has(tile.tileIndex) && (
                             <div className="flex h-12 items-center gap-1 border-b bg-muted/10 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
