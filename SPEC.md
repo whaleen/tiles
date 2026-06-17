@@ -50,12 +50,14 @@ Feature source of truth for the tiles Tauri desktop app. Update as features ship
 
 - Agent-assisted workflows: expose enough structured project state and safe mutation commands for agents to collaborate on user projects through drafts/previews rather than opaque GUI automation.
 - Review-first composition branching: agent output should usually land in a separate named composition or output preview before becoming the active edit.
+- Future audio editing should be non-destructive composition metadata: waveform display first, then likely loudness normalization, per-clip gain/mute, and volume automation. Audio library/engine choice is intentionally deferred. See [docs/audio-roadmap.md](docs/audio-roadmap.md).
 
 ## Nice To Have
 
 - App notarization (removes Gatekeeper friction)
 - Drag-and-drop video import into workspace (file picker import exists; drag-and-drop is not implemented)
 - Composition thumbnails / richer config browser
+- Audio editing roadmap: loudness matching, per-clip gain/mute, and volume automation/envelope points
 - Workspace change UI (no manual prefs delete required)
 
 ## Known Issues

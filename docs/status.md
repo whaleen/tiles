@@ -6,6 +6,10 @@ Current feature surface for the tiles desktop app.
 
 A major planned direction is human-in-the-loop agent collaboration. The app should remain the primary visual editing surface, while the structured workspace and `tiles-cli`/API layer let agents inspect projects, create reviewable draft compositions, run preview renders, and summarize changes for user approval. This is not yet a shipped end-user feature. See [agent-workflows.md](agent-workflows.md).
 
+## Product Direction: Audio Editing
+
+Waveform strips are the display foundation for future audio work. Deeper audio editing should remain non-destructive composition metadata, with likely first features including loudness normalization, per-clip gain/mute, and Audacity-style volume envelope points. Library/engine choice is intentionally deferred until real editing requirements demand it. See [audio-roadmap.md](audio-roadmap.md).
+
 ## App Pages
 
 ### Library
@@ -76,6 +80,7 @@ Actions emit structured progress as stdout lines prefixed with `TILES_PROGRESS `
 - Agent-assisted project workflows: safe project inspection/mutation APIs, draft composition branching, preview rendering, change summaries, and explicit human approval checkpoints.
 - Workspace history: quick-switch between recent workspaces.
 - Tile builder transition preview.
+- Future audio editing: loudness matching, per-clip gain/mute, and volume automation/envelope points.
 
 ## In-App Updates
 
