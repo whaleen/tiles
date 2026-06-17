@@ -1,6 +1,8 @@
 # tiles
 
-A macOS desktop app for video tile layouts and tiled renders. Built with Tauri + React + Vite+.
+A work-in-progress macOS desktop app for video tile layouts, timeline-based tiled compositions, and ffmpeg-backed batch video workflows. Built with Tauri + React + Vite+.
+
+> **Status:** tiles is pre-beta / active WIP. It is usable for local workflows, but the product model, editor UX, and feature set are still changing quickly. Expect rough edges, missing polish, and occasional workflow resets.
 
 ## Install
 
@@ -18,19 +20,29 @@ xattr -dr com.apple.quarantine /Applications/tiles.app
 
 Then launch tiles normally from your Applications folder.
 
-## Features
+## Current Feature Surface
 
-- Browse video projects and clips
-- Visual tile layout builder (`2x1`, `1x2`, `2x2`, `3x1`, `1x3`, `3x3`, `pip`, `1+2`, `2+1`, `1+3`)
-- Folder management with drag-and-drop ordering
-- Run tiled renders and other actions directly from the UI
-- Output explorer and log viewer
+- Workspace-based project library (`src/`, `outputs/`, `configs/`) with project cards, thumbnails, search, and view modes
+- Browse, preview, import, move, rename, and organize video clips inside projects
+- Visual Tile Builder with explicit timeline clip instances, named per-project compositions, trim handles, per-tile layouts, waveform strips, and preview rendering
+- Tiled layouts including grids, picture-in-picture, stacked layouts, custom layout editing, vertical/social formats, and canvas settings
+- ffmpeg-backed actions from the UI: concat, trim, detect, split-detect, transcribe, strip audio, chop, slowmo/speed-related workflows, loop, crop, clean, re-encode, URL import, and tiled render/export
+- Output explorer with thumbnails, logs, active job progress, and backfill tools
+- Workspace switching and basic UI state persistence, including returning to the last workspace location
 - In-app updates — new versions prompt automatically on launch
-- Planned direction: agent-assisted, human-in-the-loop project workflows where agents can create reviewable drafts/previews through the structured workspace and CLI/API substrate
+
+See [docs/status.md](docs/status.md) and [SPEC.md](SPEC.md) for the current product contract and feature status.
 
 ## Product Direction
 
-tiles is intended to stay a normal visual video app first. A major planned direction is agent-assisted editing: agents should be able to inspect a workspace, propose draft compositions, run preview renders, and summarize changes while the human remains in control of accepting or modifying the result. See [docs/agent-workflows.md](docs/agent-workflows.md).
+tiles is intended to stay a normal visual video app first: users should be able to organize clips, build compositions, preview, and render without leaving the app.
+
+Major planned directions:
+
+- **Editor-first Tile Builder** — converge on explicit, non-destructive timeline compositions rather than legacy/random folder-generation UI.
+- **Agent-assisted workflows** — agents can inspect a workspace, propose draft compositions, run preview renders, and summarize changes while the human remains in control of accepting or modifying the result. See [docs/agent-workflows.md](docs/agent-workflows.md).
+- **Audio editing roadmap** — waveform display now; future work may include loudness matching, per-clip gain/mute, and volume automation. Audio library/engine choice is intentionally deferred. See [docs/audio-roadmap.md](docs/audio-roadmap.md).
+- **CLI/API substrate** — `tiles-cli` remains the render/action engine and a future safe interface for scripts and agents, while the app remains the primary user-facing editor.
 
 ## Requirements
 
