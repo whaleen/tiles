@@ -1,4 +1,12 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  lazy,
+  Suspense,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 function readSidebarCookie(): boolean {
   const match = document.cookie.split("; ").find((c) => c.startsWith("sidebar_state="));
@@ -24,6 +32,12 @@ import {
 import { Loader2 } from "lucide-react";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { FeedbackDialog } from "@/components/feedback/feedback-dialog";
+import { usePersistentState } from "@/hooks/use-persistent-state";
+import { useProjects } from "@/hooks/use-projects";
+import { hashWorkspace, uiKeys } from "@/lib/ui-state";
+
+type StoredLocation = { activeTab: string; project: string | null };
+const DEFAULT_LOCATION: StoredLocation = { activeTab: "dashboard", project: null };
 
 const WorkspaceHomePage = lazy(() =>
   import("@/pages/workspace-home").then((m) => ({ default: m.WorkspaceHomePage }))
@@ -67,10 +81,46 @@ export function AppShell({
   onSetWorkspace?: (path: string) => void;
   workspacePath?: string;
 }) {
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [project, setProject] = useState<string | undefined>();
+  // Restore the last UI location (active tab + project) per workspace, so
+  // reopening tiles lands where you left off. Scoped by workspace hash; falls
+  // back to Workspace Home when there's nothing stored.
+  const locationKey = workspacePath
+    ? uiKeys.workspace(hashWorkspace(workspacePath), "lastLocation")
+    : null;
+  const [location, setLocation] = usePersistentState<StoredLocation>(locationKey, DEFAULT_LOCATION);
+  const activeTab = location.activeTab;
+  const project = location.project ?? undefined;
+
+  const setActiveTab = useCallback<Dispatch<SetStateAction<string>>>(
+    (tab) =>
+      setLocation((prev) => ({
+        ...prev,
+        activeTab: typeof tab === "function" ? tab(prev.activeTab) : tab,
+      })),
+    [setLocation]
+  );
+  const setProject = useCallback<Dispatch<SetStateAction<string | undefined>>>(
+    (next) =>
+      setLocation((prev) => {
+        const resolved =
+          typeof next === "function" ? next(prev.project ?? undefined) : next;
+        return { ...prev, project: resolved ?? null };
+      }),
+    [setLocation]
+  );
+
   const [settingsProject, setSettingsProject] = useState<string | undefined>();
   const workspaceName = workspacePath?.split(/[\\/]/).filter(Boolean).at(-1) || "Workspace";
+
+  // Defensively drop a restored project that no longer exists in this
+  // workspace, falling back to Workspace Home.
+  const { projects, loading: projectsLoading } = useProjects();
+  useEffect(() => {
+    if (projectsLoading || !location.project) return;
+    if (!projects.some((p) => p.name === location.project)) {
+      setLocation(() => DEFAULT_LOCATION);
+    }
+  }, [projectsLoading, projects, location.project, setLocation]);
 
   useEffect(() => {
     function handleNavigate(event: Event) {
@@ -81,7 +131,7 @@ export function AppShell({
     }
     window.addEventListener("tiles:navigate", handleNavigate);
     return () => window.removeEventListener("tiles:navigate", handleNavigate);
-  }, []);
+  }, [setActiveTab, setProject]);
 
   if (!project) {
     return (

@@ -35,27 +35,18 @@ import { useOutputs } from "@/hooks/use-outputs";
 import { useProjectDetailsMap } from "@/hooks/use-project-details-map";
 import { useProjectMetasMap } from "@/hooks/use-project-metas-map";
 import { useProjects } from "@/hooks/use-projects";
+import { usePersistentState } from "@/hooks/use-persistent-state";
+import { hashWorkspace, uiKeys } from "@/lib/ui-state";
 import { useRunningActions } from "@/hooks/use-running-actions";
 import { formatActionName } from "@/lib/action-icons";
 import type { OutputRun, ProjectMeta, RunningAction } from "@/types";
 
 type ProjectViewMode = "list" | "small" | "large";
-const VIEW_MODE_KEY = "tiles.workspace-home.viewMode";
 const VIEW_MODES: { mode: ProjectViewMode; icon: typeof List; label: string }[] = [
   { mode: "list", icon: List, label: "List view" },
   { mode: "small", icon: Grid3X3, label: "Small cards" },
   { mode: "large", icon: LayoutGrid, label: "Large cards" },
 ];
-
-function readStoredViewMode(): ProjectViewMode {
-  try {
-    const stored = localStorage.getItem(VIEW_MODE_KEY);
-    if (stored === "list" || stored === "small" || stored === "large") return stored;
-  } catch {
-    // ignore — fall back to default
-  }
-  return "large";
-}
 
 interface WorkspaceHomePageProps {
   workspacePath?: string;
@@ -97,15 +88,10 @@ export function WorkspaceHomePage({
   const { outputs } = useOutputs();
   const { running } = useRunningActions();
   const [search, setSearch] = useState("");
-  const [viewMode, setViewMode] = useState<ProjectViewMode>(readStoredViewMode);
-  const changeViewMode = (mode: ProjectViewMode) => {
-    setViewMode(mode);
-    try {
-      localStorage.setItem(VIEW_MODE_KEY, mode);
-    } catch {
-      // persistence is best-effort; in-memory state still works
-    }
-  };
+  const [viewMode, setViewMode] = usePersistentState<ProjectViewMode>(
+    workspacePath ? uiKeys.workspace(hashWorkspace(workspacePath), "workspaceHome.viewMode") : null,
+    "large"
+  );
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [workspaceCandidates, setWorkspaceCandidates] = useState<WorkspaceCandidate[]>([]);
@@ -310,7 +296,7 @@ export function WorkspaceHomePage({
                     className="h-7 w-7"
                     title={label}
                     aria-pressed={viewMode === mode}
-                    onClick={() => changeViewMode(mode)}
+                    onClick={() => setViewMode(mode)}
                   >
                     <Icon className="h-3.5 w-3.5" />
                   </Button>
