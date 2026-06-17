@@ -33,6 +33,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import type { VideoEntry } from "@/types";
+import { clipPixelWidth } from "@/pages/tile-builder-timeline";
 
 export type TimelineClipItem = {
   id: string;
@@ -198,7 +199,7 @@ function TimelineClip({
     | { edge: "right"; startX: number; startTrimOut: number }
     | null
   >(null);
-  const width = Math.max(3, clip.seconds * pxPerSecond);
+  const width = clipPixelWidth(clip, pxPerSecond);
   const showLabel = width >= 54;
 
   function beginLeftTrim(event: React.PointerEvent<HTMLDivElement>) {

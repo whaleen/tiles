@@ -4,13 +4,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { waveformUrl } from "@/api/client";
 
 export interface ClipWaveform {
+  /** Image URL — empty when the source has no audio stream. */
   url: string;
+  /** Whether the source has an audio stream (false = silent clip). */
+  hasAudio: boolean;
   width: number;
   height: number;
   duration: number;
 }
 
 interface WaveformMeta {
+  has_audio: boolean;
   width: number;
   height: number;
   duration: number;
@@ -42,9 +46,13 @@ export function useWaveforms(relPaths: string[]): Record<string, ClipWaveform> {
     const map: Record<string, ClipWaveform> = {};
     unique.forEach((relPath, i) => {
       const m = results[i]?.data;
-      if (m && m.width > 0) {
+      // Keep both states explicit: a successful probe with no audio stream
+      // (has_audio: false) is distinct from a query with no data (still loading
+      // or a genuine generation failure), which stays absent from the map.
+      if (m) {
         map[relPath] = {
-          url: waveformUrl(relPath),
+          url: m.has_audio ? waveformUrl(relPath) : "",
+          hasAudio: m.has_audio,
           width: m.width,
           height: m.height,
           duration: m.duration,

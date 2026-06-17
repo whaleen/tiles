@@ -195,6 +195,16 @@ export function findActiveTimelineClip(track: ResolvedTimelineTrack, time: numbe
   return track.clips.find((clip) => time >= clip.start && time < clip.end) ?? null;
 }
 
+/**
+ * On-screen width (px) of a resolved clip at the given time scale. The single
+ * source of truth for clip block width across the video and audio tracks —
+ * `seconds` is the resolver's speed-adjusted timeline duration, so this stays
+ * correct for trims, per-clip max-duration capping, and speed.
+ */
+export function clipPixelWidth(clip: { seconds: number }, pxPerSecond: number): number {
+  return Math.max(3, clip.seconds * pxPerSecond);
+}
+
 function positiveNumber(value?: number | null) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }

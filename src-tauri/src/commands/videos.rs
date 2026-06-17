@@ -127,9 +127,21 @@ pub fn get_waveform(
     if !full.exists() || !full.is_file() {
         return Err("not found".to_string());
     }
+    // No audio stream is an expected, non-error state (silent clip) — report it
+    // explicitly so the UI can show a "no audio" placeholder rather than
+    // conflating it with a generation failure.
+    if !crate::services::ffprobe::has_audio_stream(&full, &root) {
+        return Ok(crate::models::Waveform {
+            has_audio: false,
+            width: 0,
+            height: 0,
+            duration: 0.0,
+        });
+    }
     let r = crate::services::waveform::ensure_waveform(&root, &full, &path)
         .ok_or_else(|| "waveform generation failed".to_string())?;
     Ok(crate::models::Waveform {
+        has_audio: true,
         width: r.width,
         height: r.height,
         duration: r.duration,

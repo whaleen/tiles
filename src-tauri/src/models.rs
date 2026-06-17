@@ -75,6 +75,9 @@ pub struct Filmstrip {
 /// frontend slices [trimIn, trimOut] per clip.
 #[derive(Debug, Serialize)]
 pub struct Waveform {
+    /// Whether the source has an audio stream. `false` is an expected state
+    /// (silent clip), distinct from a generation failure (a command error).
+    pub has_audio: bool,
     pub width: u32,
     pub height: u32,
     pub duration: f64,
