@@ -5,6 +5,8 @@ import {
   FolderSync,
   Grid3X3,
   Import,
+  LayoutGrid,
+  List,
   Loader2,
   Plus,
   Search,
@@ -36,6 +38,24 @@ import { useProjects } from "@/hooks/use-projects";
 import { useRunningActions } from "@/hooks/use-running-actions";
 import { formatActionName } from "@/lib/action-icons";
 import type { OutputRun, ProjectMeta, RunningAction } from "@/types";
+
+type ProjectViewMode = "list" | "small" | "large";
+const VIEW_MODE_KEY = "tiles.workspace-home.viewMode";
+const VIEW_MODES: { mode: ProjectViewMode; icon: typeof List; label: string }[] = [
+  { mode: "list", icon: List, label: "List view" },
+  { mode: "small", icon: Grid3X3, label: "Small cards" },
+  { mode: "large", icon: LayoutGrid, label: "Large cards" },
+];
+
+function readStoredViewMode(): ProjectViewMode {
+  try {
+    const stored = localStorage.getItem(VIEW_MODE_KEY);
+    if (stored === "list" || stored === "small" || stored === "large") return stored;
+  } catch {
+    // ignore — fall back to default
+  }
+  return "large";
+}
 
 interface WorkspaceHomePageProps {
   workspacePath?: string;
@@ -77,6 +97,15 @@ export function WorkspaceHomePage({
   const { outputs } = useOutputs();
   const { running } = useRunningActions();
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<ProjectViewMode>(readStoredViewMode);
+  const changeViewMode = (mode: ProjectViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+    } catch {
+      // persistence is best-effort; in-memory state still works
+    }
+  };
   const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [workspaceSettingsOpen, setWorkspaceSettingsOpen] = useState(false);
   const [workspaceCandidates, setWorkspaceCandidates] = useState<WorkspaceCandidate[]>([]);
@@ -262,14 +291,31 @@ export function WorkspaceHomePage({
               <h2 className="text-lg font-semibold">Projects</h2>
               <p className="text-sm text-muted-foreground">Choose a project to open its library and tools.</p>
             </div>
-            <div className="relative w-full sm:max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search projects..."
-                className="pl-9"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative w-full sm:max-w-sm">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search projects..."
+                  className="pl-9"
+                />
+              </div>
+              <div className="inline-flex shrink-0 rounded-md border p-0.5">
+                {VIEW_MODES.map(({ mode, icon: Icon, label }) => (
+                  <Button
+                    key={mode}
+                    size="icon"
+                    variant={viewMode === mode ? "secondary" : "ghost"}
+                    className="h-7 w-7"
+                    title={label}
+                    aria-pressed={viewMode === mode}
+                    onClick={() => changeViewMode(mode)}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </Button>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -288,8 +334,18 @@ export function WorkspaceHomePage({
             />
           </div>
         ) : (
-          <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          filteredProjects.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No projects match your search.</div>
+          ) : (
+            <div
+              className={
+                viewMode === "list"
+                  ? "flex flex-col divide-y overflow-hidden rounded-lg border"
+                  : viewMode === "small"
+                  ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6"
+                  : "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              }
+            >
               {filteredProjects.map((project) => {
                 const detail = details[project.name];
                 const meta = metas[project.name] ?? EMPTY_META;
@@ -299,6 +355,86 @@ export function WorkspaceHomePage({
                 const latestOutput = latestOutputByProject[project.name];
                 const thumb = thumbnailForProject(meta, latestOutput);
                 const runningLabel = projectRunning[0] ? formatActionName(projectRunning[0].action) : "";
+                const videoLabel = detail ? `${detail.video_count} videos` : "…";
+                const folderLabel = detail ? `${detail.subfolders.length} folders` : "…";
+                const outputLabel = `${projectOutputs.length} output${projectOutputs.length === 1 ? "" : "s"}`;
+
+                if (viewMode === "list") {
+                  return (
+                    <div
+                      key={project.name}
+                      className="flex cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/50"
+                      onClick={() => onOpenProject(project.name)}
+                    >
+                      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-muted/40">
+                        {thumb ? (
+                          <img src={thumb} alt={displayName} className="h-full w-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center">
+                            <Film className="h-4 w-4 text-muted-foreground/40" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{displayName}</div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {videoLabel} · {folderLabel} · {outputLabel}
+                          {latestOutput
+                            ? ` · ${formatActionName(latestOutput.tool)} ${timeAgo(latestOutput.modified_epoch)}`
+                            : ""}
+                        </div>
+                      </div>
+                      {projectRunning.length > 0 && (
+                        <span className="relative flex h-2 w-2 shrink-0" title={runningLabel}>
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                        </span>
+                      )}
+                      {onOpenProjectSettings && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 shrink-0"
+                          onClick={(event) => openProjectSettings(event, project.name)}
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                }
+
+                if (viewMode === "small") {
+                  return (
+                    <Card
+                      key={project.name}
+                      className="cursor-pointer overflow-hidden transition-colors hover:border-primary/50"
+                      onClick={() => onOpenProject(project.name)}
+                    >
+                      <div className="relative aspect-square w-full bg-muted/40">
+                        {thumb ? (
+                          <img src={thumb} alt={displayName} className="h-full w-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center bg-muted/60">
+                            <Film className="h-6 w-6 text-muted-foreground/40" />
+                          </div>
+                        )}
+                        {projectRunning.length > 0 && (
+                          <span className="absolute right-1.5 top-1.5 flex h-2 w-2" title={runningLabel}>
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-2">
+                        <div className="truncate text-sm font-medium">{displayName}</div>
+                        <div className="truncate text-[10px] text-muted-foreground">
+                          {videoLabel} · {folderLabel}
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                }
 
                 return (
                   <Card
@@ -414,11 +550,7 @@ export function WorkspaceHomePage({
                 );
               })}
             </div>
-
-            {filteredProjects.length === 0 && (
-              <div className="text-sm text-muted-foreground">No projects match your search.</div>
-            )}
-          </>
+          )
         )}
       </div>
 
