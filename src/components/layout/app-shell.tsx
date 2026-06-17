@@ -231,7 +231,7 @@ export function AppShell({
                 />
               )}
               {activeTab === "library" && <LibraryPage key={project ?? "__all__"} project={project} />}
-              {activeTab === "tile-builder" && <TileBuilderPage key={project ?? "__all__"} project={project} />}
+              {activeTab === "tile-builder" && <TileBuilderPage key={project ?? "__all__"} project={project} workspacePath={workspacePath} />}
               {activeTab === "import" && <ImportPage key={project ?? "__all__"} project={project} />}
               {activeTab === "outputs" && <OutputsPage key={project ?? "__all__"} project={project} />}
               {activeTab === "logs" && <LogsPage />}

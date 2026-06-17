@@ -7,6 +7,8 @@ import { useVideos } from "@/hooks/use-videos";
 import { useVideoDurations } from "@/hooks/use-video-durations";
 import { useFilmstrips } from "@/hooks/use-filmstrips";
 import { useWaveforms } from "@/hooks/use-waveforms";
+import { usePersistentState, readPersistentState } from "@/hooks/use-persistent-state";
+import { hashWorkspace, uiKeys } from "@/lib/ui-state";
 import { useFolderOrders } from "@/hooks/use-folder-orders";
 import { useProjects } from "@/hooks/use-projects";
 import { useProjectDetailsMap } from "@/hooks/use-project-details-map";
@@ -66,7 +68,25 @@ import {
 } from "./tile-builder-utils";
 import { findActiveTimelineClip, resolveTileBuilderTimeline } from "./tile-builder-timeline";
 
-export function TileBuilderPage({ project }: { project?: string }) {
+/**
+ * Editor workspace state — only affects how the editing desk is arranged, never
+ * render/export (that lives in composition JSON). Persisted per workspace +
+ * project + composition. Sets are stored as arrays.
+ */
+type TileBuilderUiState = {
+  timelineZoom?: number;
+  playheadSeconds?: number;
+  audioOpenTiles?: number[];
+  hiddenTiles?: number[];
+};
+
+export function TileBuilderPage({
+  project,
+  workspacePath,
+}: {
+  project?: string;
+  workspacePath?: string;
+}) {
   const {
     compositions,
     activeName: activeComposition,
@@ -90,29 +110,60 @@ export function TileBuilderPage({ project }: { project?: string }) {
   const [timelineZoom, setTimelineZoom] = useState(16);
   const [timelinePlayhead, setTimelinePlayhead] = useState(0);
   const [timelinePlaying, setTimelinePlaying] = useState(false);
+
+  // --- Editor workspace persistence (UI-only; NOT composition/export state) ---
+  // Scoped by workspace + project + active composition, so different
+  // projects/compositions keep independent zoom/playhead/hidden/audio-open
+  // state. Null key (no project/workspace) disables persistence.
+  const uiStateKey =
+    project && workspacePath
+      ? uiKeys.project(
+          hashWorkspace(workspacePath),
+          project,
+          `tileBuilder.${activeComposition ?? "__default__"}.workspace`
+        )
+      : null;
+  const [, setUiState] = usePersistentState<TileBuilderUiState>(uiStateKey, {});
+  const applyTimelineZoom = useCallback(
+    (zoom: number) => {
+      setTimelineZoom(zoom);
+      setUiState((prev) => ({ ...prev, timelineZoom: zoom }));
+    },
+    [setUiState]
+  );
+  // Persist the playhead only at meaningful settle points (scrub end, pause,
+  // reset) — never per animation frame.
+  const persistPlayhead = useCallback(
+    (seconds: number) => setUiState((prev) => ({ ...prev, playheadSeconds: seconds })),
+    [setUiState]
+  );
+  // Holds a restored playhead until the resolved timeline duration is known, so
+  // it can be clamped (see the effect below).
+  const pendingPlayheadRef = useRef<number | null>(null);
+  const restoredKeyRef = useRef<string | null | undefined>(undefined);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [addClipTileIndex, setAddClipTileIndex] = useState<number | null>(null);
-  // Preview-only: tiles temporarily hidden while editing. Not persisted, not
-  // part of settings/export — resets on reload/project switch.
+  // Tiles hidden from the *preview* while editing. This is editor workspace UI
+  // state (persisted per composition) and is PREVIEW-ONLY: it does not affect
+  // render/export in any way.
   const [hiddenTiles, setHiddenTiles] = useState<Set<number>>(new Set());
   const toggleTileHidden = (tileIndex: number) => {
-    setHiddenTiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(tileIndex)) next.delete(tileIndex);
-      else next.add(tileIndex);
-      return next;
-    });
+    const next = new Set(hiddenTiles);
+    if (next.has(tileIndex)) next.delete(tileIndex);
+    else next.add(tileIndex);
+    setHiddenTiles(next);
+    setUiState((prev) => ({ ...prev, hiddenTiles: [...next] }));
   };
-  // Per-tile audio sub-strip (waveform lane) expand state. Edit-only, ephemeral.
+  // Per-tile audio sub-strip (waveform lane) expand state. Editor workspace UI
+  // state (persisted per composition); display-only, no render effect.
   const [audioOpenTiles, setAudioOpenTiles] = useState<Set<number>>(new Set());
   const toggleTileAudioStrip = (tileIndex: number) => {
-    setAudioOpenTiles((prev) => {
-      const next = new Set(prev);
-      if (next.has(tileIndex)) next.delete(tileIndex);
-      else next.add(tileIndex);
-      return next;
-    });
+    const next = new Set(audioOpenTiles);
+    if (next.has(tileIndex)) next.delete(tileIndex);
+    else next.add(tileIndex);
+    setAudioOpenTiles(next);
+    setUiState((prev) => ({ ...prev, audioOpenTiles: [...next] }));
   };
   const [selectedClip, setSelectedClip] = useState<{ tileIndex: number; clipId: string } | null>(null);
   const timelineScrubbing = useRef(false);
@@ -715,6 +766,36 @@ export function TileBuilderPage({ project }: { project?: string }) {
     [tileClips]
   );
 
+  // Restore editor workspace state on mount and on project/composition switch
+  // (the key changes). Raw setters here intentionally bypass persistence so a
+  // restore doesn't echo a write back. Playback is never restored — always
+  // reopen paused; selected clip is intentionally not restored either. Hidden/
+  // audio sets are sanitized to non-negative ints; stale-high indexes are inert
+  // since only existing tiles consult them.
+  useEffect(() => {
+    if (restoredKeyRef.current === uiStateKey) return;
+    restoredKeyRef.current = uiStateKey;
+    const s = readPersistentState<TileBuilderUiState>(uiStateKey, {});
+    setTimelineZoom(typeof s.timelineZoom === "number" ? s.timelineZoom : 16);
+    const sane = (arr?: number[]) =>
+      new Set((arr ?? []).filter((i) => Number.isInteger(i) && i >= 0));
+    setHiddenTiles(sane(s.hiddenTiles));
+    setAudioOpenTiles(sane(s.audioOpenTiles));
+    setTimelinePlaying(false);
+    pendingPlayheadRef.current =
+      typeof s.playheadSeconds === "number" ? s.playheadSeconds : null;
+  }, [uiStateKey]);
+
+  // Apply a restored playhead once the resolved timeline duration is known,
+  // clamped into [0, duration].
+  useEffect(() => {
+    if (pendingPlayheadRef.current == null || timelineTotalSeconds <= 0) return;
+    const clamped = Math.min(timelineTotalSeconds, Math.max(0, pendingPlayheadRef.current));
+    pendingPlayheadRef.current = null;
+    lastSigRef.current = computeSignature(clamped);
+    setTimelinePlayhead(clamped);
+  }, [timelineTotalSeconds, computeSignature]);
+
   // Move the playhead imperatively — update the ref and slide the strip line via
   // DOM. During playback, only commit React state at clip boundaries; during
   // manual scrubbing, commit every move so the preview video seeks immediately.
@@ -888,6 +969,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
                 setTimelinePlaying(false);
                 lastSigRef.current = computeSignature(playheadRef.current);
                 setTimelinePlayhead(playheadRef.current);
+                persistPlayhead(playheadRef.current);
               } else {
                 if (playheadRef.current >= timelineTotalSeconds - 0.01) {
                   playheadRef.current = 0;
@@ -907,6 +989,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
             onClick={() => {
               setTimelinePlaying(false);
               setTimelinePlayhead(0);
+              persistPlayhead(0);
             }}
           >
             Start
@@ -918,7 +1001,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
               min={8}
               max={42}
               step={1}
-              onValueChange={(value) => setTimelineZoom(value[0] ?? 16)}
+              onValueChange={(value) => applyTimelineZoom(value[0] ?? 16)}
             />
           </div>
         </div>
@@ -1041,6 +1124,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
                             timelineScrubbing.current = false;
                             lastSigRef.current = computeSignature(playheadRef.current);
                             setTimelinePlayhead(playheadRef.current);
+                            persistPlayhead(playheadRef.current);
                           }
                         }}
                         onPointerLeave={() => {
@@ -1048,6 +1132,7 @@ export function TileBuilderPage({ project }: { project?: string }) {
                             timelineScrubbing.current = false;
                             lastSigRef.current = computeSignature(playheadRef.current);
                             setTimelinePlayhead(playheadRef.current);
+                            persistPlayhead(playheadRef.current);
                           }
                         }}
                       >

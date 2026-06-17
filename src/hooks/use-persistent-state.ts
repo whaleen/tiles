@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
-function read<T>(key: string | null, fallback: T): T {
+/** One-shot read of a persisted value (same store/format as `usePersistentState`). */
+export function readPersistentState<T>(key: string | null, fallback: T): T {
   if (!key) return fallback;
   try {
     const raw = localStorage.getItem(key);
@@ -31,7 +32,7 @@ export function usePersistentState<T>(
   const defaultRef = useRef(defaultValue);
   defaultRef.current = defaultValue;
 
-  const [value, setValue] = useState<T>(() => read(key, defaultValue));
+  const [value, setValue] = useState<T>(() => readPersistentState(key, defaultValue));
   const keyRef = useRef(key);
   const skipNextWrite = useRef(false);
 
@@ -41,7 +42,7 @@ export function usePersistentState<T>(
     if (keyRef.current === key) return;
     keyRef.current = key;
     skipNextWrite.current = true;
-    setValue(read(key, defaultRef.current));
+    setValue(readPersistentState(key, defaultRef.current));
   }, [key]);
 
   // Persist on change (best-effort). Skip the write triggered by a key switch,
