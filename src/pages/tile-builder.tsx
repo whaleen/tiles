@@ -50,7 +50,6 @@ import {
   buildFolderThumbs,
   formatDurationSeconds,
   orderedFolderVideos,
-  resolveCompositionMode,
   defaultTileSetting,
   defaultTileSettings,
   buildPresetLayoutTree,
@@ -496,8 +495,14 @@ export function TileBuilderPage({ project }: { project?: string }) {
 
   // --- Timeline ---
 
-  const compositionMode = resolveCompositionMode(safeSettings);
-  const isEditMode = compositionMode === "edit";
+  // Tile Builder is editor-first: the frontend is edit-mode-only and never
+  // exposes a persistent Shuffle/randomized mode. Random/shuffle generation is
+  // intentionally left to the CLI for legacy/scripted use; saved generative
+  // settings are preserved (and still honored by the CLI) but are no longer
+  // surfaced or applied in the editor. Any future generation should populate
+  // `timeline_clips` directly rather than reintroducing a Shuffle mode here.
+  const compositionMode = "edit" as const;
+  const isEditMode = true;
 
   const outputLengthPolicy =
     safeSettings.output_length_policy ??
@@ -815,25 +820,6 @@ export function TileBuilderPage({ project }: { project?: string }) {
           onDelete={removeComposition}
         />
       )}
-      <div
-        className="flex h-8 items-center rounded-md border p-0.5 text-xs"
-        title="Edit: clips play once in order. Shuffle: legacy randomized generation."
-      >
-        {(["edit", "randomized"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => updateSettings({ mode: m })}
-            className={`flex h-7 items-center rounded px-2.5 transition-colors ${
-              compositionMode === m
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {m === "edit" ? "Edit" : "Shuffle"}
-          </button>
-        ))}
-      </div>
       <div className="ml-auto flex items-center gap-2">
         <Button
           variant="outline"

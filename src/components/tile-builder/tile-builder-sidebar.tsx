@@ -208,7 +208,12 @@ export function TileBuilderSidebar({
 
           <Separator className="opacity-50" />
 
-          {/* SECTION: Playback & Distribution */}
+          {/* SECTION: Playback & Distribution — legacy shuffle/randomized controls.
+              Tile Builder is edit-mode-only now, so `mode` is always "edit" and
+              this section never renders. Kept (gated) only so the CLI's legacy
+              random/shuffle generation stays scriptable; not for reintroducing a
+              persistent Shuffle mode in the UI. */}
+          {mode === "randomized" && (
           <section className="space-y-3">
             <div className="flex items-center gap-2 text-primary">
               <PlayCircle className="h-4 w-4" />
@@ -216,8 +221,6 @@ export function TileBuilderSidebar({
             </div>
 
             <div className="space-y-3">
-              {mode === "randomized" && (
-              <>
               <div>
                 <div className="flex items-center gap-1.5">
                   <Label className="text-[10px] text-muted-foreground uppercase font-bold">Duration Mode</Label>
@@ -317,10 +320,9 @@ export function TileBuilderSidebar({
                   </Select>
                 </div>
               </div>
-              </>
-              )}
             </div>
           </section>
+          )}
 
         </div>
       </ScrollArea>
