@@ -87,8 +87,8 @@ pub fn list_actions() -> Vec<ActionInfo> {
         },
         ActionInfo {
             name: "slowmo".to_string(),
-            label: "Slow Motion".to_string(),
-            description: "Slow videos down by a chosen factor. A 2x slowdown makes a 10-second clip last 20 seconds.".to_string(),
+            label: "Speed".to_string(),
+            description: "Change playback speed by a factor. Below 1x slows down (a 0.5x clip lasts twice as long); above 1x speeds up.".to_string(),
             target_type: "folders_or_videos".to_string(),
             media_types: vec!["video".to_string()],
         },
