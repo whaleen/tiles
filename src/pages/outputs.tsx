@@ -3,6 +3,14 @@ import { useOutputTree } from "@/hooks/use-output-tree";
 import { bumpMediaCache, outThumbUrl, outVideoUrl, videoUrl } from "@/api/client";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { readFullscreenState, useFullscreenVideo } from "@/components/fullscreen-video-player";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +47,7 @@ export function OutputsPage({ project }: { project?: string }) {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<OutputEntry | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<OutputEntry | null>(null);
   const [backfillingThumbs, setBackfillingThumbs] = useState(false);
   const [thumbnailRetryKey, setThumbnailRetryKey] = useState(0);
   const [textPreview, setTextPreview] = useState<string | null>(null);
@@ -181,14 +190,19 @@ export function OutputsPage({ project }: { project?: string }) {
     refresh();
   };
 
-  const handleDelete = async (file: OutputEntry) => {
-    if (!window.confirm(`Delete ${file.name}? This cannot be undone.`)) return;
+  // Open the confirmation dialog (matches the Library delete pattern).
+  const handleDelete = (file: OutputEntry) => setDeleteTarget(file);
+
+  const confirmDelete = async () => {
+    const file = deleteTarget;
+    if (!file) return;
     setDeleting(true);
     try {
       await invoke("delete_output", { path: file.rel_path });
       if (selectedFile?.rel_path === file.rel_path) setSelectedFile(null);
       refresh();
       toast.success("Deleted", { description: file.name });
+      setDeleteTarget(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -441,6 +455,30 @@ export function OutputsPage({ project }: { project?: string }) {
           </div>
         </div>
       )}
+
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}
+      >
+        <DialogContent>
+          <form onSubmit={(e) => { e.preventDefault(); void confirmDelete(); }}>
+            <DialogHeader>
+              <DialogTitle>Delete output?</DialogTitle>
+              <DialogDescription>
+                "{deleteTarget?.name}" will be permanently deleted. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={deleting}>
+                {deleting ? "Deleting..." : "Delete"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
