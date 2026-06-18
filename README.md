@@ -40,7 +40,8 @@ tiles is intended to stay a normal visual video app first: users should be able 
 Major planned directions:
 
 - **Editor-first Tile Builder** — converge on explicit, non-destructive timeline compositions rather than legacy/random folder-generation UI.
-- **Agent-assisted workflows** — agents can inspect a workspace, propose draft compositions, run preview renders, and summarize changes while the human remains in control of accepting or modifying the result. See [docs/agent-workflows.md](docs/agent-workflows.md).
+- **Agent-drivable project model** — the desktop app is one surface on top of structured workspace/project data. Over time, the CLI/API and composition files should become stable enough for agents and scripts to inspect projects, understand edits, create draft compositions, run previews, and report changes without GUI automation.
+- **Agent-assisted workflows** — agents can propose draft compositions, run preview renders, and summarize changes while the human remains in control of accepting or modifying the result. See [docs/agent-workflows.md](docs/agent-workflows.md).
 - **Audio editing roadmap** — waveform display now; future work may include loudness matching, per-clip gain/mute, and volume automation. Audio library/engine choice is intentionally deferred. See [docs/audio-roadmap.md](docs/audio-roadmap.md).
 - **CLI/API substrate** — `tiles-cli` remains the render/action engine and a future safe interface for scripts and agents, while the app remains the primary user-facing editor.
 
