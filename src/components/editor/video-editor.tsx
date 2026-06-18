@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { readFullscreenState, useFullscreenVideo } from "@/components/fullscreen-video-player";
@@ -11,7 +11,9 @@ import { errorMessage } from "@/lib/errors";
 import { toast } from "sonner";
 import { EditorActionPanel } from "./editor-action-panel";
 import { ImageActionPanel } from "./image-action-panel";
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Maximize, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Maximize, Trash2 } from "lucide-react";
+import { parseTranscript, isSeekableFormat } from "@/lib/transcript";
+import { TranscriptViewer } from "./transcript-viewer";
 import {
   Dialog,
   DialogContent,
@@ -122,17 +124,33 @@ export function VideoEditor({
     }
   }, [selectedAction]);
 
-  const { data: transcript } = useQuery({
-    queryKey: ["transcript", video.rel_path],
-    queryFn: () => invoke<string | null>("get_transcript", { path: video.rel_path }),
+  const { data: transcriptDoc } = useQuery({
+    queryKey: ["transcript-doc", video.rel_path],
+    queryFn: () =>
+      invoke<{ format: string; content: string } | null>("get_transcript_doc", {
+        path: video.rel_path,
+      }),
     enabled: !activeIsImage,
     staleTime: 30_000,
   });
 
+  const transcriptSegments = useMemo(
+    () => (transcriptDoc ? parseTranscript(transcriptDoc.format, transcriptDoc.content) : []),
+    [transcriptDoc]
+  );
+
+  // Seek the player to a transcript segment start (display-only; no edits).
+  const handleTranscriptSeek = useCallback((seconds: number) => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.currentTime = seconds;
+    void v.play().catch(() => {});
+  }, []);
+
   const handleActionComplete = useCallback(() => {
     setVideoVersion((v) => v + 1);
     bumpMediaCache();
-    queryClient.invalidateQueries({ queryKey: ["transcript", video.rel_path] });
+    queryClient.invalidateQueries({ queryKey: ["transcript-doc", video.rel_path] });
   }, [video.rel_path]);
 
   const handleDelete = async () => {
@@ -261,15 +279,13 @@ export function VideoEditor({
                 />
               )}
             </div>
-            {transcript && (
-              <div className="border-t p-4 flex flex-col gap-2 shrink-0">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <FileText className="h-3.5 w-3.5" />
-                  Transcript
-                </div>
-                <pre className="text-xs whitespace-pre-wrap break-words leading-relaxed font-sans max-h-64 overflow-y-auto">
-                  {transcript}
-                </pre>
+            {transcriptSegments.length > 0 && (
+              <div className="border-t p-4 shrink-0">
+                <TranscriptViewer
+                  segments={transcriptSegments}
+                  seekable={!!transcriptDoc && isSeekableFormat(transcriptDoc.format)}
+                  onSeek={handleTranscriptSeek}
+                />
               </div>
             )}
           </div>

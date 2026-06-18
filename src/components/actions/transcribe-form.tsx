@@ -27,7 +27,10 @@ export function TranscribeForm({
   onRunComplete,
 }: ActionFormProps) {
   const [language, setLanguage] = useState("auto");
-  const [format, setFormat] = useState("txt");
+  // JSON is the recommended default: it carries per-segment timestamps that
+  // power the in-app transcript viewer (search + click-to-seek). txt/srt/vtt
+  // remain available and existing transcripts still work.
+  const [format, setFormat] = useState("json");
 
   return (
     <ActionFormWrapper
@@ -72,7 +75,7 @@ export function TranscribeForm({
             </p>
           </div>
           <div>
-            <FieldInfo label="Output Format" info="Transcript file format. Text is easiest to read; SRT/VTT include timestamps for subtitles; JSON preserves structured metadata." labelClassName="text-sm" />
+            <FieldInfo label="Output Format" info="Transcript file format. JSON (recommended) carries per-segment timestamps used by the in-app viewer's search and click-to-seek. SRT/VTT also include timestamps; Text is easiest to read but has none." labelClassName="text-sm" />
             <Select value={format} onValueChange={setFormat}>
               <SelectTrigger className="mt-1">
                 <SelectValue />

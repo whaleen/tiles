@@ -163,42 +163,62 @@ pub fn get_video_info(state: State<AppState>, path: String) -> Result<VideoInfo,
 
 #[tauri::command]
 pub fn get_transcript(state: State<AppState>, path: String) -> Option<String> {
-    if path.contains("..") || Path::new(&path).is_absolute() {
+    let root = state.root.read().unwrap().clone();
+    // Preserve existing behaviour: prefer the human-readable .txt, then srt/vtt/json.
+    find_transcript_file(&root, &path, &["txt", "srt", "vtt", "json"]).map(|(_, content)| content)
+}
+
+/// A transcript file resolved for a source video, tagged with its format so the
+/// frontend can parse the right shape (whisper JSON / WebVTT / SRT / plain text).
+#[derive(Debug, Serialize)]
+pub struct TranscriptDoc {
+    pub format: String,
+    pub content: String,
+}
+
+#[tauri::command]
+pub fn get_transcript_doc(state: State<AppState>, path: String) -> Option<TranscriptDoc> {
+    let root = state.root.read().unwrap().clone();
+    // Prefer timestamped formats so the viewer can offer click-to-seek; fall
+    // back to plain text last.
+    find_transcript_file(&root, &path, &["json", "vtt", "srt", "txt"])
+        .map(|(format, content)| TranscriptDoc { format, content })
+}
+
+/// Locate a transcript for `path` (a src-relative video) by trying `exts` in
+/// order; for each ext, checks outputs/transcribe, alongside the source, and the
+/// per-project outputs/transcribe dir. Returns `(ext, content)` of the first hit.
+fn find_transcript_file(root: &Path, path: &str, exts: &[&str]) -> Option<(String, String)> {
+    if path.contains("..") || Path::new(path).is_absolute() {
         return None;
     }
-    let root = state.root.read().unwrap().clone();
     let stem = {
-        let p = Path::new(&path);
+        let p = Path::new(path);
         let s = p.with_extension("");
         s.to_string_lossy().replace('\\', "/")
     };
-    const EXTS: &[&str] = &["txt", "srt", "vtt", "json"];
-    let candidates: Vec<std::path::PathBuf> = EXTS
-        .iter()
-        .flat_map(|ext| {
-            let mut v = vec![
-                root.join("outputs")
+    for ext in exts {
+        let mut candidates: Vec<PathBuf> = vec![
+            root.join("outputs")
+                .join("transcribe")
+                .join(format!("{stem}.{ext}")),
+            root.join("src").join(format!("{stem}.{ext}")),
+        ];
+        let parts: Vec<&str> = stem.splitn(2, '/').collect();
+        if parts.len() == 2 {
+            candidates.push(
+                root.join("src")
+                    .join(parts[0])
+                    .join("outputs")
                     .join("transcribe")
-                    .join(format!("{stem}.{ext}")),
-                root.join("src").join(format!("{stem}.{ext}")),
-            ];
-            let parts: Vec<&str> = stem.splitn(2, '/').collect();
-            if parts.len() == 2 {
-                v.push(
-                    root.join("src")
-                        .join(parts[0])
-                        .join("outputs")
-                        .join("transcribe")
-                        .join(format!("{}.{ext}", parts[1])),
-                );
-            }
-            v
-        })
-        .collect();
-    for candidate in candidates {
-        if candidate.is_file() {
-            if let Ok(content) = std::fs::read_to_string(&candidate) {
-                return Some(content);
+                    .join(format!("{}.{ext}", parts[1])),
+            );
+        }
+        for candidate in candidates {
+            if candidate.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&candidate) {
+                    return Some((ext.to_string(), content));
+                }
             }
         }
     }
