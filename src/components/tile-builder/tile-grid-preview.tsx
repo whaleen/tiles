@@ -34,6 +34,38 @@ import { Switch } from "@/components/ui/switch";
 import { layoutGrids, buildGrid } from "./layout-grids";
 import type { TileSettingEntry } from "@/types";
 
+// Approximate platform safe-zone margins (% of the canvas frame) where on-screen
+// UI sits. Preview/layout guidance only — these never affect render/export.
+const SAFE_ZONES: Record<
+  string,
+  { top: number; bottom: number; left: number; right: number; label: string }
+> = {
+  "youtube-shorts": { top: 7, bottom: 17, left: 4, right: 12, label: "YouTube Shorts" },
+  tiktok: { top: 7, bottom: 18, left: 4, right: 14, label: "TikTok" },
+  "instagram-reels": { top: 8, bottom: 20, left: 4, right: 14, label: "Reels" },
+};
+
+/** Preview-only overlay showing a platform's safe area. pointer-events-none. */
+function SafeZoneOverlay({ type }: { type?: string | null }) {
+  const z = type ? SAFE_ZONES[type] : undefined;
+  if (!z) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30">
+      <div className="absolute inset-x-0 top-0 bg-black/30" style={{ height: `${z.top}%` }} />
+      <div className="absolute inset-x-0 bottom-0 bg-black/30" style={{ height: `${z.bottom}%` }} />
+      <div className="absolute inset-y-0 left-0 bg-black/30" style={{ width: `${z.left}%` }} />
+      <div className="absolute inset-y-0 right-0 bg-black/30" style={{ width: `${z.right}%` }} />
+      <div
+        className="absolute border border-dashed border-yellow-300/80"
+        style={{ top: `${z.top}%`, bottom: `${z.bottom}%`, left: `${z.left}%`, right: `${z.right}%` }}
+      />
+      <div className="absolute left-1 top-1 rounded bg-black/60 px-1 py-0.5 text-[9px] font-medium text-yellow-200">
+        {z.label} safe area
+      </div>
+    </div>
+  );
+}
+
 export type TilePlayback = {
   src: string;
   /** The clip's start in timeline seconds. */
@@ -82,6 +114,9 @@ interface TileGridPreviewProps {
   audioTiles?: number[];
   /** Preview-only: tiles hidden while editing (not persisted, doesn't affect export). */
   hiddenTiles?: Set<number>;
+  /** Preview-only safe-zone guide overlay (does not affect render). */
+  showSafeZones?: boolean;
+  safeZoneType?: string | null;
   canvasWidth?: number;
   canvasHeight?: number;
   padding?: number;
@@ -436,6 +471,8 @@ export function TileGridPreview({
   onToggleTileAudio,
   audioTiles,
   hiddenTiles,
+  showSafeZones,
+  safeZoneType,
   canvasWidth = 1920,
   canvasHeight = 1080,
   padding = 0,
@@ -571,6 +608,8 @@ export function TileGridPreview({
           canvasWidth={canvasWidth}
           canvasHeight={canvasHeight}
           bgColor={bgColor}
+          showSafeZones={showSafeZones}
+          safeZoneType={safeZoneType}
           getCropPosition={(tileIndex) =>
             tileSettings?.[tileIndex]?.crop_position || "center"
           }
@@ -592,7 +631,7 @@ export function TileGridPreview({
         />
       ) : (
         <div
-          className="border overflow-hidden"
+          className="relative border overflow-hidden"
           style={{
             aspectRatio: `${canvasWidth} / ${canvasHeight}`,
             display: "grid",
@@ -911,6 +950,7 @@ export function TileGridPreview({
               </ContextMenu>
             );
           })}
+          {showSafeZones && <SafeZoneOverlay type={safeZoneType} />}
         </div>
       )}
     </div>
@@ -953,6 +993,8 @@ function LayoutEditor({
   gutterHSize,
   gutterVSize,
   dividerClassName,
+  showSafeZones,
+  safeZoneType,
 }: {
   root: LayoutNode;
   onPickTile?: (index: number) => void;
@@ -974,10 +1016,12 @@ function LayoutEditor({
   gutterHSize?: string;
   gutterVSize?: string;
   dividerClassName?: string;
+  showSafeZones?: boolean;
+  safeZoneType?: string | null;
 }) {
   return (
     <div
-      className="border overflow-hidden"
+      className="relative border overflow-hidden"
       style={{
         aspectRatio: `${canvasWidth} / ${canvasHeight}`,
         backgroundColor: `#${bgColor || "000000"}`,
@@ -1004,6 +1048,7 @@ function LayoutEditor({
           dividerClassName={dividerClassName}
         />
       </div>
+      {showSafeZones && <SafeZoneOverlay type={safeZoneType} />}
     </div>
   );
 }

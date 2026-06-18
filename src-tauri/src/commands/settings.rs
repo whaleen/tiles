@@ -36,6 +36,8 @@ pub(crate) fn default_tile_settings() -> TileSettings {
         output_length_policy: Some("longest".to_string()),
         source_repeat_policy: Some("allow".to_string()),
         mode: Some("edit".to_string()),
+        show_safe_zones: None,
+        safe_zone_type: None,
     }
 }
 

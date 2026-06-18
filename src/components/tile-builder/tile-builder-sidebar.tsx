@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { InfoHover } from "@/components/ui/info-hover";
+import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Layout, PlayCircle, Settings2 } from "lucide-react";
@@ -202,6 +203,46 @@ export function TileBuilderSidebar({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Safe zones — preview-only platform guides (composition metadata,
+                  not render/export). */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-[10px] text-muted-foreground uppercase font-bold">Safe Zones</Label>
+                    <InfoHover text="Preview-only overlay showing a platform's safe area for captions/UI. Guidance only — it does not affect the rendered output." />
+                  </div>
+                  <Switch
+                    checked={!!safeSettings.show_safe_zones}
+                    onCheckedChange={(v) =>
+                      onUpdateSettings({
+                        show_safe_zones: v,
+                        safe_zone_type:
+                          v && !safeSettings.safe_zone_type
+                            ? "youtube-shorts"
+                            : safeSettings.safe_zone_type,
+                      })
+                    }
+                  />
+                </div>
+                {safeSettings.show_safe_zones && (
+                  <Select
+                    value={safeSettings.safe_zone_type ?? "youtube-shorts"}
+                    onValueChange={(v) =>
+                      onUpdateSettings({ safe_zone_type: v as TileSettings["safe_zone_type"] })
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="youtube-shorts">YouTube Shorts</SelectItem>
+                      <SelectItem value="tiktok">TikTok</SelectItem>
+                      <SelectItem value="instagram-reels">Instagram Reels</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
           </section>

@@ -105,6 +105,9 @@ export interface TileSettings {
   output_length_policy?: "shortest" | "longest" | "fixed" | null;
   source_repeat_policy?: "allow" | "no_reuse_per_tile" | "no_reuse_global" | null;
   mode?: "edit" | "randomized" | null;
+  // Preview-only safe-zone guides (composition metadata; not render/export).
+  show_safe_zones?: boolean | null;
+  safe_zone_type?: "youtube-shorts" | "tiktok" | "instagram-reels" | null;
 }
 
 export interface LayoutInfo {

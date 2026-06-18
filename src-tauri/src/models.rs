@@ -153,6 +153,13 @@ pub struct TileSettings {
     /// Absent on comps saved before the flag — inferred from generative fields.
     #[serde(default)]
     pub mode: Option<String>,
+    /// Preview-only: show platform safe-zone guide overlays in the editor.
+    /// Layout guidance metadata; does not affect render/export.
+    #[serde(default)]
+    pub show_safe_zones: Option<bool>,
+    /// Safe-zone platform: "youtube-shorts" | "tiktok" | "instagram-reels".
+    #[serde(default)]
+    pub safe_zone_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

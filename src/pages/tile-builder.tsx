@@ -198,6 +198,8 @@ export function TileBuilderPage({
     output_length_policy: null,
     source_repeat_policy: null,
     mode: null,
+    show_safe_zones: null,
+    safe_zone_type: null,
   };
 
   const { orders: folderOrders } = useFolderOrders(safeSettings.tile_folders);
@@ -948,6 +950,8 @@ export function TileBuilderPage({
               onToggleTileAudio={handleToggleTileAudio}
               audioTiles={safeSettings.audio_tiles}
               hiddenTiles={hiddenTiles}
+              showSafeZones={!!safeSettings.show_safe_zones}
+              safeZoneType={safeSettings.safe_zone_type}
               selectedTileIndex={pickerTileIndex}
               canvasWidth={safeSettings.canvas_width ?? 1920}
               canvasHeight={safeSettings.canvas_height ?? 1080}
