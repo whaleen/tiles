@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { CompositionSwitcher } from "@/components/tile-builder/composition-switcher";
 import { TileTimelineTrack } from "@/components/tile-builder/tile-timeline-track";
 import { TileAudioTrack } from "@/components/tile-builder/tile-audio-track";
+import { SelectedClipInspector } from "@/components/tile-builder/selected-clip-inspector";
 import { useActionRunner } from "@/hooks/use-action-runner";
 import {
   TileGridPreview,
@@ -725,6 +726,31 @@ export function TileBuilderPage({
     [saveTileTimelineEntries, tileClips]
   );
 
+  // The resolved clip instance currently selected in the timeline (if any).
+  const selectedResolvedClip = useMemo(() => {
+    if (!selectedClip) return null;
+    const tile = tileClips.find((item) => item.tileIndex === selectedClip.tileIndex);
+    return tile?.clips.find((clip) => clip.id === selectedClip.clipId) ?? null;
+  }, [selectedClip, tileClips]);
+
+  // Update the selected clip *instance*'s source window (trim metadata). Edits
+  // one TimelineClipEntry by id, so duplicates / reused sources stay independent
+  // and the source media is never touched.
+  const updateSelectedClipTrim = useCallback(
+    (trim: { trim_in?: number | null; trim_out?: number | null }) => {
+      if (!selectedClip) return;
+      const tile = tileClips.find((item) => item.tileIndex === selectedClip.tileIndex);
+      if (!tile) return;
+      saveTileTimelineEntries(
+        selectedClip.tileIndex,
+        tile.entries.map((clip) =>
+          clip.id === selectedClip.clipId ? { ...clip, ...trim } : clip
+        )
+      );
+    },
+    [selectedClip, tileClips, saveTileTimelineEntries]
+  );
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -1049,6 +1075,14 @@ export function TileBuilderPage({
             </label>
           </div>
         </div>
+
+        {/* Selected-clip inspector — precise source-window (trim) editing */}
+        {selectedResolvedClip && (
+          <SelectedClipInspector
+            clip={selectedResolvedClip}
+            onCommitTrim={updateSelectedClipTrim}
+          />
+        )}
 
         {/* Strips */}
         <div className="min-h-0 flex-1 overflow-y-auto pr-1 pb-2">
