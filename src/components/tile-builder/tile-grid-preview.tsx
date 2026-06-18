@@ -117,6 +117,8 @@ interface TileGridPreviewProps {
   /** Preview-only safe-zone guide overlay (does not affect render). */
   showSafeZones?: boolean;
   safeZoneType?: string | null;
+  /** Editor chrome: render per-tile info/footer labels. Default true. */
+  showTileInfo?: boolean;
   canvasWidth?: number;
   canvasHeight?: number;
   padding?: number;
@@ -230,7 +232,9 @@ function TileFooter({
   if (setting.max_duration != null) icons.push({ icon: Timer, title: `Max ${setting.max_duration}s` });
 
   return (
-    <div className="absolute inset-x-0 bottom-0 bg-black/40 text-white text-[10px] px-1 py-0.5 flex items-center gap-1 min-w-0">
+    // Reveal on hover so the footer doesn't obscure content in small/padded
+    // tiles; the master "Info" toggle controls whether it renders at all.
+    <div className="absolute inset-x-0 bottom-0 bg-black/40 text-white text-[10px] px-1 py-0.5 flex items-center gap-1 min-w-0 opacity-0 transition-opacity group-hover:opacity-100">
       <span className="truncate">{folder || `Tile ${tileIndex + 1}`}</span>
       {icons.length > 0 && (
         <span className="ml-auto flex items-center gap-0.5 shrink-0">
@@ -473,6 +477,7 @@ export function TileGridPreview({
   hiddenTiles,
   showSafeZones,
   safeZoneType,
+  showTileInfo = true,
   canvasWidth = 1920,
   canvasHeight = 1080,
   padding = 0,
@@ -624,7 +629,9 @@ export function TileGridPreview({
             return (
               <div className="relative w-full h-full group">
                 {node}
-                <TileFooter folder={folder} tileIndex={tileIndex} setting={setting} hasAudio={audioEnabled(tileIndex)} />
+                {showTileInfo && (
+                  <TileFooter folder={folder} tileIndex={tileIndex} setting={setting} hasAudio={audioEnabled(tileIndex)} />
+                )}
               </div>
             );
           }}
@@ -656,7 +663,9 @@ export function TileGridPreview({
                 onSetCropPosition={onSetCropPosition}
               >
                 {node}
-                <TileFooter folder={folder} tileIndex={i} setting={setting} hasAudio={audioEnabled(i)} />
+                {showTileInfo && (
+                  <TileFooter folder={folder} tileIndex={i} setting={setting} hasAudio={audioEnabled(i)} />
+                )}
               </CropTileWrapper>
             );
 

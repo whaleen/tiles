@@ -12,6 +12,7 @@ import { hashWorkspace, uiKeys } from "@/lib/ui-state";
 import { useFolderOrders } from "@/hooks/use-folder-orders";
 import { useProjects } from "@/hooks/use-projects";
 import { useProjectDetailsMap } from "@/hooks/use-project-details-map";
+import { Switch } from "@/components/ui/switch";
 import { CompositionSwitcher } from "@/components/tile-builder/composition-switcher";
 import { TileTimelineTrack } from "@/components/tile-builder/tile-timeline-track";
 import { TileAudioTrack } from "@/components/tile-builder/tile-audio-track";
@@ -78,6 +79,7 @@ type TileBuilderUiState = {
   playheadSeconds?: number;
   audioOpenTiles?: number[];
   hiddenTiles?: number[];
+  showTileInfo?: boolean;
 };
 
 export function TileBuilderPage({
@@ -110,6 +112,9 @@ export function TileBuilderPage({
   const [timelineZoom, setTimelineZoom] = useState(16);
   const [timelinePlayhead, setTimelinePlayhead] = useState(0);
   const [timelinePlaying, setTimelinePlaying] = useState(false);
+  // Editor chrome: show per-tile info/footer labels in the preview. UI/editor
+  // state (persisted below), NOT composition metadata.
+  const [showTileInfo, setShowTileInfoState] = useState(true);
 
   // --- Editor workspace persistence (UI-only; NOT composition/export state) ---
   // Scoped by workspace + project + active composition, so different
@@ -128,6 +133,13 @@ export function TileBuilderPage({
     (zoom: number) => {
       setTimelineZoom(zoom);
       setUiState((prev) => ({ ...prev, timelineZoom: zoom }));
+    },
+    [setUiState]
+  );
+  const setShowTileInfo = useCallback(
+    (v: boolean) => {
+      setShowTileInfoState(v);
+      setUiState((prev) => ({ ...prev, showTileInfo: v }));
     },
     [setUiState]
   );
@@ -783,6 +795,7 @@ export function TileBuilderPage({
       new Set((arr ?? []).filter((i) => Number.isInteger(i) && i >= 0));
     setHiddenTiles(sane(s.hiddenTiles));
     setAudioOpenTiles(sane(s.audioOpenTiles));
+    setShowTileInfoState(s.showTileInfo ?? true);
     setTimelinePlaying(false);
     pendingPlayheadRef.current =
       typeof s.playheadSeconds === "number" ? s.playheadSeconds : null;
@@ -952,6 +965,7 @@ export function TileBuilderPage({
               hiddenTiles={hiddenTiles}
               showSafeZones={!!safeSettings.show_safe_zones}
               safeZoneType={safeSettings.safe_zone_type}
+              showTileInfo={showTileInfo}
               selectedTileIndex={pickerTileIndex}
               canvasWidth={safeSettings.canvas_width ?? 1920}
               canvasHeight={safeSettings.canvas_height ?? 1080}
@@ -1007,6 +1021,32 @@ export function TileBuilderPage({
               step={1}
               onValueChange={(value) => applyTimelineZoom(value[0] ?? 16)}
             />
+          </div>
+          {/* Preview overlays — editor chrome. "Info" is UI state; "Guides"
+              mirrors the composition safe-zone setting. */}
+          <div className="ml-auto flex items-center gap-3 text-[10px] text-muted-foreground">
+            <label className="flex items-center gap-1.5">
+              <Switch
+                checked={showTileInfo}
+                onCheckedChange={(v) => setShowTileInfo(!!v)}
+              />
+              Info
+            </label>
+            <label className="flex items-center gap-1.5">
+              <Switch
+                checked={!!safeSettings.show_safe_zones}
+                onCheckedChange={(v) =>
+                  updateSettings({
+                    show_safe_zones: !!v,
+                    safe_zone_type:
+                      v && !safeSettings.safe_zone_type
+                        ? "youtube-shorts"
+                        : safeSettings.safe_zone_type,
+                  })
+                }
+              />
+              Guides
+            </label>
           </div>
         </div>
 
